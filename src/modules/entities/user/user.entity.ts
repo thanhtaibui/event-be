@@ -1,12 +1,13 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { OneToMany } from 'typeorm';
 import { Event } from '../event/event.entity';
-import { EventParticipant } from '../event-participant/event-participant.entity';
-import { UserRole } from '../user-role/user-role.entity';
+import { UserRole } from '../userRole/userRole.entity';
+import { EventInvitation } from '../eventInvitation/eventInvitation.entity';
+import { BaseEntity } from '../../../shared/base/base.entity';
+import { EventPost } from '../eventPost/eventPost.entity';
+import { Participant } from '../participant/participant.entity';
 @Entity('users')
-export class UserEntity {
-    @PrimaryGeneratedColumn()
-    id: number;
+export class User extends BaseEntity {
 
     @Column({ unique: true })
     email: string;
@@ -17,18 +18,27 @@ export class UserEntity {
     @Column()
     fullName: string;
 
+    @Column({ nullable: true })
+    phoneNumber: Number;
+
+    @Column({ nullable: true })
+    bio: string;
+
+    @Column({ default: true })
+    isActive: boolean;
+
     @OneToMany(() => Event, (event) => event.createdBy)
     events: Event[];
-
-    @OneToMany(() => EventParticipant, (ep) => ep.user)
-    participants: EventParticipant[];
 
     @OneToMany(() => UserRole, (ur) => ur.user)
     userRoles: UserRole[];
 
-    @CreateDateColumn()
-    createdAt: Date;
+    @OneToMany(() => EventInvitation, (inv) => inv.user)
+    invitations: EventInvitation[];
 
-    @UpdateDateColumn()
-    updatedAt: Date;
+    @OneToMany(() => EventPost, (post) => post.user)
+    posts: EventPost[];
+
+    @OneToMany(() => Participant, (participant) => participant.user)
+    participants: Participant[];
 }
