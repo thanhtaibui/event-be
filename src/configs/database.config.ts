@@ -1,13 +1,8 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { join } from 'path';
 
 export const databaseConfig: TypeOrmModuleOptions = {
     type: 'postgres',
-    host: 'localhost',
-    port: 5432,
-    username: 'postgres',
-    password: '123456',
-    database: 'event_db',
+    url: process.env.DATABASE_URL,  // ví dụ: postgres://postgres:123456@postgres:5432/event_db
     synchronize: true,
-    entities: [__dirname + '/../**/*.entity.{ts,js}'],
+    entities: [__dirname + '/../**/*.entity.js'],
 };

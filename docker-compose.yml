@@ -1,10 +1,10 @@
-version: '3.8'
+# version: '3.8'
 
 services:
-  postgres:
+  event_db:
     image: postgres:15
     container_name: event-postgres
-    restart: always
+    # restart: always
     env_file:
       - .env
     ports:
@@ -12,5 +12,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  backend:
+    build: .
+    container_name: event_backend
+    command: npm run start:dev
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    env_file:
+     - .env
+    depends_on:
+      - event_db
 volumes:
   postgres_data:
