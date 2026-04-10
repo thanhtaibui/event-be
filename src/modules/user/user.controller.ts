@@ -38,10 +38,10 @@ export class UserController {
     return this.userService.findAll(query);
   }
 
-  // @Get(':id')
-  // findOne(@Param('id') id: string) {
-  //   return this.userService.findOne(id);
-  // }
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.userService.findOne(id);
+  }
 
   @Patch(':id')
   @ApiOperation({ operationId: 'updateUser' })

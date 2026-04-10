@@ -9,6 +9,7 @@ import { User } from '../user/entities/user.entity';
 import { Repository } from 'typeorm';
 import { UnauthorizedException } from '@nestjs/common';
 import { RefreshTokenDto } from './dto/refresh.dto';
+import { UserResponseDto } from '../user/dto/users.dto';
 @Injectable()
 export class AuthService {
   constructor(private jwtService: JwtService, @InjectRepository(User) private userRepo: Repository<User>) { }
@@ -28,7 +29,7 @@ export class AuthService {
       throw new BadRequestException('Wrong password');
     }
 
-    const tokens = await this.getTokens(user.id, user.email, loginDto.rememberMe);
+    const tokens = await this.getTokens(user.id, user, loginDto.rememberMe);
 
     await this.userRepo.update(user.id, {
       refreshToken: await bcrypt.hash(tokens.refreshToken, 10),
@@ -42,25 +43,26 @@ export class AuthService {
       }
     };
   }
-  async getTokens(userId: string, email: string, rememberMe?: boolean) {
-    const payload = { sub: userId, email };
-
-    const accessToken = this.jwtService.sign(payload, { expiresIn: rememberMe ? '1h' : '5m' });
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: rememberMe ? '30d' : '7d' });
-
+  async getTokens(userId: string, user: UserResponseDto, rememberMe?: boolean) {
+    const payload = { sub: userId, email: user.email, fullName: user.fullName };
+    const accessToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_SECRET, expiresIn: rememberMe ? '1h' : '30s'
+    });
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: process.env.REFRESH_JWT_SECRET, expiresIn: rememberMe ? '30d' : '7d'
+    });
     return {
       accessToken,
       refreshToken,
     };
   }
 
-  async refreshToken(refreshTokenDto: RefreshTokenDto): Promise<ApiResponse<any>> {
+  async refreshToken(refreshToken: string): Promise<ApiResponse<any>> {
     try {
       // 1. Verify refresh token
-      const payload = this.jwtService.verify(refreshTokenDto.refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: process.env.REFRESH_JWT_SECRET,
       });
-
       // 2. Tìm user
       const user = await this.userRepo.findOne({
         where: { id: payload.sub },
@@ -72,7 +74,7 @@ export class AuthService {
 
       // 3. So sánh refresh token (đã hash)
       const isMatch = await bcrypt.compare(
-        refreshTokenDto.refreshToken,
+        refreshToken,
         user.refreshToken,
       );
 

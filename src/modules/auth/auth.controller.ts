@@ -3,11 +3,11 @@ import { AuthService } from './auth.service';
 import { Body } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
-import { RefreshTokenDto } from './dto/refresh.dto';
 import { ApiOperation } from '@nestjs/swagger';
 import { Res, Req } from '@nestjs/common';
 import type { Response } from 'express';
 import type { Request } from 'express';
+import { Logger } from '@nestjs/common';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
@@ -45,7 +45,6 @@ export class AuthController {
   ) {
     const refreshToken = req.cookies.refreshToken;
     const tokens = await this.authService.refreshToken(refreshToken);
-
     res.cookie('refreshToken', tokens.data.refreshToken, {
       httpOnly: true,
       secure: false,
