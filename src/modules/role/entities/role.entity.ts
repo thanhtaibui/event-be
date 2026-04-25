@@ -1,16 +1,30 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { UserRole } from '../../user-role/entities/userRole.entity';
+import { Column, Entity, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
+import { Membership } from '../../membership/entities/membership.entity';
 import { BaseEntity } from '../../../shared/base/base.entity';
+import { Permission } from '../../permission/entities/permission.entity';
+import { Organization } from '../../organization/entities/organization.entity';
 
 @Entity('roles')
 export class Role extends BaseEntity {
+  @Column()
+  role_name: string;
 
-    @Column()
-    name: string;
+  @Column()
+  role_code: string;
 
-    @Column()
-    description: string;
+  @OneToMany(() => Membership, (m) => m.role)
+  memberships: Membership[];
 
-    @OneToMany(() => UserRole, (ur) => ur.role)
-    userRoles: UserRole[];
+  @ManyToMany(() => Permission, (p) => p.roles)
+  @JoinTable({
+    name: 'role_permissions',
+  })
+  permissions: Permission[];
+
+  @ManyToOne(() => Organization, (org) => org.roles, { nullable: true })
+  @JoinColumn({ name: 'organizationId' })
+  organization: Organization;
+
+  @Column({ nullable: true })
+  colorKey?: string;
 }

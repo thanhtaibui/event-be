@@ -1,53 +1,54 @@
-import { Column, ManyToOne, OneToMany, PrimaryGeneratedColumn, Entity } from "typeorm";
-import { User } from "../../user/entities/user.entity";
-import { CreateDateColumn, UpdateDateColumn } from "typeorm";
-import { EventPost } from "../../event-post/entities/eventPost.entity";
-import { EventInvitation } from "../../event-invitation/entities/eventInvitation.entity";
+import { Column, ManyToOne, OneToMany, Entity } from "typeorm";
 import { BaseEntity } from '../../../shared/base/base.entity';
-import { Participant } from "../../participant/entities/participant.entity";
 import { EventStatus } from "../../../shared/enum/enum";
+import { Organization } from '../../organization/entities/organization.entity';
+import { TicketType } from '../../ticket-type/entities/ticket-type.entity';
+import { Invite } from '../../invite/entities/invite.entity';
 @Entity('events')
 export class Event extends BaseEntity {
 
-    @Column()
-    name: string;
+  @Column()
+  name: string;
 
-    @Column()
-    description: string
+  @Column()
+  description: string
 
-    @Column()
-    place: string;
+  @Column()
+  place: string;
 
-    @Column()
-    startDateTime: Date;
+  @Column()
+  startDateTime: Date;
 
-    @Column()
-    endDateTime: Date;
+  @Column()
+  endDateTime: Date;
 
-    @Column()
-    registrationEndDate: Date;
+  @Column()
+  registrationEndDate: Date;
 
-    @Column()
-    capacity: number;
+  @Column()
+  capacity: number;
 
-    @Column()
-    price: number;
+  @Column()
+  price: number;
 
-    @Column()
-    isPublic: boolean;
+  @Column()
+  isPublic: boolean;
 
-    @Column()
-    status: EventStatus; //enum add sau
+  @Column({
+    type: 'enum',
+    enum: EventStatus,
+  })
+  status: EventStatus;
 
-    @ManyToOne(() => User, (user) => user.events)
-    createdBy: User;
+  @Column()
+  title: string;
 
-    @OneToMany(() => EventPost, (post) => post.event)
-    posts: EventPost[];
+  @ManyToOne(() => Organization, (org) => org.events)
+  organization: Organization;
 
-    @OneToMany(() => EventInvitation, (inv) => inv.event)
-    invitations: EventInvitation[];
+  @OneToMany(() => TicketType, (type) => type.event)
+  ticketTypes: TicketType[];
 
-    @OneToMany(() => Participant, (participant) => participant.event)
-    participants: Participant[];
+  @OneToMany(() => Invite, (invite) => invite.event)
+  invites: Invite[];
 }

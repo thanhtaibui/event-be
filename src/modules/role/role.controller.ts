@@ -1,20 +1,26 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { ApiOperation } from '@nestjs/swagger';
+import { SortDto } from 'src/common/dtos/sort.dto';
+import { ApiResponse } from 'src/common/utils/ApiResponse';
+import { PaginationResult } from 'src/common/dtos/pagination.type';
+import { RoleDto } from './dto/role.dto';
 
-@Controller('role')
+@Controller('roles')
 export class RoleController {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(private readonly roleService: RoleService) { }
 
   @Post()
-  create(@Body() createRoleDto: CreateRoleDto) {
+  async create(@Body() createRoleDto: CreateRoleDto): Promise<ApiResponse<RoleDto>> {
     return this.roleService.create(createRoleDto);
   }
 
   @Get()
-  findAll() {
-    return this.roleService.findAll();
+  @ApiOperation({ operationId: 'GetRoles' })
+  async findAll(@Query() query: SortDto): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+    return this.roleService.findAll(query);
   }
 
   @Get(':id')

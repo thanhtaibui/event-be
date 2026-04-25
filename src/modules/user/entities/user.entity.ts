@@ -1,11 +1,12 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity } from 'typeorm';
 import { OneToMany } from 'typeorm';
-import { Event } from '../../event/entities/event.entity';
-import { UserRole } from '../../user-role/entities/userRole.entity';
-import { EventInvitation } from '../../event-invitation/entities/eventInvitation.entity';
 import { BaseEntity } from '../../../shared/base/base.entity';
-import { EventPost } from '../../event-post/entities/eventPost.entity';
-import { Participant } from '../../participant/entities/participant.entity';
+import { Order } from '../../order/entities/order.entity';
+import { Membership } from '../../membership/entities/membership.entity';
+import { Report } from '../../report/entities/report.entity';
+import { Feedback } from '../../feedback/entities/feedback.entity';
+import { RoleUser } from '../../../shared/enum/enum'
+
 @Entity('users')
 export class User extends BaseEntity {
 
@@ -19,28 +20,25 @@ export class User extends BaseEntity {
   fullName: string;
 
   @Column({ nullable: true })
-  phoneNumber: Number;
-
-  @Column({ nullable: true })
-  bio: string;
+  phoneNumber: string;
 
   @Column({ default: true })
   isActive: boolean;
 
-  @OneToMany(() => Event, (event) => event.createdBy)
-  events: Event[];
+  @Column({ type: 'boolean', name: 'is_delete', default: false })
+  isDelete: boolean;
 
-  @OneToMany(() => UserRole, (ur) => ur.user)
-  userRoles: UserRole[];
+  @OneToMany(() => Membership, (membership) => membership.user)
+  memberships: Membership[];
 
-  @OneToMany(() => EventInvitation, (inv) => inv.user)
-  invitations: EventInvitation[];
+  @OneToMany(() => Order, (order) => order.user)
+  orders: Order[];
 
-  @OneToMany(() => EventPost, (post) => post.user)
-  posts: EventPost[];
+  @OneToMany(() => Report, (report) => report.user)
+  reports: Report[];
 
-  @OneToMany(() => Participant, (participant) => participant.user)
-  participants: Participant[];
+  @OneToMany(() => Feedback, (feedback) => feedback.user)
+  feedbacks: Feedback[];
 
   @Column({ nullable: true })
   refreshToken: string;

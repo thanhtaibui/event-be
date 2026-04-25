@@ -1,11 +1,25 @@
+import { RoleUserDto } from "src/modules/role/dto/role-user.dto";
+
 export class UserResponseDto {
-    email: string;
+  id: string;
 
-    fullName: string;
+  email: string;
 
-    phoneNumber: Number;
+  fullName: string;
 
-    bio: string;
+  phoneNumber: string;
 
-    isActive: boolean;
+  isActive: boolean;
+
+  role?: RoleUserDto[];
+
+  // memberships: string;
+
+  // orders: string;
+
+  // reports: string;
+
+  // feedbacks: string;
+
+  // refreshToken: string;
 }
