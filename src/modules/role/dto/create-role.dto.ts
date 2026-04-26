@@ -12,8 +12,9 @@ export class CreateRoleDto {
   @IsNotEmpty()
   role_code: string;
 
-  @IsArray()
-  @ArrayNotEmpty()
+  @IsArray({ message: 'Permissions must be an array' })
+  @ArrayNotEmpty({ message: 'Permission list cannot be empty' })
+  @IsString({ each: true, message: 'Each permission ID must be a string' })
   @ApiProperty({ example: ["uuid", "uuid"] })
   permissionIds: string[];
 

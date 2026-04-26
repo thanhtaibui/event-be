@@ -1,10 +1,11 @@
-import { Column, Entity, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
+import { Column, Entity, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { Membership } from '../../membership/entities/membership.entity';
 import { BaseEntity } from '../../../shared/base/base.entity';
 import { Permission } from '../../permission/entities/permission.entity';
 import { Organization } from '../../organization/entities/organization.entity';
 
 @Entity('roles')
+@Unique(["role_code", "organization", "isDelete"])
 export class Role extends BaseEntity {
   @Column()
   role_name: string;
@@ -27,4 +28,7 @@ export class Role extends BaseEntity {
 
   @Column({ nullable: true })
   colorKey?: string;
+
+  @Column({ type: 'boolean', name: 'is_delete', default: false })
+  isDelete: boolean;
 }

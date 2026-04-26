@@ -6,7 +6,8 @@ import { ApiOperation } from '@nestjs/swagger';
 import { SortDto } from 'src/common/dtos/sort.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
-import { RoleDto } from './dto/role.dto';
+import { RoleDto, RoleResDto } from './dto/role.dto';
+import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 
 @Controller('roles')
 export class RoleController {
@@ -23,14 +24,20 @@ export class RoleController {
     return this.roleService.findAll(query);
   }
 
+  @Patch('/delete')
+  @ApiOperation({ operationId: 'deleteSort' })
+  deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
+    return this.roleService.deleteSort(deleteSort);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.roleService.findOne(+id);
+  GetRoleById(@Param('id') id: string): Promise<ApiResponse<RoleDto>> {
+    return this.roleService.GetRoleById(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
-    return this.roleService.update(+id, updateRoleDto);
+  update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto): Promise<ApiResponse<RoleResDto>> {
+    return this.roleService.update(id, updateRoleDto);
   }
 
   @Delete(':id')
