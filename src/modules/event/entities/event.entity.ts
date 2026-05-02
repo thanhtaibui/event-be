@@ -8,7 +8,10 @@ import { Invite } from '../../invite/entities/invite.entity';
 export class Event extends BaseEntity {
 
   @Column()
-  name: string;
+  title: string;
+
+  @Column({ nullable: true })
+  eventPoster: string;
 
   @Column()
   description: string
@@ -28,8 +31,8 @@ export class Event extends BaseEntity {
   @Column()
   capacity: number;
 
-  @Column()
-  price: number;
+  // @Column()
+  // price: number;
 
   @Column()
   isPublic: boolean;
@@ -39,9 +42,6 @@ export class Event extends BaseEntity {
     enum: EventStatus,
   })
   status: EventStatus;
-
-  @Column()
-  title: string;
 
   @ManyToOne(() => Organization, (org) => org.events)
   organization: Organization;

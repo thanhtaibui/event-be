@@ -8,9 +8,10 @@ import { User } from '../user/entities/user.entity';
 import { Role } from '../role/entities/role.entity';
 import { RoleService } from '../role/role.service';
 import { Permission } from '../permission/entities/permission.entity';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 @Module({
   imports: [TypeOrmModule.forFeature([Organization, Membership, User, Role, Permission])],
   controllers: [OrganizationController],
-  providers: [OrganizationService, RoleService],
+  providers: [OrganizationService, RoleService, CloudinaryService],
 })
 export class OrganizationModule { }

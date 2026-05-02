@@ -2,10 +2,15 @@ import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/commo
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { SortDto } from 'src/common/dtos/sort.dto';
+import { ApiResponse } from 'src/common/utils/ApiResponse';
+import { EventDto } from './dto/event.dto';
+import { PaginationResult } from 'src/common/dtos/pagination.type';
+import { ApiOperation } from '@nestjs/swagger';
 
-@Controller('event')
+@Controller('events')
 export class EventController {
-  constructor(private readonly eventService: EventService) {}
+  constructor(private readonly eventService: EventService) { }
 
   @Post()
   create(@Body() createEventDto: CreateEventDto) {
@@ -13,8 +18,9 @@ export class EventController {
   }
 
   @Get()
-  findAll() {
-    return this.eventService.findAll();
+  @ApiOperation({ operationId: 'getEvents' })
+  async findAll(@Param() query: SortDto): Promise<ApiResponse<PaginationResult<EventDto>>> {
+    return await this.eventService.findAll(query);
   }
 
   @Get(':id')

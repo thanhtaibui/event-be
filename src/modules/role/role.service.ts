@@ -7,7 +7,7 @@ import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { RoleDto, RoleResDto } from './dto/role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Role } from './entities/role.entity';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { applySearch, applySort } from 'src/common/utils/applySort';
 import { paginateArray } from 'src/common/utils/paginate-array';
 import { Permission } from '../permission/entities/permission.entity';
@@ -80,7 +80,7 @@ export class RoleService {
   async findAll(query: SortDto): Promise<ApiResponse<PaginationResult<RoleDto>>> {
     const { search } = query
     const roles = await this.roleRepo.find({
-      where: { isDelete: false },
+      where: { deletedAt: IsNull() },
       relations: ['permissions', 'permissions.parent', 'organization']
     });
     const searchData = applySearch(
@@ -115,7 +115,7 @@ export class RoleService {
         organization: {
           id: orgId
         },
-        isDelete: false
+        deletedAt: IsNull()
       },
       relations: ['organization']
     })
@@ -163,7 +163,7 @@ export class RoleService {
     const names = roles.map(i => i.role_name);
     await this.roleRepo.update(
       { id: In(deleteSort.ids) },
-      { isDelete: true },
+      { deletedAt: new Date() },
     );
 
     return Response(200, `Delete:${names.join(", ")} successfully`, deleteSort)

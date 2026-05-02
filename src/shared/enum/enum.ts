@@ -26,6 +26,13 @@ export enum RoleUser {
 }
 export enum OrgRequestStatus {
   PENDING = 'PENDING',
+  REJECTED = 'REJECTED',
+  ACTIVE = "ACTIVE",
+  ARCHIVED = "ARCHIVED",
+  SUSPENDED = "SUSPENDED"
+}
+export enum VerificationStatus {
+  PENDING = 'PENDING',
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
 }

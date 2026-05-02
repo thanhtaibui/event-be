@@ -35,7 +35,7 @@ export class UserService {
     const user = this.userRepo.create(createUserDto);
     const savedUser = await this.userRepo.save(user);
     const guestOrg = await this.orgRepo.findOne({
-      where: { Slug: 'guest-organization' },
+      where: { slug: 'guest-organization' },
       relations: ['roles']
     });
     let guestRole: Role | null = null;
@@ -99,17 +99,20 @@ export class UserService {
       sortOrder,
       ['email', 'fullName']
     );
+    // Logger.warn("sortedData", sortedData)
     const items = sortedData.map(user => ({
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       phoneNumber: user.phoneNumber,
       isActive: user.isActive,
-      role: user.memberships.map((m) => ({
-        role_name: m.role.role_name,
-        orgName: m.role.organization.name,
-        colorKey: m.role.colorKey
-      })),
+      role: (user.memberships || [])
+        .filter(m => m.role !== null && m.role !== undefined)
+        .map((m) => ({
+          role_name: m.role.role_name,
+          orgName: m.role.organization?.name || 'No Organization',
+          colorKey: m.role.colorKey || 'gray'
+        }))
     }));
 
     return Response(
@@ -229,11 +232,13 @@ export class UserService {
       fullName: user.fullName,
       phoneNumber: user.phoneNumber,
       isActive: user.isActive,
-      role: user.memberships.map((m) => ({
-        role_name: m.role.role_name,
-        orgName: m.role.organization.name,
-        colorKey: m.role.colorKey
-      })),
+      role: (user.memberships || [])
+        .filter(m => m.role !== null && m.role !== undefined)
+        .map((m) => ({
+          role_name: m.role.role_name,
+          orgName: m.role.organization?.name || 'No Organization',
+          colorKey: m.role.colorKey || 'gray'
+        }))
     });
   }
   async findOne(id: string) {

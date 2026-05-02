@@ -2,10 +2,10 @@
 
 export class RoleUserDto {
 
-  role_name: string;
+  role_name?: string;
 
   colorKey?: string
 
-  orgName: string;
+  orgName?: string;
 
 }

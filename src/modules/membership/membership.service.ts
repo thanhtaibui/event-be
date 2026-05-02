@@ -25,12 +25,14 @@ export class MembershipService {
       relations: ['organization', 'role'],
     });
 
-    const result = memberships.map((m) => ({
-      userId: userId,
-      organizationId: m.organization.id,
-      roleId: m.role.id,
-      isActive: m.isActive
-    }));
+    const result = memberships.
+      filter((m) => m.role !== null && m.organization !== null)
+      .map((m) => ({
+        userId: userId,
+        organizationId: m.organization?.id,
+        roleId: m.role?.id,
+        isActive: m.isActive
+      }));
     return Response(200, "Get Orgs of User Successfully", result);
   }
 

@@ -11,6 +11,7 @@ async function bootstrap() {
     .setTitle('Events API')
     .setDescription('The Events API description')
     .setVersion('1.0')
+    .addServer('http://localhost:3000')
     .addBasicAuth({
       type: 'http',
       scheme: 'bearer',

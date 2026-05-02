@@ -19,6 +19,8 @@ import { OrderModule } from './modules/order/order.module';
 import { ReportModule } from './modules/report/report.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { PermissionModule } from './modules/permission/permission.module';
+import { OrgVerificationModule } from './modules/org-verification/org-verification.module';
+import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
@@ -42,6 +44,8 @@ import { PermissionModule } from './modules/permission/permission.module';
     ReportModule,
     DashboardModule,
     PermissionModule,
+    OrgVerificationModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
