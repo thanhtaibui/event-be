@@ -1,21 +1,19 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { SortDto } from 'src/common/dtos/sort.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { RoleDto, RoleResDto } from './dto/role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Role } from './entities/role.entity';
 import { In, IsNull, Repository } from 'typeorm';
-import { applySearch, applySort } from 'src/common/utils/applySort';
-import { paginateArray } from 'src/common/utils/paginate-array';
 import { Permission } from '../permission/entities/permission.entity';
 import { RoleOrgDto } from './dto/role-org.dto';
 import { Organization } from '../organization/entities/organization.entity';
 import { relative } from 'path';
 import { response } from 'express';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
+import { paginate, PaginateQuery } from 'nestjs-paginate';
 
 @Injectable()
 export class RoleService {
@@ -77,18 +75,15 @@ export class RoleService {
     };
   }
 
-  async findAll(query: SortDto): Promise<ApiResponse<PaginationResult<RoleDto>>> {
-    const { search } = query
-    const roles = await this.roleRepo.find({
+  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+    const result = await paginate(query, this.roleRepo, {
+      sortableColumns: ['role_name', 'role_code', 'organization.name'],
+      searchableColumns: ['role_name', 'role_code', 'organization.name'],
       where: { deletedAt: IsNull() },
       relations: ['permissions', 'permissions.parent', 'organization']
-    });
-    const searchData = applySearch(
-      roles,
-      search,
-      ['role_name', 'permissions.permission_name', 'organization.name'],
-    )
-    const itemPromises = searchData.map(async (r) => {
+    })
+
+    const itemPromises = result.data.map(async (r) => {
       return {
         id: r.id,
         role_name: r.role_name,
@@ -102,7 +97,13 @@ export class RoleService {
       };
     });
     const items = await Promise.all(itemPromises);
-    return Response(200, "get all roles successfully", paginateArray<RoleDto>(items, query));
+    return Response(200, "get all roles successfully", {
+      items: items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 1,
+    });
   }
 
   async findAllByOrg(orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {

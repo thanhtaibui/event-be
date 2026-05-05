@@ -3,12 +3,12 @@ import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ApiOperation } from '@nestjs/swagger';
-import { SortDto } from 'src/common/dtos/sort.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { RoleDto, RoleResDto } from './dto/role.dto';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
-
+import { ApiPaginationQuery, Paginate } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 @Controller('roles')
 export class RoleController {
   constructor(private readonly roleService: RoleService) { }
@@ -19,8 +19,12 @@ export class RoleController {
   }
 
   @Get()
+  @ApiPaginationQuery({
+    sortableColumns: ['role_name', 'role_code', 'organization.name'],
+    // filterableColumns: { status: [FilterOperator.EQ] },
+  })
   @ApiOperation({ operationId: 'GetRoles' })
-  async findAll(@Query() query: SortDto): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  async findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<RoleDto>>> {
     return this.roleService.findAll(query);
   }
 

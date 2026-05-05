@@ -14,7 +14,7 @@ export class Event extends BaseEntity {
   eventPoster: string;
 
   @Column()
-  description: string
+  description: string;
 
   @Column()
   place: string;
@@ -34,7 +34,7 @@ export class Event extends BaseEntity {
   // @Column()
   // price: number;
 
-  @Column()
+  @Column({ default: false })
   isPublic: boolean;
 
   @Column({

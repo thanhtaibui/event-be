@@ -1,9 +1,12 @@
 
 export enum EventStatus {
-  UPCOMING = 'upcoming',  // sắp diễn ra
-  ONGOING = 'ongoing',    // đang diễn ra
-  ENDED = 'ended',        // đã kết thúc
-  CANCELLED = 'cancelled' // bị hủy
+  DRAFT = 'draft',         // Mới tạo, đang chỉnh sửa, chưa công khai
+  PUBLISHED = 'published', // Đã sẵn sàng và hiển thị cho người dùng mua vé
+  UPCOMING = 'upcoming',   // Đã công khai nhưng chưa tới giờ diễn ra
+  ONGOING = 'ongoing',     // Đang diễn ra
+  ENDED = 'ended',         // Đã kết thúc
+  CANCELLED = 'cancelled', // Bị hủy bỏ
+  POSTPONED = 'postponed'  // Bị tạm hoãn 
 }
 export enum ReportStatus {
   PENDING = 'pending',

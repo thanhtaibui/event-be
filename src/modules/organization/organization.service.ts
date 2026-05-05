@@ -3,13 +3,10 @@ import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
-import { SortDto } from '../../common/dtos/sort.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Organization } from './entities/organization.entity';
 import { OrganizationDto } from './dto/organization.dto';
-import { paginateArray } from '../../common/utils/paginate-array';
-import { applySearch, applySort } from "../../common/utils/applySort"
 import { Membership } from '../membership/entities/membership.entity';
 import { OrgRequestStatus } from 'src/shared/enum/enum';
 import { User } from '../user/entities/user.entity';
@@ -18,6 +15,8 @@ import { OrganizationResDto } from './dto/organization-res.dto';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UpdateBannerDto } from './dto/update-banner.dto';
+import { paginate, FilterOperator, type PaginateQuery } from 'nestjs-paginate';
+import { plainToInstance } from 'class-transformer';
 
 @Injectable()
 export class OrganizationService {
@@ -99,7 +98,6 @@ export class OrganizationService {
     }
   }
 
-
   async SwitchOrg(): Promise<ApiResponse<SwitchOrgDto[]>> {
     const orgs = await this.organizationRepo.find();
     const result = orgs.map((org) => ({
@@ -108,53 +106,34 @@ export class OrganizationService {
     }))
     return Response(200, 'Get Switch Orgs Successfully', result)
   }
-  async findAll(query: SortDto): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
-    const { sortBy, sortOrder, search } = query;
 
-    const orgs = await this.organizationRepo.find({
-      // where: { isDelete: false },
+  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
+    const result = await paginate(query, this.organizationRepo, {
+      searchableColumns: ['name', 'email', 'owner.fullName'],
+      sortableColumns: ['name', 'email', 'owner.fullName'],
+      filterableColumns: {
+        isActive: [FilterOperator.EQ],
+        status: [FilterOperator.EQ]
+      },
       relations: ['memberships', 'events', 'owner'],
+      defaultSortBy: [["createdAt", "DESC"]]
+    })
+
+    const items = plainToInstance(OrganizationDto, result.data, {
+      excludeExtraneousValues: true,
     });
-
-    // 2. Search dữ liệu thô trước
-    const searchData = applySearch(
-      orgs,
-      search,
-      ['name', 'status', 'Slug']
-    );
-
-    // 3. Sort dữ liệu
-    const sortedData = applySort(
-      searchData,
-      sortBy as keyof Organization,
-      sortOrder,
-      ['name', 'status', 'createdAt']
-    );
-
-    // 4. Map sang DTO chuyên nghiệp
-    const items: OrganizationDto[] = sortedData.map(org => ({
-      id: org.id,
-      name: org.name,
-      bio: org.bio,
-      slug: org.slug,
-      isActive: org.isActive,
-      status: org.status,
-      createdAt: org.createdAt,
-      owner: org.owner ? {
-        id: org.owner.id,
-        fullName: org.owner.fullName,
-        email: org.owner.email,
-      } : null,
-      // Trả về số lượng để UI làm badge, không trả về mảng ID
-      totalMembers: org.memberships?.length || 0,
-      totalEvents: org.events?.length || 0,
-    }));
 
     // 5. Phân trang sau khi đã xử lý xong data
     return Response(
       200,
       'Get all organizations successfully',
-      paginateArray<OrganizationDto>(items, query)
+      {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      }
     );
   }
 

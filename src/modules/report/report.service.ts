@@ -1,17 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateReportDto } from './dto/create-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
-import { SortDto } from '../../common/dtos/sort.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { ReportDto } from "./dto/report.dto";
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { paginateArray } from '../../common/utils/paginate-array';
 import { Report } from "./entities/report.entity"
 import { User } from "../user/entities/user.entity"
 import { Organization } from '../organization/entities/organization.entity';
-import { applySearch } from 'src/common/utils/applySort';
+import { paginate, type PaginateQuery } from 'nestjs-paginate';
 
 @Injectable()
 export class ReportService {
@@ -54,18 +52,16 @@ export class ReportService {
     );
   }
 
-  async findAll(query: SortDto): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    const { search } = query
-    const reports = await this.reportRepo.find({
+  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<ReportDto>>> {
+    const result = await paginate(query, this.reportRepo, {
+      sortableColumns: ['user.fullName', 'organization.name', 'status'],
+      searchableColumns: ['user.fullName', 'organization.name', 'status'],
       relations: ['user', 'organization'],
-      order: { createdAt: 'desc' }
+      defaultSortBy: [['createdAt', 'DESC']]
+
     })
-    const searchData = applySearch(
-      reports,
-      search,
-      ['user.fullName', 'organization.name', 'status']
-    )
-    const items = searchData.map(report => ({
+
+    const items = result.data.map(report => ({
       user: {
         id: report.user?.id,
         fullName: report.user.fullName,
@@ -83,7 +79,13 @@ export class ReportService {
     return Response(
       200,
       'Get all reports successfully',
-      paginateArray<ReportDto>(items, query),
+      {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      }
     );
   }
 

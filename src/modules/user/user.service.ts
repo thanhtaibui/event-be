@@ -6,15 +6,13 @@ import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
-import { SortDto } from '../../common/dtos/sort.dto';
-import { applySort, applySearch } from "../../common/utils/applySort"
-import { paginateArray } from '../../common/utils/paginate-array';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import * as bcrypt from 'bcrypt';
 import { Organization } from '../organization/entities/organization.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { Role } from '../role/entities/role.entity';
 import { DeleteSort } from './dto/delete-sort-user.dto';
+import { FilterOperator, paginate, type PaginateQuery } from 'nestjs-paginate';
 @Injectable()
 export class UserService {
   constructor(@InjectRepository(User) private userRepo: Repository<User>,
@@ -82,25 +80,18 @@ export class UserService {
     return Response(201, 'User created successfully', result);
   }
 
-  async findAll(query: SortDto): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
-    const { search, sortBy, sortOrder } = query;
-    const users = await this.userRepo.find({
+  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
+    const result = await paginate(query, this.userRepo, {
+      sortableColumns: ['email', 'fullName'],
+      searchableColumns: ['email', 'fullName'],
+      filterableColumns: { isActive: [FilterOperator.EQ] },
       where: { isDelete: false },
       relations: ['memberships', 'memberships.role', 'memberships.role.organization']
-    });
-    const filteredData = applySearch(
-      users,
-      search,
-      ['email', 'fullName']
-    );
-    const sortedData = applySort(
-      filteredData,
-      sortBy as keyof User,
-      sortOrder,
-      ['email', 'fullName']
-    );
+
+    })
+
     // Logger.warn("sortedData", sortedData)
-    const items = sortedData.map(user => ({
+    const items = result.data.map(user => ({
       id: user.id,
       email: user.email,
       fullName: user.fullName,
@@ -118,7 +109,13 @@ export class UserService {
     return Response(
       200,
       'Get all users successfully',
-      paginateArray<UserResponseDto>(items, query),
+      {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      }
 
     );
 

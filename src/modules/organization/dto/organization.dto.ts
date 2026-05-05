@@ -1,34 +1,46 @@
-import { UserResponseDto } from "../../user/dto/users.dto"
-import { EventDto } from "../../event/dto/event.dto"
-import { MembershipDto } from "../../membership/dto/membership.dto"
+import { Expose, Type } from 'class-transformer';
 import { OrgRequestStatus } from 'src/shared/enum/enum';
 
-export class OrganizationDto {
-  id: string;
-
-  name: string;
-
-  bio: string | null;
-
-  slug: string;
-
-  isActive: boolean;
-
-  status: OrgRequestStatus;
-
-  createdAt: Date;
-
-  owner: OwnerResponseDto | null;
-
-  totalMembers: number;
-
-  totalEvents?: number;
-}
 export class OwnerResponseDto {
-
+  @Expose()
   id: string;
 
+  @Expose()
   fullName: string;
 
+  @Expose()
   email: string;
+}
+
+export class OrganizationDto {
+  @Expose()
+  id: string;
+
+  @Expose()
+  name: string;
+
+  @Expose()
+  bio: string | null;
+
+  @Expose()
+  slug: string;
+
+  @Expose()
+  isActive: boolean;
+
+  @Expose()
+  status: OrgRequestStatus;
+
+  @Expose()
+  createdAt: Date;
+
+  @Expose()
+  @Type(() => OwnerResponseDto)
+  owner: OwnerResponseDto | null;
+
+  @Expose()
+  totalMembers: number;
+
+  @Expose()
+  totalEvents?: number;
 }

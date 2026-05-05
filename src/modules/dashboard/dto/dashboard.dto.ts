@@ -2,6 +2,7 @@ export class CardItemDto {
   key: string;
   title: string;
   value: number;
+  trend?: number;
 }
 
 export class LineChartItemDto {

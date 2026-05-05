@@ -1,36 +1,52 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
-import { SortDto } from 'src/common/dtos/sort.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { EventDto } from './dto/event.dto';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { ApiOperation } from '@nestjs/swagger';
-
+import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
+import { UpdateStatusDto } from './dto/update-status.dto';
+import { CancelledDto } from './dto/cancelled-event.dto';
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) { }
 
   @Post()
-  create(@Body() createEventDto: CreateEventDto) {
+  async create(@Body() createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
     return this.eventService.create(createEventDto);
   }
 
   @Get()
+  @ApiPaginationQuery({
+    sortableColumns: ['title', 'capacity'],
+    searchableColumns: ['title', 'organization.name'],
+    filterableColumns: {
+      status: [FilterOperator.EQ],
+      capacity: [FilterOperator.GTE, FilterOperator.LTE],
+    },
+  })
   @ApiOperation({ operationId: 'getEvents' })
-  async findAll(@Param() query: SortDto): Promise<ApiResponse<PaginationResult<EventDto>>> {
+  async findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<EventDto>>> {
     return await this.eventService.findAll(query);
   }
 
+  @Patch('/cancelled')
+  @ApiOperation({ operationId: 'cancelled' })
+  deleteSort(@Body() cancelledDto: CancelledDto): Promise<ApiResponse<CancelledDto>> {
+    return this.eventService.cancelled(cancelledDto);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.eventService.findOne(+id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<EventDto>> {
+    return this.eventService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto) {
-    return this.eventService.update(+id, updateEventDto);
+  update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
+    return this.eventService.update(id, updateEventDto);
   }
 
   @Delete(':id')

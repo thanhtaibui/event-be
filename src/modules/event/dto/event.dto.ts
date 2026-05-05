@@ -1,30 +1,48 @@
 import { OrgRoleDto } from "src/modules/organization/dto/org-role.dto";
 // import { TicketTypeDto } from "src/modules/ticket-type/dto/ticket-type.dto";
 import { EventStatus } from "src/shared/enum/enum";
+import { Expose, Type } from 'class-transformer';
 
 export class EventDto {
+  @Expose()
+  id: string;
 
+  @Expose()
   title: string;
 
+  @Expose()
   eventPoster: string;
 
-  // description: string
+  @Expose()
+  description: string
 
-  // place: string;
+  @Expose()
+  place: string;
 
+  @Expose()
+  @Type(() => Date)
   startDateTime: Date;
 
+  @Expose()
+  @Type(() => Date)
   endDateTime: Date;
 
+  @Expose()
+  @Type(() => Date)
   registrationEndDate: Date;
 
+  @Expose()
   capacity: number;
 
+  @Expose()
   soldTickets?: number;
-  // isPublic: boolean;
 
+  // isPublic: boolean;
+  @Expose()
   status: EventStatus;
 
+  @Expose()
+  @Type(() => OrgRoleDto)
   organization: OrgRoleDto;
 
   // ticketTypes: TicketTypeDto[];

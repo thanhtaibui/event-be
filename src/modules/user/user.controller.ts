@@ -15,9 +15,6 @@ import { UpdateUserDto, UpdateUserResDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/users.dto';
 import { ApiResponse } from '../../common/utils/ApiResponse';
 import { ApiProperty, ApiOperation } from '@nestjs/swagger';
-import { PaginationRequestDto } from '../../common/dtos/pagination_req.dto';
-import { SortDto } from '../../common/dtos/sort.dto';
-
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../../common/guards/jwt.guard';
@@ -26,6 +23,8 @@ import { DeleteSort } from './dto/delete-sort-user.dto';
 import { UpdateActiveDto } from './dto/updateActiveDto.dto';
 import { MembershipService } from '../membership/membership.service';
 import { MembershipDto } from '../membership/dto/membership.dto';
+import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 // @ApiBearerAuth('access-token')
 // @UseGuards(JwtGuard)
 @Controller('users')
@@ -40,8 +39,13 @@ export class UserController {
   }
 
   @Get()
+  @ApiPaginationQuery({
+    sortableColumns: ['email', 'fullName'],
+    searchableColumns: ['email', 'fullName'],
+    filterableColumns: { isActive: [FilterOperator.EQ] },
+  })
   @ApiOperation({ operationId: 'getUsers' })
-  findAll(@Query() query: SortDto): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
+  findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
     return this.userService.findAll(query);
   }
 
