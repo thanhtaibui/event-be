@@ -10,6 +10,7 @@ import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelledDto } from './dto/cancelled-event.dto';
+import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) { }
@@ -43,7 +44,14 @@ export class EventController {
   async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<EventDto>> {
     return this.eventService.findOne(id);
   }
-
+  @Get(':id/ticket-types')
+  async getTicketTypes(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<TicketTypeDto[]>> {
+    return this.eventService.getTicketTypes(id);
+  }
+  @Get(':id/invites')
+  async getInvites(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<EventDto>> {
+    return this.eventService.getInvites(id);
+  }
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
     return this.eventService.update(id, updateEventDto);

@@ -13,5 +13,4 @@ export class Invite extends BaseEntity {
   @ManyToOne(() => Event, (event) => event.invites)
   event: Event;
 
-
 }

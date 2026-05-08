@@ -13,10 +13,17 @@ import { plainToInstance } from 'class-transformer';
 import { CancelledDto } from './dto/cancelled-event.dto';
 import { response } from 'express';
 import { Organization } from '../organization/entities/organization.entity';
+import { TicketType } from '../ticket-type/entities/ticket-type.entity';
+import { Invite } from '../invite/entities/invite.entity';
+import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 
 @Injectable()
 export class EventService {
-  constructor(@InjectRepository(Event) private readonly eventRepo: Repository<Event>, @InjectRepository(Organization) private organizationRepo: Repository<Organization>) { }
+  constructor(@InjectRepository(Event) private readonly eventRepo: Repository<Event>,
+    @InjectRepository(Organization) private organizationRepo: Repository<Organization>,
+    // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
+    // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
+  ) { }
 
   async create(createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
     const status = EventStatus.DRAFT;
@@ -119,6 +126,27 @@ export class EventService {
 
     return Response(200, "Get Event By Id Successfully", plainToInstance(EventDto, event, { excludeExtraneousValues: true }));
   }
+
+  async getTicketTypes(id: string): Promise<ApiResponse<TicketTypeDto[]>> {
+    const event = await this.eventRepo.findOne({
+      where: { id },
+      relations: ['ticketTypes'],
+    });
+    if (!event) throw new BadRequestException('Event not found');
+    return Response(200, "Get Ticket Types of Event Successfully", plainToInstance(TicketTypeDto, event.ticketTypes, { excludeExtraneousValues: true }));
+  }
+
+  async getInvites(id: string): Promise<ApiResponse<EventDto>> {
+    const event = await this.eventRepo.findOne({
+      where: { id },
+      relations: ['invites'],
+    });
+    if (!event) throw new BadRequestException('Event not found');
+    return Response(200, "Get Invites of Event Successfully", plainToInstance(EventDto, event, { excludeExtraneousValues: true }));
+  }
+
+
+
 
   async update(id: string, updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
