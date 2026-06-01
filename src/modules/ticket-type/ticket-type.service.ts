@@ -19,6 +19,8 @@ export class TicketTypeService {
     @InjectRepository(Event)
     private eventRepo: Repository<Event>,
   ) { }
+
+
   async create(createTicketTypeDto: CreateTicketTypeDto): Promise<ApiResponse<TicketTypeDto>> {
     const event = await this.eventRepo.findOne({ where: { id: createTicketTypeDto.eventId }, relations: ['ticketTypes'] });
     if (!event) throw new BadRequestException('Event not found');

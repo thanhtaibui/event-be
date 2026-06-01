@@ -8,9 +8,9 @@ import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { ApiOperation } from '@nestjs/swagger';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
-import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelledDto } from './dto/cancelled-event.dto';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
+import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) { }
@@ -49,7 +49,7 @@ export class EventController {
     return this.eventService.getTicketTypes(id);
   }
   @Get(':id/invites')
-  async getInvites(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<EventDto>> {
+  async getInvites(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<InviteDashboardDto>> {
     return this.eventService.getInvites(id);
   }
   @Patch(':id')

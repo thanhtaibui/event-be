@@ -7,10 +7,19 @@ export class Invite extends BaseEntity {
   @Column()
   emailInvite: string;
 
-  @Column({ default: 'PENDING' })
+  @Column({
+    type: 'enum',
+    enum: InvitationStatus,
+    default: 'pending'
+  })
   status: InvitationStatus;
 
   @ManyToOne(() => Event, (event) => event.invites)
   event: Event;
 
+  @Column({ unique: true })
+  token: string;
+
+  @Column({ nullable: true })
+  message?: string;
 }

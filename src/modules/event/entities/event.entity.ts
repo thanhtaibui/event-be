@@ -4,6 +4,7 @@ import { EventStatus } from "../../../shared/enum/enum";
 import { Organization } from '../../organization/entities/organization.entity';
 import { TicketType } from '../../ticket-type/entities/ticket-type.entity';
 import { Invite } from '../../invite/entities/invite.entity';
+import { Item } from "src/modules/item/entities/item.entity";
 @Entity('events')
 export class Event extends BaseEntity {
 
@@ -51,4 +52,7 @@ export class Event extends BaseEntity {
 
   @OneToMany(() => Invite, (invite) => invite.event)
   invites: Invite[];
+
+  @OneToMany(() => Item, (item) => item.event)
+  items: Item[];
 }

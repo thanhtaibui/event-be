@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Event } from './entities/event.entity';
 import { In, Repository } from 'typeorm';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
-import { EventStatus } from 'src/shared/enum/enum';
+import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
 import { plainToInstance } from 'class-transformer';
 import { CancelledDto } from './dto/cancelled-event.dto';
@@ -16,6 +16,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Invite } from '../invite/entities/invite.entity';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
+import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 
 @Injectable()
 export class EventService {
@@ -123,8 +124,20 @@ export class EventService {
       relations: ['organization'],
     });
     if (!event) throw new BadRequestException('Event not found');
-
-    return Response(200, "Get Event By Id Successfully", plainToInstance(EventDto, event, { excludeExtraneousValues: true }));
+    const soldResult = await this.eventRepo
+      .createQueryBuilder('event')
+      .leftJoin('event.ticketTypes', 'ticketType')
+      .leftJoin('ticketType.tickets', 'ticket')
+      .select('event.id', 'eventId')
+      .addSelect('COUNT(ticket.id)', 'soldTickets')
+      .where('event.id = :id', { id })
+      .groupBy('event.id')
+      .getRawOne();
+    const eventWithSold = {
+      ...event,
+      soldTickets: parseInt(soldResult?.soldTickets || '0', 10),
+    };
+    return Response(200, "Get Event By Id Successfully", plainToInstance(EventDto, eventWithSold, { excludeExtraneousValues: true }));
   }
 
   async getTicketTypes(id: string): Promise<ApiResponse<TicketTypeDto[]>> {
@@ -136,13 +149,18 @@ export class EventService {
     return Response(200, "Get Ticket Types of Event Successfully", plainToInstance(TicketTypeDto, event.ticketTypes, { excludeExtraneousValues: true }));
   }
 
-  async getInvites(id: string): Promise<ApiResponse<EventDto>> {
+  async getInvites(id: string): Promise<ApiResponse<InviteDashboardDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
       relations: ['invites'],
     });
     if (!event) throw new BadRequestException('Event not found');
-    return Response(200, "Get Invites of Event Successfully", plainToInstance(EventDto, event, { excludeExtraneousValues: true }));
+    const inviteDashboard = new InviteDashboardDto();
+    inviteDashboard.totalInvites = event.invites.length;
+    inviteDashboard.acceptedInvites = event.invites.filter(invite => invite.status === InvitationStatus.ACCEPTED).length;
+    inviteDashboard.pendingInvites = event.invites.filter(invite => invite.status === InvitationStatus.PENDING).length;
+    inviteDashboard.rejectedInvites = event.invites.filter(invite => invite.status === InvitationStatus.REJECTED).length;
+    return Response(200, "Get Invites of Event Successfully", inviteDashboard);
   }
 
 

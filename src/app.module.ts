@@ -21,6 +21,10 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { PermissionModule } from './modules/permission/permission.module';
 import { OrgVerificationModule } from './modules/org-verification/org-verification.module';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
+import { MailerModule } from '@nestjs-modules/mailer';
+import { UploadModule } from './modules/upload/upload.module';
+import { UploadService } from './modules/upload/upload.service';
+import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
@@ -28,6 +32,20 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
       isGlobal: true,
       // load: [dbConfig, jwtConfig, refreshJwtConfig],
       envFilePath: '.env',
+    }),
+    MailerModule.forRoot({
+      transport: {
+        service: 'gmail',
+
+        auth: {
+          user: process.env.MAIL_USER,
+          pass: process.env.MAIL_PASS,
+        },
+      },
+
+      defaults: {
+        from: process.env.MAIL_USER,
+      },
     }),
     UserModule,
     RoleModule,
@@ -46,8 +64,10 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
     PermissionModule,
     OrgVerificationModule,
     CloudinaryModule,
+    UploadModule,
+    TicketTypeItemModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, UploadService],
 })
 export class AppModule { }
