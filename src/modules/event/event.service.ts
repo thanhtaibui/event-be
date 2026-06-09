@@ -11,12 +11,12 @@ import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
 import { plainToInstance } from 'class-transformer';
 import { CancelledDto } from './dto/cancelled-event.dto';
-import { response } from 'express';
 import { Organization } from '../organization/entities/organization.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Invite } from '../invite/entities/invite.entity';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class EventService {
@@ -24,6 +24,7 @@ export class EventService {
     @InjectRepository(Organization) private organizationRepo: Repository<Organization>,
     // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
+    private readonly uploadService: UploadService
   ) { }
 
   async create(createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
@@ -164,13 +165,12 @@ export class EventService {
   }
 
 
-
-
   async update(id: string, updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
       relations: ['organization'],
     });
+    const oldPosterUrl = event?.eventPoster;
 
     if (!event) throw new BadRequestException('Event not found');
 
@@ -182,8 +182,14 @@ export class EventService {
     }
 
     Object.assign(event, updateEventDto);
-    const saved = await this.eventRepo.save(event);
 
+    const saved = await this.eventRepo.save(event);
+    if (
+      oldPosterUrl &&
+      saved.eventPoster !== oldPosterUrl
+    ) {
+      await this.uploadService.deleteFile(oldPosterUrl);
+    }
     return Response(200, 'Update Event Successfully', plainToInstance(EventDto, saved, {
       excludeExtraneousValues: true,
     }));

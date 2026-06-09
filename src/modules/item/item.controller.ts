@@ -29,8 +29,8 @@ export class ItemController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateItemDto: UpdateItemDto) {
-    return this.itemService.update(+id, updateItemDto);
+  async update(@Param('id') id: string, @Body() updateItemDto: UpdateItemDto): Promise<ApiResponse<UpdateItemDto>> {
+    return this.itemService.update(id, updateItemDto);
   }
 
   @Delete(':id')

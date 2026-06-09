@@ -58,8 +58,18 @@ export class ItemService {
     return Response(200, "Get Items of Event Successfully", result);
   }
 
-  update(id: number, updateItemDto: UpdateItemDto) {
-    return `This action updates a #${id} item`;
+  async update(id: string, updateItemDto: UpdateItemDto): Promise<ApiResponse<UpdateItemDto>> {
+
+    const item = await this.itemRope.findOne({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new BadRequestException("Item not found");
+    }
+    const updatedItem = this.itemRope.merge(item, updateItemDto);
+    await this.itemRope.save(updatedItem);
+    return Response(200, "Update item successfully", updateItemDto);
   }
 
   async remove(id: string) {
