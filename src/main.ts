@@ -7,11 +7,21 @@ import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const port = Number(process.env.PORT ?? 3000);
+  const serverUrl =
+    process.env.API_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `http://localhost:${port}`;
+  const corsOrigins = (process.env.CORS_ORIGIN || process.env.FE_URL || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   const config = new DocumentBuilder()
     .setTitle('Events API')
     .setDescription('The Events API description')
     .setVersion('1.0')
-    .addServer('http://localhost:3000')
+    .addServer(serverUrl)
     .addBasicAuth(
       {
         type: 'http',
@@ -42,11 +52,11 @@ async function bootstrap() {
 
   //bật CORS để cho phép các client từ các domain khác nhau có thể truy cập API của bạn. Điều này rất hữu ích khi bạn có frontend và backend được triển khai trên các domain khác nhau hoặc khi bạn muốn cho phép truy cập từ các công cụ như Postman hoặc Swagger UI.
   app.enableCors({
-    origin: 'http://localhost:5173', // Thay đổi thành domain của frontend nếu cần
+    origin: corsOrigins.length > 0 ? corsOrigins : 'http://localhost:5173',
     credentials: true,
   });
   app.useGlobalFilters(new AllExceptionFilter());
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(port);
 }
 bootstrap();

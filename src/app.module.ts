@@ -27,12 +27,12 @@ import { UploadService } from './modules/upload/upload.service';
 import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
 @Module({
   imports: [
-    TypeOrmModule.forRoot(databaseConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       // load: [dbConfig, jwtConfig, refreshJwtConfig],
       envFilePath: '.env',
     }),
+    TypeOrmModule.forRoot(databaseConfig()),
     MailerModule.forRoot({
       transport: {
         service: 'gmail',
