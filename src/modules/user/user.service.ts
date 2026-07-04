@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto, UpdateUserResDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/users.dto';
@@ -15,12 +20,17 @@ import { DeleteSort } from './dto/delete-sort-user.dto';
 import { FilterOperator, paginate, type PaginateQuery } from 'nestjs-paginate';
 @Injectable()
 export class UserService {
-  constructor(@InjectRepository(User) private userRepo: Repository<User>,
+  constructor(
+    @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(Organization) private orgRepo: Repository<Organization>,
-    @InjectRepository(Membership) private membershipRepo: Repository<Membership>) { }
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
+  ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<ApiResponse<UserResponseDto>> {
+  async create(
+    createUserDto: CreateUserDto,
+  ): Promise<ApiResponse<UserResponseDto>> {
     // check business logic
     const existUser = await this.userRepo.findOne({
       where: { email: createUserDto.email },
@@ -34,7 +44,7 @@ export class UserService {
     const savedUser = await this.userRepo.save(user);
     const guestOrg = await this.orgRepo.findOne({
       where: { slug: 'guest-organization' },
-      relations: ['roles']
+      relations: ['roles'],
     });
     let guestRole: Role | null = null;
     if (guestOrg) {
@@ -43,9 +53,9 @@ export class UserService {
         where: {
           role_name: 'GUEST',
           organization: {
-            id: guestOrg.id
-          }
-        }
+            id: guestOrg.id,
+          },
+        },
       });
 
       if (guestRole) {
@@ -53,7 +63,7 @@ export class UserService {
           user: savedUser,
           organization: guestOrg,
           role: guestRole,
-          isActive: true
+          isActive: true,
         });
         await this.membershipRepo.save(membership);
       }
@@ -69,63 +79,63 @@ export class UserService {
       phoneNumber: savedUser.phoneNumber,
       isActive: savedUser.isActive,
       role: guestRole
-        ? [{
-          role_name: guestRole.role_name,
-          colorKey: guestRole.colorKey,
-          orgName: guestOrg?.name || '',
-        }]
+        ? [
+            {
+              role_name: guestRole.role_name,
+              colorKey: guestRole.colorKey,
+              orgName: guestOrg?.name || '',
+            },
+          ]
         : [],
     };
 
     return Response(201, 'User created successfully', result);
   }
 
-  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
+  async findAll(
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
     const result = await paginate(query, this.userRepo, {
       sortableColumns: ['email', 'fullName'],
       searchableColumns: ['email', 'fullName'],
       filterableColumns: { isActive: [FilterOperator.EQ] },
       where: { isDelete: false },
-      relations: ['memberships', 'memberships.role', 'memberships.role.organization']
-
-    })
+      relations: [
+        'memberships',
+        'memberships.role',
+        'memberships.role.organization',
+      ],
+    });
 
     // Logger.warn("sortedData", sortedData)
-    const items = result.data.map(user => ({
+    const items = result.data.map((user) => ({
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       phoneNumber: user.phoneNumber,
       isActive: user.isActive,
       role: (user.memberships || [])
-        .filter(m => m.role !== null && m.role !== undefined)
+        .filter((m) => m.role !== null && m.role !== undefined)
         .map((m) => ({
           role_name: m.role.role_name,
           orgName: m.role.organization?.name || 'No Organization',
-          colorKey: m.role.colorKey || 'gray'
-        }))
+          colorKey: m.role.colorKey || 'gray',
+        })),
     }));
 
-    return Response(
-      200,
-      'Get all users successfully',
-      {
-        items: items,
-        page: result.meta.currentPage ?? 1,
-        limit: result.meta.itemsPerPage,
-        total: result.meta.totalItems ?? 0,
-        totalPages: result.meta.totalPages ?? 1,
-      }
-
-    );
-
+    return Response(200, 'Get all users successfully', {
+      items: items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 1,
+    });
   }
 
   async update(
     userId: string,
-    updateUserDto: UpdateUserDto
+    updateUserDto: UpdateUserDto,
   ): Promise<ApiResponse<UpdateUserResDto>> {
-
     // 1. Check user tồn tại
     const user = await this.userRepo.findOne({
       where: { id: userId },
@@ -137,7 +147,6 @@ export class UserService {
 
     // 2. Handle memberships (REPLACE)
     if (updateUserDto.memberships) {
-
       // 2.1 Validate role thuộc org (tránh N+1 có thể tối ưu sau)
       for (const m of updateUserDto.memberships) {
         const roleExists = await this.roleRepo.findOne({
@@ -149,7 +158,7 @@ export class UserService {
 
         if (!roleExists) {
           throw new BadRequestException(
-            `Role ID ${m.roleId} does not belong to Organization ID ${m.orgId}`
+            `Role ID ${m.roleId} does not belong to Organization ID ${m.orgId}`,
           );
         }
       }
@@ -161,14 +170,14 @@ export class UserService {
       const newMemberships = updateUserDto.memberships.map((m) =>
         this.membershipRepo.create({
           user: {
-            id: userId
+            id: userId,
           },
           organization: {
-            id: m.orgId
+            id: m.orgId,
           },
           role: { id: m.roleId },
           isActive: true,
-        })
+        }),
       );
 
       // 2.4 Save lại
@@ -199,25 +208,31 @@ export class UserService {
         orgId: m.organization?.id,
         roleId: m.role?.id,
       })),
-    }
+    };
 
     return Response(200, 'User updated successfully', result);
   }
-  async updateActive(id: string, isActive: boolean): Promise<ApiResponse<UserResponseDto>> {
+  async updateActive(
+    id: string,
+    isActive: boolean,
+  ): Promise<ApiResponse<UserResponseDto>> {
     const user = await this.findOne(id);
     if (!user) {
       throw new NotFoundException('User not exist');
     }
-    user.isActive = isActive
+    user.isActive = isActive;
     const savedUser = await this.userRepo.save(user);
     return Response(200, 'User updated Active successfully', savedUser);
   }
 
-
   async GetUserById(id: string): Promise<ApiResponse<UserResponseDto>> {
     const user = await this.userRepo.findOne({
       where: { id },
-      relations: ['memberships', 'memberships.role', 'memberships.role.organization']
+      relations: [
+        'memberships',
+        'memberships.role',
+        'memberships.role.organization',
+      ],
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -230,12 +245,12 @@ export class UserService {
       phoneNumber: user.phoneNumber,
       isActive: user.isActive,
       role: (user.memberships || [])
-        .filter(m => m.role !== null && m.role !== undefined)
+        .filter((m) => m.role !== null && m.role !== undefined)
         .map((m) => ({
           role_name: m.role.role_name,
           orgName: m.role.organization?.name || 'No Organization',
-          colorKey: m.role.colorKey || 'gray'
-        }))
+          colorKey: m.role.colorKey || 'gray',
+        })),
     });
   }
   async findOne(id: string) {
@@ -247,19 +262,17 @@ export class UserService {
     return user;
   }
 
-
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
-    const users = await this.userRepo.find({ where: { id: In(deleteSort.ids) } })
+    const users = await this.userRepo.find({
+      where: { id: In(deleteSort.ids) },
+    });
     if (users.length !== deleteSort.ids.length) {
-      throw new BadRequestException("Invalid ids");
+      throw new BadRequestException('Invalid ids');
     }
-    const names = users.map(i => i.fullName);
-    await this.userRepo.update(
-      { id: In(deleteSort.ids) },
-      { isDelete: true },
-    );
+    const names = users.map((i) => i.fullName);
+    await this.userRepo.update({ id: In(deleteSort.ids) }, { isDelete: true });
 
-    return Response(200, `Delete:${names.join(", ")} successfully`, deleteSort)
+    return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);
   }
 
   // async remove(id: string): Promise<ApiResponse<UserResponseDto>> {

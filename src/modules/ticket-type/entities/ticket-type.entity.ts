@@ -1,6 +1,6 @@
 import { BaseEntity } from '../../../shared/base/base.entity';
 import { Order } from '../../order/entities/order.entity';
-import { Column, Entity, ManyToOne, OneToMany } from "typeorm"
+import { Column, Entity, ManyToOne, OneToMany } from 'typeorm';
 import { Event } from '../../event/entities/event.entity';
 import { Ticket } from '../../ticket/entities/ticket.entity';
 import { TicketTypeItem } from 'src/modules/ticket-type-item/entities/ticket-type-item.entity';
@@ -26,5 +26,4 @@ export class TicketType extends BaseEntity {
 
   @OneToMany(() => TicketTypeItem, (tti) => tti.ticketType)
   ticketItems: TicketTypeItem[];
-
 }

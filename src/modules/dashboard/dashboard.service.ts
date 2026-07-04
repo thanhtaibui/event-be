@@ -9,13 +9,15 @@ import { Event } from '../event/entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 
-
 @Injectable()
 export class DashboardService {
-  constructor(@InjectRepository(User) private userRepo: Repository<User>,
+  constructor(
+    @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Event) private eventRepo: Repository<Event>,
-    @InjectRepository(Organization) private OrganizationRepo: Repository<Organization>,
-    @InjectRepository(Ticket) private ticketRepo: Repository<Ticket>) { }
+    @InjectRepository(Organization)
+    private OrganizationRepo: Repository<Organization>,
+    @InjectRepository(Ticket) private ticketRepo: Repository<Ticket>,
+  ) {}
 
   async GetAllDashboard(): Promise<ApiResponse<DashboardDto>> {
     const now = new Date();
@@ -27,7 +29,14 @@ export class DashboardService {
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
     // Ngày cuối của tháng trước — VD: 2024-04-30 23:59:59
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const endOfLastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      0,
+      23,
+      59,
+      59,
+    );
 
     const OrgThisMonth = await this.OrganizationRepo.count({
       where: {
@@ -43,9 +52,12 @@ export class DashboardService {
       },
     });
 
-    const trendOrg = OrgLastMonth === 0 ? 0 :
-      Number(((OrgThisMonth - OrgLastMonth) / OrgLastMonth * 100).toFixed(1));
-
+    const trendOrg =
+      OrgLastMonth === 0
+        ? 0
+        : Number(
+            (((OrgThisMonth - OrgLastMonth) / OrgLastMonth) * 100).toFixed(1),
+          );
 
     const totalOrganization = await this.OrganizationRepo.count({
       where: { isActive: true },
@@ -56,8 +68,15 @@ export class DashboardService {
     const EventLastMonth = await this.eventRepo.count({
       where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
     });
-    const trendEvent = EventLastMonth === 0 ? 0 :
-      Number(((EventThisMonth - EventLastMonth) / EventLastMonth * 100).toFixed(1));
+    const trendEvent =
+      EventLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((EventThisMonth - EventLastMonth) / EventLastMonth) *
+              100
+            ).toFixed(1),
+          );
 
     // Ticket trend
     const TicketThisMonth = await this.ticketRepo.count({
@@ -67,8 +86,15 @@ export class DashboardService {
       where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
     });
 
-    const trendTicket = TicketLastMonth === 0 ? 0 :
-      Number(((TicketThisMonth - TicketLastMonth) / TicketLastMonth * 100).toFixed(1));
+    const trendTicket =
+      TicketLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((TicketThisMonth - TicketLastMonth) / TicketLastMonth) *
+              100
+            ).toFixed(1),
+          );
     const totalTickets = await this.ticketRepo.count();
     // Revenue trend (tính theo giá vé * số vé bán)
     const revenueThisMonth = await this.ticketRepo
@@ -82,13 +108,20 @@ export class DashboardService {
       .createQueryBuilder('ticket')
       .leftJoin('ticket.ticketType', 'ticketType')
       .select('SUM(ticketType.price)', 'total')
-      .where('ticket.createdAt BETWEEN :start AND :end', { start: startOfLastMonth, end: endOfLastMonth })
+      .where('ticket.createdAt BETWEEN :start AND :end', {
+        start: startOfLastMonth,
+        end: endOfLastMonth,
+      })
       .getRawOne();
 
     const thisRevenue = Number(revenueThisMonth?.total ?? 0);
     const lastRevenue = Number(revenueLastMonth?.total ?? 0);
-    const trendRevenue = lastRevenue === 0 ? 0 :
-      Number(((thisRevenue - lastRevenue) / lastRevenue * 100).toFixed(1));
+    const trendRevenue =
+      lastRevenue === 0
+        ? 0
+        : Number(
+            (((thisRevenue - lastRevenue) / lastRevenue) * 100).toFixed(1),
+          );
 
     const totalRevenue = await this.ticketRepo
       .createQueryBuilder('ticket')
@@ -105,10 +138,30 @@ export class DashboardService {
     ]);
     const dashboardData: DashboardDto = {
       cards: [
-        { key: 'organizations', title: 'Organizations', value: totalOrganization, trend: trendOrg },
-        { key: 'events', title: 'Events', value: totalEvents, trend: trendEvent },
-        { key: 'revenue', title: 'Revenue', value: Number(totalRevenue?.total ?? 0), trend: trendRevenue },
-        { key: 'tickets', title: 'Tickets', value: totalTickets, trend: trendTicket },
+        {
+          key: 'organizations',
+          title: 'Organizations',
+          value: totalOrganization,
+          trend: trendOrg,
+        },
+        {
+          key: 'events',
+          title: 'Events',
+          value: totalEvents,
+          trend: trendEvent,
+        },
+        {
+          key: 'revenue',
+          title: 'Revenue',
+          value: Number(totalRevenue?.total ?? 0),
+          trend: trendRevenue,
+        },
+        {
+          key: 'tickets',
+          title: 'Tickets',
+          value: totalTickets,
+          trend: trendTicket,
+        },
       ],
       lineChart: [],
       pieChart: [
@@ -117,12 +170,12 @@ export class DashboardService {
         { label: 'Ended', value: ended },
         { label: 'Cancelled', value: cancelled },
       ],
-    }
+    };
     return {
       statusCode: 200,
       message: 'Get dashboard successfully',
       data: dashboardData,
-    }
+    };
   }
   async GetDashboardById(idUser: string): Promise<ApiResponse<DashboardDto>> {
     const totalUser = await this.userRepo.count({
@@ -149,11 +202,11 @@ export class DashboardService {
         { label: 'Ended', value: ended },
         { label: 'Cancelled', value: cancelled },
       ],
-    }
+    };
     return {
       statusCode: 200,
       message: 'Get dashboard by id successfully',
       data: dashboardData,
-    }
+    };
   }
 }

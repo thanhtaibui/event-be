@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
@@ -20,11 +25,13 @@ import { plainToInstance } from 'class-transformer';
 
 @Injectable()
 export class OrganizationService {
-  constructor(@InjectRepository(Organization) private organizationRepo: Repository<Organization>,
+  constructor(
+    @InjectRepository(Organization)
+    private organizationRepo: Repository<Organization>,
     private readonly cloudinaryService: CloudinaryService,
     @InjectRepository(Membership) private memberRepo: Repository<Membership>,
-    @InjectRepository(User) private userRepo: Repository<User>) { }
-
+    @InjectRepository(User) private userRepo: Repository<User>,
+  ) {}
 
   async create(
     createOrganizationDto: CreateOrganizationDto,
@@ -35,11 +42,17 @@ export class OrganizationService {
       where: { slug: createOrganizationDto.slug },
     });
     if (existingOrg) {
-      throw new BadRequestException('Slug already exists. Please choose another one.');
+      throw new BadRequestException(
+        'Slug already exists. Please choose another one.',
+      );
     }
-    const user = await this.userRepo.findOne({ where: { id: createOrganizationDto.ownerId } });
+    const user = await this.userRepo.findOne({
+      where: { id: createOrganizationDto.ownerId },
+    });
     if (!user) {
-      throw new BadRequestException(`User with ID ${createOrganizationDto.ownerId} not found`);
+      throw new BadRequestException(
+        `User with ID ${createOrganizationDto.ownerId} not found`,
+      );
     }
     let logoUrl;
     let logoPublicId;
@@ -47,7 +60,10 @@ export class OrganizationService {
     // 2. Nếu có file, tiến hành upload lên Cloudinary
     if (file) {
       try {
-        const uploadResult = await this.cloudinaryService.uploadFile(file, 'organizations/avatars');
+        const uploadResult = await this.cloudinaryService.uploadFile(
+          file,
+          'organizations/avatars',
+        );
         logoUrl = uploadResult.data?.secure_url;
         logoPublicId = uploadResult.data?.public_id;
       } catch (error) {
@@ -86,15 +102,17 @@ export class OrganizationService {
       phone: saveOrg.phone,
       website: saveOrg.website,
       address: saveOrg.address,
-    }
+    };
     try {
-      return Response(201, "Create Organization Successfully", result);
+      return Response(201, 'Create Organization Successfully', result);
     } catch (error) {
       // Nếu lưu DB thất bại mà đã lỡ upload ảnh, nên xóa ảnh trên Cloudinary để dọn rác
       if (logoPublicId) {
         await this.cloudinaryService.deleteFile(logoUrl);
       }
-      throw new BadRequestException('Could not create organization. Please try again.');
+      throw new BadRequestException(
+        'Could not create organization. Please try again.',
+      );
     }
   }
 
@@ -103,45 +121,43 @@ export class OrganizationService {
     const result = orgs.map((org) => ({
       id: org.id,
       name: org.name,
-    }))
-    return Response(200, 'Get Switch Orgs Successfully', result)
+    }));
+    return Response(200, 'Get Switch Orgs Successfully', result);
   }
 
-  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
+  async findAll(
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
     const result = await paginate(query, this.organizationRepo, {
       searchableColumns: ['name', 'email', 'owner.fullName'],
       sortableColumns: ['name', 'email', 'owner.fullName'],
       filterableColumns: {
         isActive: [FilterOperator.EQ],
-        status: [FilterOperator.EQ]
+        status: [FilterOperator.EQ],
       },
       relations: ['memberships', 'events', 'owner'],
-      defaultSortBy: [["createdAt", "DESC"]]
-    })
+      defaultSortBy: [['createdAt', 'DESC']],
+    });
 
     const items = plainToInstance(OrganizationDto, result.data, {
       excludeExtraneousValues: true,
     });
 
     // 5. Phân trang sau khi đã xử lý xong data
-    return Response(
-      200,
-      'Get all organizations successfully',
-      {
-        items: items,
-        page: result.meta.currentPage ?? 1,
-        limit: result.meta.itemsPerPage,
-        total: result.meta.totalItems ?? 0,
-        totalPages: result.meta.totalPages ?? 1,
-      }
-    );
+    return Response(200, 'Get all organizations successfully', {
+      items: items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 1,
+    });
   }
 
   async GetMembersByOrgId(orgId: string): Promise<ApiResponse<any>> {
     // 1. Tìm Org và join sâu xuống User và Role
     const org = await this.organizationRepo.findOne({
       where: { id: orgId },
-      relations: ['memberships', 'memberships.user', 'memberships.role']
+      relations: ['memberships', 'memberships.user', 'memberships.role'],
     });
 
     if (!org) {
@@ -150,7 +166,7 @@ export class OrganizationService {
 
     // 2. Map lại dữ liệu để trả về danh sách Member (Phẳng hóa)
     const members = (org.memberships || [])
-      .filter(m => m.user !== null) // Loại bỏ nếu user không tồn tại
+      .filter((m) => m.user !== null) // Loại bỏ nếu user không tồn tại
       .map((m) => ({
         membershipId: m.id,
         userId: m.user.id,
@@ -158,11 +174,13 @@ export class OrganizationService {
         email: m.user.email,
         phoneNumber: m.user.phoneNumber,
         isActive: m.isActive, // Trạng thái của user trong Org này
-        role: m.role ? {
-          id: m.role.id,
-          name: m.role.role_name,
-          color: m.role.colorKey
-        } : null
+        role: m.role
+          ? {
+              id: m.role.id,
+              name: m.role.role_name,
+              color: m.role.colorKey,
+            }
+          : null,
       }));
 
     // 3. Trả về thông tin Org kèm danh sách members đã làm sạch
@@ -171,20 +189,16 @@ export class OrganizationService {
       name: org.name,
       status: org.status,
       totalMembers: members.length,
-      members: members // Đây là mảng đã được phẳng hóa
+      members: members, // Đây là mảng đã được phẳng hóa
     };
 
-    return Response(
-      200,
-      'Get members of organization successfully',
-      result
-    );
+    return Response(200, 'Get members of organization successfully', result);
   }
 
   async GetOrgById(id: string): Promise<ApiResponse<OrganizationResDto>> {
     const org = await this.organizationRepo.findOne({
       where: { id: id },
-      relations: ['owner']
+      relations: ['owner'],
     });
 
     if (!org) {
@@ -204,19 +218,15 @@ export class OrganizationService {
       address: org.address,
       createdAt: org.createdAt,
       bannerUrl: org.bannerUrl,
-      logoUrl: org.logoUrl
+      logoUrl: org.logoUrl,
     };
 
-    return Response(
-      200,
-      'Get Organization By Id Successfully',
-      result
-    );
+    return Response(200, 'Get Organization By Id Successfully', result);
   }
   async GetOrgBySlug(slug: string): Promise<ApiResponse<OrganizationResDto>> {
     const org = await this.organizationRepo.findOne({
       where: { slug: slug.trim() },
-      relations: ['owner']
+      relations: ['owner'],
     });
 
     if (!org) {
@@ -236,14 +246,10 @@ export class OrganizationService {
       address: org.address,
       createdAt: org.createdAt,
       bannerUrl: org.bannerUrl,
-      logoUrl: org.logoUrl
+      logoUrl: org.logoUrl,
     };
 
-    return Response(
-      200,
-      'Get Organization By Id Successfully',
-      result
-    );
+    return Response(200, 'Get Organization By Id Successfully', result);
   }
 
   findOne(id: number) {
@@ -251,14 +257,14 @@ export class OrganizationService {
   }
   async update(
     id: string,
-    updateOrganizationDto: UpdateOrganizationDto
+    updateOrganizationDto: UpdateOrganizationDto,
   ): Promise<ApiResponse<UpdateOrganizationDto>> {
     const org = await this.organizationRepo.findOne({
       where: { id },
-      relations: ['owner']
+      relations: ['owner'],
     });
     if (!org) {
-      throw new BadRequestException(`Organization with ID ${id} not found`)
+      throw new BadRequestException(`Organization with ID ${id} not found`);
     }
     const { ownerId, ...otherData } = updateOrganizationDto;
     Object.assign(org, otherData);
@@ -275,16 +281,22 @@ export class OrganizationService {
     };
   }
 
-  async updateActive(id: string, isActive: boolean): Promise<ApiResponse<OrganizationResDto>> {
+  async updateActive(
+    id: string,
+    isActive: boolean,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     const org = await this.organizationRepo.findOne({ where: { id } });
     if (!org) {
       throw new NotFoundException('Organization not exist');
     }
-    org.isActive = isActive
+    org.isActive = isActive;
     const savedUser = await this.organizationRepo.save(org);
     return Response(200, 'Organization updated Active successfully', savedUser);
   }
-  async updateBanner(id: string, updateBannerDto: UpdateBannerDto): Promise<ApiResponse<UpdateBannerDto>> {
+  async updateBanner(
+    id: string,
+    updateBannerDto: UpdateBannerDto,
+  ): Promise<ApiResponse<UpdateBannerDto>> {
     const org = await this.organizationRepo.findOne({ where: { id } });
     if (!org) {
       throw new NotFoundException('Organization not exist');
@@ -292,24 +304,29 @@ export class OrganizationService {
     if (org.bannerUrl) {
       await this.cloudinaryService.deleteFile(org.bannerUrl);
     }
-    org.bannerUrl = updateBannerDto.bannerUrl
+    org.bannerUrl = updateBannerDto.bannerUrl;
     const savedUser = await this.organizationRepo.save(org);
-    return Response(200, 'Organization updated Active successfully', { id: savedUser.id, bannerUrl: savedUser.bannerUrl });
+    return Response(200, 'Organization updated Active successfully', {
+      id: savedUser.id,
+      bannerUrl: savedUser.bannerUrl,
+    });
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
-    Logger.warn('check1', deleteSort)
-    const org = await this.organizationRepo.find({ where: { id: In(deleteSort.ids) } })
+    Logger.warn('check1', deleteSort);
+    const org = await this.organizationRepo.find({
+      where: { id: In(deleteSort.ids) },
+    });
     if (org.length !== deleteSort.ids.length) {
-      throw new BadRequestException("Invalid ids");
+      throw new BadRequestException('Invalid ids');
     }
-    const names = org.map(i => i.name);
+    const names = org.map((i) => i.name);
     await this.organizationRepo.update(
       { id: In(deleteSort.ids) },
       { status: OrgRequestStatus.ARCHIVED },
     );
 
-    return Response(200, `Delete:${names.join(", ")} successfully`, deleteSort)
+    return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);
   }
   // remove(id: number) {
   //   return `This action removes a #${id} organization`;

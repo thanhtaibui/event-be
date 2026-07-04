@@ -20,11 +20,13 @@ export class AllExceptionFilter implements ExceptionFilter {
       status = HttpStatus.CONFLICT;
       const detail = exception.detail;
       if (detail?.includes('role_code')) {
-        message = 'This Role Code already exists. Please choose a different one.';
+        message =
+          'This Role Code already exists. Please choose a different one.';
       } else if (detail?.includes('role_name')) {
         message = 'This Role Name is already taken.';
       } else {
-        message = 'Duplicate data detected. Please check your input and try again.';
+        message =
+          'Duplicate data detected. Please check your input and try again.';
       }
     }
     // 2. Xử lý lỗi HttpException (Validation, NotFound, Unauthorized...)

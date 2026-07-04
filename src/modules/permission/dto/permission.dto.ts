@@ -1,6 +1,4 @@
-
 export class PermissionDto {
-
   permission_code: string;
 
   permission_name: string;
@@ -10,11 +8,9 @@ export class PermissionDto {
   isAll?: boolean;
 }
 export class PermissionTreeDto {
-
   id: string;
 
   permission_name: string;
 
   children?: PermissionTreeDto[];
-
 }

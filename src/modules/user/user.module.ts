@@ -13,4 +13,4 @@ import { MembershipService } from '../membership/membership.service';
   controllers: [UserController],
   providers: [UserService, MembershipService],
 })
-export class UserModule { }
+export class UserModule {}

@@ -1,7 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { MembershipService } from './membership.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
-import { UpdateMembershipDto } from './dto/update-membership.dto';
+import {
+  UpdateMembershipRoleDto,
+  UpdateMembershipStatusDto,
+  UpdateMembershipDto,
+} from './dto/update-membership.dto';
 
 @Controller('membership')
 export class MembershipController {
@@ -17,14 +30,38 @@ export class MembershipController {
     return this.membershipService.findAll();
   }
 
+  @Get('organization/:orgId')
+  findByOrganization(@Param('orgId', ParseUUIDPipe) orgId: string) {
+    return this.membershipService.findByOrganization(orgId);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.membershipService.findOne(+id);
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.membershipService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateMembershipDto: UpdateMembershipDto) {
-    return this.membershipService.update(+id, updateMembershipDto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateMembershipDto: UpdateMembershipDto,
+  ) {
+    return this.membershipService.update(id, updateMembershipDto);
+  }
+
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateMembershipStatusDto: UpdateMembershipStatusDto,
+  ) {
+    return this.membershipService.updateStatus(id, updateMembershipStatusDto);
+  }
+
+  @Patch(':id/role')
+  updateRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateMembershipRoleDto: UpdateMembershipRoleDto,
+  ) {
+    return this.membershipService.updateRole(id, updateMembershipRoleDto);
   }
 
   @Delete(':id')

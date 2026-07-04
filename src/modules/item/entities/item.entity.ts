@@ -5,7 +5,6 @@ import { TicketTypeItem } from 'src/modules/ticket-type-item/entities/ticket-typ
 
 @Entity('items')
 export class Item extends BaseEntity {
-
   @Column()
   name: string;
 

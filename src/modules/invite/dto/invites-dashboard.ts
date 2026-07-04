@@ -1,5 +1,4 @@
 export class InviteDashboardDto {
-
   totalInvites: number;
 
   acceptedInvites: number;

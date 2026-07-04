@@ -10,4 +10,4 @@ import { Organization } from '../organization/entities/organization.entity';
   controllers: [ReportController],
   providers: [ReportService],
 })
-export class ReportModule { }
+export class ReportModule {}

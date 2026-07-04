@@ -11,4 +11,4 @@ import { Organization } from '../organization/entities/organization.entity';
   controllers: [RoleController],
   providers: [RoleService],
 })
-export class RoleModule { }
+export class RoleModule {}

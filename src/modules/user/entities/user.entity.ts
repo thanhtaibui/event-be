@@ -5,11 +5,10 @@ import { Order } from '../../order/entities/order.entity';
 import { Membership } from '../../membership/entities/membership.entity';
 import { Report } from '../../report/entities/report.entity';
 import { Feedback } from '../../feedback/entities/feedback.entity';
-import { RoleUser } from '../../../shared/enum/enum'
+import { RoleUser } from '../../../shared/enum/enum';
 
 @Entity('users')
 export class User extends BaseEntity {
-
   @Column({ unique: true })
   email: string;
 

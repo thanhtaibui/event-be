@@ -1,5 +1,5 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsOptional, IsUUID } from "class-validator";
+import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateMembershipDto {
   // @IsOptional()
@@ -9,12 +9,11 @@ export class CreateMembershipDto {
 
   @IsNotEmpty({ message: 'Role ID is required.' })
   @IsUUID('all', { message: 'Invalid  UUID format.' })
-  @ApiProperty({ example: "roleId", required: false })
+  @ApiProperty({ example: 'roleId', required: false })
   roleId: string;
 
   @IsNotEmpty({ message: 'Organization ID is required.' })
   @IsUUID('all', { message: 'Invalid  UUID format.' })
-  @ApiProperty({ example: "OrgId", required: true })
+  @ApiProperty({ example: 'OrgId', required: true })
   orgId: string;
-
 }

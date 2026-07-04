@@ -1,5 +1,14 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse'; // Bạn check lại đúng đường dẫn tới file ApiResponse của bạn nhé
 import { v4 as uuidv4 } from 'uuid';
 
@@ -9,15 +18,14 @@ export class UploadService {
   private bucketName: string;
 
   constructor() {
-
     this.s3Client = new S3Client({
       region: process.env.AWS_REGION || '',
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
       },
     });
-    this.bucketName = process.env.AWS_S3_BUCKET_NAME || "";
+    this.bucketName = process.env.AWS_S3_BUCKET_NAME || '';
   }
 
   async uploadFile(
@@ -40,37 +48,47 @@ export class UploadService {
 
       const secureUrl = `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'ap-southeast-1'}.amazonaws.com/${uniqueFileName}`;
 
-      return Response(200, "File uploaded successfully to AWS S3", {
+      return Response(200, 'File uploaded successfully to AWS S3', {
         secure_url: secureUrl,
-        public_id: uniqueFileName
+        public_id: uniqueFileName,
       });
     } catch (error) {
       console.error('AWS S3 Upload Error:', error);
       throw new InternalServerErrorException(
-        Response(500, 'Failed to upload file to AWS S3 storage', null)
+        Response(500, 'Failed to upload file to AWS S3 storage', null),
       );
     }
   }
 
   async deleteFile(fileUrl: string): Promise<ApiResponse<null>> {
     if (!fileUrl) {
-      throw new BadRequestException(Response(400, 'File URL is required', null));
+      throw new BadRequestException(
+        Response(400, 'File URL is required', null),
+      );
     }
     try {
       const s3Key = this.extractS3Key(fileUrl);
-      const command = new DeleteObjectCommand({ Bucket: this.bucketName, Key: s3Key });
+      const command = new DeleteObjectCommand({
+        Bucket: this.bucketName,
+        Key: s3Key,
+      });
       await this.s3Client.send(command);
       return Response(200, 'File deleted successfully from AWS S3', null);
     } catch (error) {
       console.error('AWS S3 Delete Error:', error);
-      throw new InternalServerErrorException(Response(500, 'Failed to delete file', null));
+      throw new InternalServerErrorException(
+        Response(500, 'Failed to delete file', null),
+      );
     }
   }
 
   private extractS3Key(fileUrl: string): string {
-    if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) return fileUrl;
+    if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://'))
+      return fileUrl;
     const urlParts = fileUrl.split('.amazonaws.com/');
     if (urlParts.length > 1) return urlParts[1];
-    throw new BadRequestException(Response(400, 'Invalid AWS S3 URL format', null));
+    throw new BadRequestException(
+      Response(400, 'Invalid AWS S3 URL format', null),
+    );
   }
 }

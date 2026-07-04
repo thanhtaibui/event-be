@@ -20,19 +20,21 @@ import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class EventService {
-  constructor(@InjectRepository(Event) private readonly eventRepo: Repository<Event>,
-    @InjectRepository(Organization) private organizationRepo: Repository<Organization>,
+  constructor(
+    @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
+    @InjectRepository(Organization)
+    private organizationRepo: Repository<Organization>,
     // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
-    private readonly uploadService: UploadService
-  ) { }
+    private readonly uploadService: UploadService,
+  ) {}
 
   async create(createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
     const status = EventStatus.DRAFT;
     const event = this.eventRepo.create({
       ...createEventDto,
       status,
-      organization: { id: createEventDto.organizationId }
+      organization: { id: createEventDto.organizationId },
     });
     const saveEvent = await this.eventRepo.save(event);
     const item: EventDto = {
@@ -46,12 +48,14 @@ export class EventService {
       status: saveEvent.status,
       organization: saveEvent.organization,
       description: saveEvent.description,
-      place: saveEvent.place
-    }
-    return Response(201, "Create Event Successfully", item);
+      place: saveEvent.place,
+    };
+    return Response(201, 'Create Event Successfully', item);
   }
 
-  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<EventDto>>> {
+  async findAll(
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     const result = await paginate(query, this.eventRepo, {
       sortableColumns: ['title', 'capacity'],
       searchableColumns: ['title', 'organization.name'],
@@ -64,11 +68,10 @@ export class EventService {
     });
 
     // soldTickets phải query riêng vì là virtual field
-    const eventIds = result.data.map(e => e.id);
+    const eventIds = result.data.map((e) => e.id);
     const soldMapById: Record<string, number> = {};
 
     if (eventIds.length > 0) {
-
       const soldMap = await this.eventRepo
         .createQueryBuilder('event')
         .leftJoin('event.ticketTypes', 'ticketType')
@@ -79,15 +82,19 @@ export class EventService {
         .groupBy('event.id')
         .getRawMany();
 
-      soldMap.forEach(r => {
+      soldMap.forEach((r) => {
         soldMapById[r.eventId] = Number(r.soldTickets);
       });
     }
 
-    const items = plainToInstance(EventDto, result.data.map(e => ({
-      ...e,
-      soldTickets: soldMapById[e.id] ?? 0,
-    })), { excludeExtraneousValues: true });
+    const items = plainToInstance(
+      EventDto,
+      result.data.map((e) => ({
+        ...e,
+        soldTickets: soldMapById[e.id] ?? 0,
+      })),
+      { excludeExtraneousValues: true },
+    );
 
     return Response(200, 'Get All Events Successfully', {
       items,
@@ -99,16 +106,19 @@ export class EventService {
   }
 
   async cancelled(cancelled: CancelledDto): Promise<ApiResponse<CancelledDto>> {
-    const events = await this.eventRepo.find({ where: { id: In(cancelled.ids) } })
+    const events = await this.eventRepo.find({
+      where: { id: In(cancelled.ids) },
+    });
     if (events.length !== cancelled.ids.length) {
-      throw new BadRequestException("Invalid ids");
+      throw new BadRequestException('Invalid ids');
     }
-    const invalidEvents = events.filter(e =>
-      e.status === EventStatus.ENDED || e.status === EventStatus.CANCELLED
+    const invalidEvents = events.filter(
+      (e) =>
+        e.status === EventStatus.ENDED || e.status === EventStatus.CANCELLED,
     );
     if (invalidEvents.length > 0) {
       throw new BadRequestException(
-        `Cannot cancel events that are already ${EventStatus.ENDED} or ${EventStatus.CANCELLED}`
+        `Cannot cancel events that are already ${EventStatus.ENDED} or ${EventStatus.CANCELLED}`,
       );
     }
     await this.eventRepo.update(
@@ -116,7 +126,7 @@ export class EventService {
       { status: EventStatus.CANCELLED },
     );
 
-    return Response(200, `Cancelled successfully`, cancelled)
+    return Response(200, `Cancelled successfully`, cancelled);
   }
 
   async findOne(id: string): Promise<ApiResponse<EventDto>> {
@@ -138,7 +148,13 @@ export class EventService {
       ...event,
       soldTickets: parseInt(soldResult?.soldTickets || '0', 10),
     };
-    return Response(200, "Get Event By Id Successfully", plainToInstance(EventDto, eventWithSold, { excludeExtraneousValues: true }));
+    return Response(
+      200,
+      'Get Event By Id Successfully',
+      plainToInstance(EventDto, eventWithSold, {
+        excludeExtraneousValues: true,
+      }),
+    );
   }
 
   async getTicketTypes(id: string): Promise<ApiResponse<TicketTypeDto[]>> {
@@ -147,7 +163,13 @@ export class EventService {
       relations: ['ticketTypes'],
     });
     if (!event) throw new BadRequestException('Event not found');
-    return Response(200, "Get Ticket Types of Event Successfully", plainToInstance(TicketTypeDto, event.ticketTypes, { excludeExtraneousValues: true }));
+    return Response(
+      200,
+      'Get Ticket Types of Event Successfully',
+      plainToInstance(TicketTypeDto, event.ticketTypes, {
+        excludeExtraneousValues: true,
+      }),
+    );
   }
 
   async getInvites(id: string): Promise<ApiResponse<InviteDashboardDto>> {
@@ -158,14 +180,22 @@ export class EventService {
     if (!event) throw new BadRequestException('Event not found');
     const inviteDashboard = new InviteDashboardDto();
     inviteDashboard.totalInvites = event.invites.length;
-    inviteDashboard.acceptedInvites = event.invites.filter(invite => invite.status === InvitationStatus.ACCEPTED).length;
-    inviteDashboard.pendingInvites = event.invites.filter(invite => invite.status === InvitationStatus.PENDING).length;
-    inviteDashboard.rejectedInvites = event.invites.filter(invite => invite.status === InvitationStatus.REJECTED).length;
-    return Response(200, "Get Invites of Event Successfully", inviteDashboard);
+    inviteDashboard.acceptedInvites = event.invites.filter(
+      (invite) => invite.status === InvitationStatus.ACCEPTED,
+    ).length;
+    inviteDashboard.pendingInvites = event.invites.filter(
+      (invite) => invite.status === InvitationStatus.PENDING,
+    ).length;
+    inviteDashboard.rejectedInvites = event.invites.filter(
+      (invite) => invite.status === InvitationStatus.REJECTED,
+    ).length;
+    return Response(200, 'Get Invites of Event Successfully', inviteDashboard);
   }
 
-
-  async update(id: string, updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
+  async update(
+    id: string,
+    updateEventDto: UpdateEventDto,
+  ): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
       relations: ['organization'],
@@ -175,8 +205,13 @@ export class EventService {
     if (!event) throw new BadRequestException('Event not found');
 
     // nếu đổi organization
-    if (updateEventDto.organizationId && updateEventDto.organizationId !== event.organization?.id) {
-      const org = await this.organizationRepo.findOne({ where: { id: updateEventDto.organizationId } });
+    if (
+      updateEventDto.organizationId &&
+      updateEventDto.organizationId !== event.organization?.id
+    ) {
+      const org = await this.organizationRepo.findOne({
+        where: { id: updateEventDto.organizationId },
+      });
       if (!org) throw new BadRequestException('Organization not found');
       event.organization = org;
     }
@@ -184,15 +219,16 @@ export class EventService {
     Object.assign(event, updateEventDto);
 
     const saved = await this.eventRepo.save(event);
-    if (
-      oldPosterUrl &&
-      saved.eventPoster !== oldPosterUrl
-    ) {
+    if (oldPosterUrl && saved.eventPoster !== oldPosterUrl) {
       await this.uploadService.deleteFile(oldPosterUrl);
     }
-    return Response(200, 'Update Event Successfully', plainToInstance(EventDto, saved, {
-      excludeExtraneousValues: true,
-    }));
+    return Response(
+      200,
+      'Update Event Successfully',
+      plainToInstance(EventDto, saved, {
+        excludeExtraneousValues: true,
+      }),
+    );
   }
 
   remove(id: number) {

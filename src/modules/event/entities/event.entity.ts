@@ -1,10 +1,11 @@
-import { Column, ManyToOne, OneToMany, Entity } from "typeorm";
+import { Column, ManyToOne, OneToMany, Entity } from 'typeorm';
 import { BaseEntity } from '../../../shared/base/base.entity';
-import { EventStatus } from "../../../shared/enum/enum";
+import { EventStatus } from '../../../shared/enum/enum';
 import { Organization } from '../../organization/entities/organization.entity';
 import { TicketType } from '../../ticket-type/entities/ticket-type.entity';
 import { Invite } from '../../invite/entities/invite.entity';
-import { Item } from "src/modules/item/entities/item.entity";
+import { Item } from 'src/modules/item/entities/item.entity';
+import { Category } from 'src/modules/category/entities/category.entity';
 @Entity('events')
 export class Event extends BaseEntity {
 
@@ -46,6 +47,10 @@ export class Event extends BaseEntity {
 
   @ManyToOne(() => Organization, (org) => org.events)
   organization: Organization;
+
+  @ManyToOne(() => Category, (category) => category.events)
+  category: Category;
+
 
   @OneToMany(() => TicketType, (type) => type.event)
   ticketTypes: TicketType[];

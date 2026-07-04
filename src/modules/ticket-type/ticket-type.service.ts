@@ -1,4 +1,8 @@
-import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+} from '@nestjs/common';
 import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
 import { UpdateTicketTypeDto } from './dto/update-ticket-type.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,15 +22,23 @@ export class TicketTypeService {
     private ticketTypeRepo: Repository<TicketType>,
     @InjectRepository(Event)
     private eventRepo: Repository<Event>,
-  ) { }
+  ) {}
 
-
-  async create(createTicketTypeDto: CreateTicketTypeDto): Promise<ApiResponse<TicketTypeDto>> {
-    const event = await this.eventRepo.findOne({ where: { id: createTicketTypeDto.eventId }, relations: ['ticketTypes'] });
+  async create(
+    createTicketTypeDto: CreateTicketTypeDto,
+  ): Promise<ApiResponse<TicketTypeDto>> {
+    const event = await this.eventRepo.findOne({
+      where: { id: createTicketTypeDto.eventId },
+      relations: ['ticketTypes'],
+    });
     if (!event) throw new BadRequestException('Event not found');
-    const totalTickets = event.ticketTypes.reduce((sum, type) => sum + type.quantity, 0) + createTicketTypeDto.quantity;
+    const totalTickets =
+      event.ticketTypes.reduce((sum, type) => sum + type.quantity, 0) +
+      createTicketTypeDto.quantity;
     if (totalTickets > event.capacity) {
-      throw new BadRequestException(`Total ticket quantity (${totalTickets}) exceeds event capacity (${event.capacity})`);
+      throw new BadRequestException(
+        `Total ticket quantity (${totalTickets}) exceeds event capacity (${event.capacity})`,
+      );
     }
     const ticketType = this.ticketTypeRepo.create({
       ...createTicketTypeDto,
@@ -35,9 +47,13 @@ export class TicketTypeService {
 
     const saved = await this.ticketTypeRepo.save(ticketType);
 
-    return Response(200, 'Create Ticket Type Successfully', plainToInstance(TicketTypeDto, saved, {
-      excludeExtraneousValues: true,
-    }));
+    return Response(
+      200,
+      'Create Ticket Type Successfully',
+      plainToInstance(TicketTypeDto, saved, {
+        excludeExtraneousValues: true,
+      }),
+    );
   }
 
   findAll() {
@@ -45,27 +61,46 @@ export class TicketTypeService {
   }
 
   async findOne(id: string): Promise<ApiResponse<TicketTypeDto>> {
-    const ticketType = await this.ticketTypeRepo.findOne({ where: { id }, relations: ['event'] });
+    const ticketType = await this.ticketTypeRepo.findOne({
+      where: { id },
+      relations: ['event'],
+    });
     if (!ticketType) throw new BadRequestException('Ticket Type not found');
-    return Response(200, 'Ticket Type found', plainToInstance(TicketTypeDto, ticketType, {
-      excludeExtraneousValues: true,
-      enableImplicitConversion: true,
-    }));
+    return Response(
+      200,
+      'Ticket Type found',
+      plainToInstance(TicketTypeDto, ticketType, {
+        excludeExtraneousValues: true,
+        enableImplicitConversion: true,
+      }),
+    );
   }
 
-  async update(id: string, updateTicketTypeDto: UpdateTicketTypeDto): Promise<ApiResponse<TicketTypeDto>> {
-    const ticketType = await this.ticketTypeRepo.findOne({ where: { id }, relations: ['event'] });
+  async update(
+    id: string,
+    updateTicketTypeDto: UpdateTicketTypeDto,
+  ): Promise<ApiResponse<TicketTypeDto>> {
+    const ticketType = await this.ticketTypeRepo.findOne({
+      where: { id },
+      relations: ['event'],
+    });
     if (!ticketType) throw new BadRequestException('Ticket Type not found');
     if (LOCKED_STATUSES.includes(ticketType.event.status)) {
-      throw new BadRequestException(`Cannot update ticket type when status is ${ticketType.event.status}`);
+      throw new BadRequestException(
+        `Cannot update ticket type when status is ${ticketType.event.status}`,
+      );
     }
 
     Object.assign(ticketType, updateTicketTypeDto);
     const updated = await this.ticketTypeRepo.save(ticketType);
 
-    return Response(200, 'Ticket Type updated', plainToInstance(TicketTypeDto, updated, {
-      excludeExtraneousValues: true,
-    }));
+    return Response(
+      200,
+      'Ticket Type updated',
+      plainToInstance(TicketTypeDto, updated, {
+        excludeExtraneousValues: true,
+      }),
+    );
   }
 
   remove(id: number) {

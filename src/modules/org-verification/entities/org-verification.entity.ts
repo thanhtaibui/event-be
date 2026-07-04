@@ -2,8 +2,7 @@ import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../../shared/base/base.entity';
 import { Organization } from '../../organization/entities/organization.entity';
 import { User } from '../../user/entities/user.entity';
-import { VerificationStatus } from "../../../shared/enum/enum"
-
+import { VerificationStatus } from '../../../shared/enum/enum';
 
 @Entity('org_verifications')
 export class OrgVerification extends BaseEntity {
@@ -32,8 +31,8 @@ export class OrgVerification extends BaseEntity {
   })
   status: VerificationStatus;
 
-  @Column({ nullable: true })
-  adminNote: string; // Lý do từ chối hoặc ghi chú từ Admin
+  @Column({ type: 'varchar', nullable: true })
+  adminNote: string | null; // Lý do từ chối hoặc ghi chú từ Admin
 
   @Column({ nullable: true })
   verifiedAt: Date;

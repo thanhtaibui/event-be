@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
@@ -17,10 +22,13 @@ import { paginate, PaginateQuery } from 'nestjs-paginate';
 
 @Injectable()
 export class RoleService {
-
-  constructor(@InjectRepository(Role) private roleRepo: Repository<Role>, @InjectRepository(Organization) private orgRepo: Repository<Organization>, @InjectRepository(Permission) private permissionRepo: Repository<Permission>) { }
+  constructor(
+    @InjectRepository(Role) private roleRepo: Repository<Role>,
+    @InjectRepository(Organization) private orgRepo: Repository<Organization>,
+    @InjectRepository(Permission)
+    private permissionRepo: Repository<Permission>,
+  ) {}
   async create(createRoleDto: CreateRoleDto): Promise<ApiResponse<RoleDto>> {
-
     // const existRoleName = await this.roleRepo.findOne({
     //   where: { role_name: createRoleDto.role_name.toUpperCase() },
     // });
@@ -48,7 +56,7 @@ export class RoleService {
       role_code: createRoleDto.role_code.toUpperCase(),
       permissions,
       organization: { id: createRoleDto.orgId },
-      colorKey: createRoleDto.colorKey
+      colorKey: createRoleDto.colorKey,
     });
 
     const savedRole = await this.roleRepo.save(role);
@@ -60,12 +68,13 @@ export class RoleService {
       colorKey: savedRole.colorKey,
       org: {
         id: savedRole.organization.id,
-        name: savedRole.organization.name
+        name: savedRole.organization.name,
       },
-      permissions: savedRole.permissions?.map((p) => ({
-        permission_name: p.permission_name,
-        permission_code: p.permission_code,
-      })) || [],
+      permissions:
+        savedRole.permissions?.map((p) => ({
+          permission_name: p.permission_name,
+          permission_code: p.permission_code,
+        })) || [],
     };
 
     return {
@@ -75,13 +84,15 @@ export class RoleService {
     };
   }
 
-  async findAll(query: PaginateQuery): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  async findAll(
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
     const result = await paginate(query, this.roleRepo, {
       sortableColumns: ['role_name', 'role_code', 'organization.name'],
       searchableColumns: ['role_name', 'role_code', 'organization.name'],
       where: { deletedAt: IsNull() },
-      relations: ['permissions', 'permissions.parent', 'organization']
-    })
+      relations: ['permissions', 'permissions.parent', 'organization'],
+    });
 
     const itemPromises = result.data.map(async (r) => {
       return {
@@ -91,13 +102,13 @@ export class RoleService {
         colorKey: r.colorKey,
         org: {
           id: r.organization.id,
-          name: r.organization.name
+          name: r.organization.name,
         },
         permissions: await this.buildPermissionTree(r.permissions),
       };
     });
     const items = await Promise.all(itemPromises);
-    return Response(200, "get all roles successfully", {
+    return Response(200, 'get all roles successfully', {
       items: items,
       page: result.meta.currentPage ?? 1,
       limit: result.meta.itemsPerPage,
@@ -107,39 +118,48 @@ export class RoleService {
   }
 
   async findAllByOrg(orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {
-    const exOrg = await this.orgRepo.findOne({ where: { id: orgId } })
+    const exOrg = await this.orgRepo.findOne({ where: { id: orgId } });
     if (!exOrg) {
       throw new BadRequestException('orgId not found');
     }
     const roleOrg = await this.roleRepo.find({
       where: {
         organization: {
-          id: orgId
+          id: orgId,
         },
-        deletedAt: IsNull()
+        deletedAt: IsNull(),
       },
-      relations: ['organization']
-    })
+      relations: ['organization'],
+    });
     const result: RoleOrgDto[] = roleOrg.map((r) => ({
       id: r.id,
       role_name: r.role_name,
     }));
 
-    return Response(200, "Get All Role Of Org Successfully", result)
+    return Response(200, 'Get All Role Of Org Successfully', result);
   }
   async buildPermissionTree(permissions: any[]) {
     // Logger.warn("permissions", permissions)
     const map = new Map<string, any>();
     permissions.forEach((p) => {
       if (!p.parent?.id) {
-        map.set(p.id, { id: p.id, permission_name: p.permission_name, permission_code: p.permission_code, children: [] });
+        map.set(p.id, {
+          id: p.id,
+          permission_name: p.permission_name,
+          permission_code: p.permission_code,
+          children: [],
+        });
       }
     });
 
     const tree: any[] = [];
     permissions.forEach((p) => {
       if (p.parent?.id) {
-        map.get(p.parent?.id)?.children.push({ id: p.id, permission_name: p.permission_name, permission_code: p.permission_code });
+        map.get(p.parent?.id)?.children.push({
+          id: p.id,
+          permission_name: p.permission_name,
+          permission_code: p.permission_code,
+        });
       } else {
         tree.push(map.get(p.id));
       }
@@ -148,71 +168,76 @@ export class RoleService {
     for (const tr of tree) {
       const totalChildren = await this.permissionRepo.count({
         where: {
-          parent: { id: tr.id }
-        }
+          parent: { id: tr.id },
+        },
       });
       tr.isAll = tr.children.length === totalChildren;
     }
-    return tree.filter(tr => tr.children && tr.children.length > 0);
+    return tree.filter((tr) => tr.children && tr.children.length > 0);
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
-    const roles = await this.roleRepo.find({ where: { id: In(deleteSort.ids) } })
+    const roles = await this.roleRepo.find({
+      where: { id: In(deleteSort.ids) },
+    });
     if (roles.length !== deleteSort.ids.length) {
-      throw new BadRequestException("Invalid ids");
+      throw new BadRequestException('Invalid ids');
     }
-    const names = roles.map(i => i.role_name);
+    const names = roles.map((i) => i.role_name);
     await this.roleRepo.update(
       { id: In(deleteSort.ids) },
       { deletedAt: new Date() },
     );
 
-    return Response(200, `Delete:${names.join(", ")} successfully`, deleteSort)
+    return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);
   }
   async GetRoleById(id: string): Promise<ApiResponse<RoleDto>> {
     const role = await this.roleRepo.findOne({
       where: { id },
-      relations: ['organization', 'permissions', "permissions.parent"]
+      relations: ['organization', 'permissions', 'permissions.parent'],
     });
     if (!role) {
       throw new NotFoundException('Role not found');
     }
 
-    return Response(200, "Get Role By Id Successfully",
-      {
-        id: role.id,
-        role_name: role.role_name,
-        role_code: role.role_code,
-        permissions: await this.buildPermissionTree(role.permissions),
-        colorKey: role.colorKey,
-        org: {
-          id: role.organization.id,
-          name: role.organization.name
-        }
-      }
-    )
+    return Response(200, 'Get Role By Id Successfully', {
+      id: role.id,
+      role_name: role.role_name,
+      role_code: role.role_code,
+      permissions: await this.buildPermissionTree(role.permissions),
+      colorKey: role.colorKey,
+      org: {
+        id: role.organization.id,
+        name: role.organization.name,
+      },
+    });
   }
-
 
   findOne(id: number) {
     return `This action returns a #${id} role`;
   }
 
-  async update(id: string, updateRoleDto: UpdateRoleDto): Promise<ApiResponse<RoleResDto>> {
+  async update(
+    id: string,
+    updateRoleDto: UpdateRoleDto,
+  ): Promise<ApiResponse<RoleResDto>> {
     const { permissionIds, orgId, ...roleData } = updateRoleDto;
     const role = await this.roleRepo.findOne({
       where: { id },
-      relations: ['permissions', 'organization']
+      relations: ['permissions', 'organization'],
     });
-
 
     if (!role) {
       throw new NotFoundException(`Role ${id} not found `);
     }
 
     const [newPermissions, newOrg] = await Promise.all([
-      permissionIds ? this.permissionRepo.findBy({ id: In(permissionIds) }) : Promise.resolve(null),
-      orgId ? this.orgRepo.findOne({ where: { id: orgId } }) : Promise.resolve(null)
+      permissionIds
+        ? this.permissionRepo.findBy({ id: In(permissionIds) })
+        : Promise.resolve(null),
+      orgId
+        ? this.orgRepo.findOne({ where: { id: orgId } })
+        : Promise.resolve(null),
     ]);
     //  Gán dữ liệu mới
     Object.assign(role, roleData);
@@ -228,19 +253,21 @@ export class RoleService {
     const savedRole = await this.roleRepo.save(role);
     const updatedRole = await this.roleRepo.findOne({
       where: { id: savedRole.id },
-      relations: ['permissions', 'organization', 'permissions.parent']
+      relations: ['permissions', 'organization', 'permissions.parent'],
     });
     // 4. Trả về kết quả
-    return Response(200, "Update Role successfully", {
+    return Response(200, 'Update Role successfully', {
       id: updatedRole!.id,
       role_name: updatedRole!.role_name,
       role_code: updatedRole!.role_code,
       colorKey: updatedRole!.colorKey,
-      permissions: await this.buildPermissionTree(updatedRole!.permissions || []),
+      permissions: await this.buildPermissionTree(
+        updatedRole!.permissions || [],
+      ),
       org: {
-        id: updatedRole!.organization!.id,
-        name: updatedRole!.organization!.name
-      }
+        id: updatedRole!.organization.id,
+        name: updatedRole!.organization.name,
+      },
     });
   }
   remove(id: number) {

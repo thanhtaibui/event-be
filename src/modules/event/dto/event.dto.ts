@@ -1,6 +1,6 @@
-import { OrgRoleDto } from "src/modules/organization/dto/org-role.dto";
+import { OrgRoleDto } from 'src/modules/organization/dto/org-role.dto';
 // import { TicketTypeDto } from "src/modules/ticket-type/dto/ticket-type.dto";
-import { EventStatus } from "src/shared/enum/enum";
+import { EventStatus } from 'src/shared/enum/enum';
 import { Expose, Type } from 'class-transformer';
 
 export class EventDto {
@@ -14,7 +14,7 @@ export class EventDto {
   eventPoster: string;
 
   @Expose()
-  description: string
+  description: string;
 
   @Expose()
   place: string;
@@ -46,5 +46,4 @@ export class EventDto {
   organization: OrgRoleDto;
 
   // ticketTypes: TicketTypeDto[];
-
 }

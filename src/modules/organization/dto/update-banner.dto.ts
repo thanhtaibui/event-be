@@ -6,7 +6,7 @@ export class UpdateBannerDto {
   @IsNotEmpty()
   @IsUrl()
   @ApiPropertyOptional({
-    example: 'bannerUrl'
+    example: 'bannerUrl',
   })
   bannerUrl: string;
 }

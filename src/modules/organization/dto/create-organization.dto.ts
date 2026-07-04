@@ -1,12 +1,21 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Matches } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  IsUUID,
+  MaxLength,
+  Matches,
+} from 'class-validator';
 
 export class CreateOrganizationDto {
   @IsNotEmpty()
   @IsString()
   @MaxLength(255)
   @ApiProperty({
-    example: 'Google Vietnam'
+    example: 'Google Vietnam',
   })
   name: string;
 
@@ -14,14 +23,14 @@ export class CreateOrganizationDto {
   @IsString()
   @MaxLength(500)
   @ApiPropertyOptional({
-    example: 'Leading technology company in Southeast Asia'
+    example: 'Leading technology company in Southeast Asia',
   })
   bio?: string;
 
   @IsString()
   @IsOptional()
   @ApiPropertyOptional({
-    example: 'Google Vietnam Company Limited'
+    example: 'Google Vietnam Company Limited',
   })
   legalName?: string;
 
@@ -29,42 +38,42 @@ export class CreateOrganizationDto {
   @IsOptional()
   @ApiPropertyOptional({
     example: 'Technology',
-    // enum: ['Technology', 'Education', 'Healthcare', 'Finance', 'Other'] 
+    // enum: ['Technology', 'Education', 'Healthcare', 'Finance', 'Other']
   })
   industry: string;
 
   @IsString()
   @IsOptional()
   @ApiPropertyOptional({
-    example: '123 District 1, Ho Chi Minh City, Vietnam'
+    example: '123 District 1, Ho Chi Minh City, Vietnam',
   })
   address?: string;
 
   @IsEmail({}, { message: 'Invalid primary email format' })
   @IsOptional()
   @ApiPropertyOptional({
-    example: 'contact@google.com.vn'
+    example: 'contact@google.com.vn',
   })
   email?: string;
 
   @IsString()
   @IsOptional()
   @ApiPropertyOptional({
-    example: '+84901234567'
+    example: '+84901234567',
   })
   phone?: string;
 
   @IsUrl({}, { message: 'Invalid website URL' })
   @IsOptional()
   @ApiPropertyOptional({
-    example: 'https://google.com.vn'
+    example: 'https://google.com.vn',
   })
   website?: string;
 
   @IsNotEmpty()
   @IsUUID()
   @ApiProperty({
-    example: 'uuid'
+    example: 'uuid',
   })
   ownerId: string;
 
@@ -72,7 +81,7 @@ export class CreateOrganizationDto {
   @IsString()
   @Matches(/^[a-z0-9-]+$/, { message: 'Slug must be kebab-case' })
   @ApiProperty({
-    example: 'google-vietnam'
+    example: 'google-vietnam',
   })
   slug: string;
 }

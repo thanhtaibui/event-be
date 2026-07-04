@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import cloudinary from '../../configs/cloudinary.config';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 
@@ -12,17 +16,20 @@ export class CloudinaryService {
       const upload = cloudinary.uploader.upload_stream(
         {
           folder: folderName,
-          resource_type: 'auto' // Automatically detects image, video, or raw file
+          resource_type: 'auto', // Automatically detects image, video, or raw file
         },
         (error, result) => {
           if (error) return reject(error);
-          if (!result) return reject(new Error('Cloudinary upload result is undefined'));
+          if (!result)
+            return reject(new Error('Cloudinary upload result is undefined'));
 
           // Return both URL and public_id (best practice for later deletion)
-          resolve(Response(200, "File upload successfully", {
-            secure_url: result.secure_url,
-            public_id: result.public_id
-          }));
+          resolve(
+            Response(200, 'File upload successfully', {
+              secure_url: result.secure_url,
+              public_id: result.public_id,
+            }),
+          );
         },
       );
       upload.end(file.buffer);
@@ -39,7 +46,7 @@ export class CloudinaryService {
     try {
       const publicId = this.extractPublicId(fileUrl);
 
-      // We use 'auto' or try to detect type, but for deletion, 
+      // We use 'auto' or try to detect type, but for deletion,
       // 'image' is default. If you upload PDFs as 'raw', you might need to handle that.
       const result = await cloudinary.uploader.destroy(publicId);
 

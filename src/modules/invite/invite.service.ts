@@ -11,16 +11,21 @@ import { v4 as uuidv4 } from 'uuid';
 import { MailerService } from '@nestjs-modules/mailer';
 import InviteEmail from 'src/emails/InviteEmail';
 import { render } from 'node_modules/@react-email/render/dist/node/index.mjs';
-import { InviteStatusResDto, UpdateInviteStatusDto } from './dto/update-status.dto';
+import {
+  InviteStatusResDto,
+  UpdateInviteStatusDto,
+} from './dto/update-status.dto';
 import { checkEmailDto, checkEmailResDto } from './dto/chekc-email.dto';
 import { validate } from 'deep-email-validator';
 
 @Injectable()
 export class InviteService {
-  constructor(@InjectRepository(Invite) private readonly inviteRepo: Repository<Invite>,
+  constructor(
+    @InjectRepository(Invite) private readonly inviteRepo: Repository<Invite>,
     @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly mailerService: MailerService,) { }
+    private readonly mailerService: MailerService,
+  ) {}
 
   toVNTime = (date: Date) =>
     date.toLocaleString('vi-VN', {
@@ -32,20 +37,19 @@ export class InviteService {
       minute: '2-digit',
     });
 
-
-  async create(
-    createInviteDto: CreateInviteDto,
-  ): Promise<ApiResponse<
-    {
-      email: string;
-      token: string;
-    }[]
-  >> {
-    const event = await this.eventRepo.findOne({ where: { id: createInviteDto.eventId } });
+  async create(createInviteDto: CreateInviteDto): Promise<
+    ApiResponse<
+      {
+        email: string;
+        token: string;
+      }[]
+    >
+  > {
+    const event = await this.eventRepo.findOne({
+      where: { id: createInviteDto.eventId },
+    });
     if (!event) {
-      throw new BadRequestException(
-        'Event not found',
-      );
+      throw new BadRequestException('Event not found');
     }
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -64,7 +68,7 @@ export class InviteService {
           event: event,
           token,
           status: InvitationStatus.PENDING,
-          message: createInviteDto.message
+          message: createInviteDto.message,
         });
         await queryRunner.manager.save(invite);
         invites.push({ email, token });
@@ -75,7 +79,10 @@ export class InviteService {
         const html = await render(
           InviteEmail({
             eventTitle: event.title,
-            eventDate: this.toVNTime(event.startDateTime) + ' - ' + this.toVNTime(event.endDateTime),
+            eventDate:
+              this.toVNTime(event.startDateTime) +
+              ' - ' +
+              this.toVNTime(event.endDateTime),
             regDeadline: this.toVNTime(event.registrationEndDate),
             eventPlace: event.place,
             acceptUrl: `${process.env.FE_URL}/events/accept?token=${invite.token}`,
@@ -92,7 +99,6 @@ export class InviteService {
 
       await queryRunner.commitTransaction();
       return Response(201, 'Invites created successfully', invites);
-
     } catch (error) {
       // rollback nếu có lỗi
       await queryRunner.rollbackTransaction();
@@ -102,7 +108,9 @@ export class InviteService {
     }
   }
 
-  async checkEmails(dto: checkEmailDto): Promise<ApiResponse<checkEmailResDto[]>> {
+  async checkEmails(
+    dto: checkEmailDto,
+  ): Promise<ApiResponse<checkEmailResDto[]>> {
     const results = await Promise.allSettled(
       dto.emails.map(async (email): Promise<checkEmailResDto> => {
         const result = await validate({
@@ -120,7 +128,7 @@ export class InviteService {
 
         // 2. Check đã invite chưa
         const existing = await this.inviteRepo.findOne({
-          where: { emailInvite: email, event: { id: dto.eventId } }
+          where: { emailInvite: email, event: { id: dto.eventId } },
         });
         if (existing) {
           return { email, status: 'already_invited' };
@@ -137,27 +145,34 @@ export class InviteService {
         // }
 
         return { email, status: 'valid' };
-      })
+      }),
     );
     const mapped: checkEmailResDto[] = results.map((r, i) =>
       r.status === 'fulfilled'
         ? r.value
-        : { email: dto.emails[i], status: 'invalid_format' as const }
+        : { email: dto.emails[i], status: 'invalid_format' as const },
     );
-    return Response(200, "Check Emails Successfully", mapped)
-
+    return Response(200, 'Check Emails Successfully', mapped);
   }
 
-  async updateStatus(token: string, dto: UpdateInviteStatusDto): Promise<ApiResponse<InviteStatusResDto>> {
+  async updateStatus(
+    token: string,
+    dto: UpdateInviteStatusDto,
+  ): Promise<ApiResponse<InviteStatusResDto>> {
     if (!Object.values(InvitationStatus).includes(dto.status)) {
       throw new BadRequestException(`Invalid status: ${dto.status}`);
     }
-    const invite = await this.inviteRepo.findOne({ where: { token }, relations: ['event'] });
+    const invite = await this.inviteRepo.findOne({
+      where: { token },
+      relations: ['event'],
+    });
     if (!invite) {
       throw new BadRequestException('Invite not found');
     }
     if (invite.status !== InvitationStatus.PENDING) {
-      throw new BadRequestException('This invitation is already accepted or rejected.');
+      throw new BadRequestException(
+        'This invitation is already accepted or rejected.',
+      );
     }
     invite.status = dto.status;
     const save = await this.inviteRepo.save(invite);
@@ -165,10 +180,13 @@ export class InviteService {
       status: save.status,
       event: {
         name: save.event.title,
-        date: this.toVNTime(save.event.startDateTime) + "-" + this.toVNTime(save.event.endDateTime),
-        location: save.event.place
-      }
-    }
+        date:
+          this.toVNTime(save.event.startDateTime) +
+          '-' +
+          this.toVNTime(save.event.endDateTime),
+        location: save.event.place,
+      },
+    };
     return Response(200, 'Invite status updated successfully', result);
   }
 
@@ -191,4 +209,3 @@ export class InviteService {
 function uuid() {
   throw new Error('Function not implemented.');
 }
-

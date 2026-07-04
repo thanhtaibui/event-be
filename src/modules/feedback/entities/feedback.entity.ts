@@ -6,7 +6,6 @@ import { BaseEntity } from '../../../shared/base/base.entity';
 @Entity('feedbacks')
 @Unique(['user', 'event'])
 export class Feedback extends BaseEntity {
-
   @ManyToOne(() => User)
   user: User;
 
@@ -18,5 +17,4 @@ export class Feedback extends BaseEntity {
 
   @Column({ nullable: true })
   comment: string;
-
 }

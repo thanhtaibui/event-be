@@ -1,4 +1,4 @@
-import { RoleUserDto } from "src/modules/role/dto/role-user.dto";
+import { RoleUserDto } from 'src/modules/role/dto/role-user.dto';
 import { Expose, Type } from 'class-transformer';
 
 export class UserResponseDto {

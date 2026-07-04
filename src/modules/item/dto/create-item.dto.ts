@@ -6,7 +6,7 @@ export class CreateItemDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ example: "img" })
+  @ApiProperty({ example: 'img' })
   @IsString()
   imageUrl: string;
 

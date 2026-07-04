@@ -10,10 +10,13 @@ import type { Request } from 'express';
 import { Logger } from '@nestjs/common';
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
   @Post('login')
   @ApiOperation({ operationId: 'login' })
-  async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) res: Response): Promise<ApiResponse<any>> {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<any>> {
     const tokens = await this.authService.login(loginDto);
 
     // cookie nằm ở đây
@@ -35,8 +38,8 @@ export class AuthController {
       statusCode: 200,
       message: 'Login successful',
       data: {
-        accessToken: tokens.data.accessToken
-      }
+        accessToken: tokens.data.accessToken,
+      },
     };
   }
   @Post('refresh')
@@ -56,8 +59,8 @@ export class AuthController {
       statusCode: 200,
       message: 'Token refreshed successfully',
       data: {
-        accessToken: tokens.data.accessToken
-      }
+        accessToken: tokens.data.accessToken,
+      },
     };
   }
 }

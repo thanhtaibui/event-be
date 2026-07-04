@@ -8,3 +8,13 @@ export class MembershipDto {
 
   isActive: boolean;
 }
+
+export class OrganizationMembershipDto {
+  createdAt: Date;
+
+  userName: string;
+
+  isActive: boolean;
+
+  role: string | null;
+}

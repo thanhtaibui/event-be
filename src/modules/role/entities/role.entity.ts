@@ -1,11 +1,25 @@
-import { Column, Entity, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn, Unique, DeleteDateColumn, Index } from 'typeorm';
+import {
+  Column,
+  Entity,
+  OneToMany,
+  ManyToMany,
+  JoinTable,
+  ManyToOne,
+  JoinColumn,
+  Unique,
+  DeleteDateColumn,
+  Index,
+} from 'typeorm';
 import { Membership } from '../../membership/entities/membership.entity';
 import { BaseEntity } from '../../../shared/base/base.entity';
 import { Permission } from '../../permission/entities/permission.entity';
 import { Organization } from '../../organization/entities/organization.entity';
 
 @Entity('roles')
-@Index(['role_code', 'organization'], { unique: true, where: '"deletedAt" IS NULL' })
+@Index(['role_code', 'organization'], {
+  unique: true,
+  where: '"deletedAt" IS NULL',
+})
 export class Role extends BaseEntity {
   @Column()
   role_name: string;

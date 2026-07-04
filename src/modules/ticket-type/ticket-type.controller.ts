@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { TicketTypeService } from './ticket-type.service';
 import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
 import { UpdateTicketTypeDto } from './dto/update-ticket-type.dto';
@@ -8,7 +17,7 @@ import { ApiResponse } from 'src/common/utils/ApiResponse';
 
 @Controller('ticket-types')
 export class TicketTypeController {
-  constructor(private readonly ticketTypeService: TicketTypeService) { }
+  constructor(private readonly ticketTypeService: TicketTypeService) {}
 
   @Post()
   @ApiOperation({ operationId: 'createTicketType' })
@@ -22,12 +31,17 @@ export class TicketTypeController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<TicketTypeDto>> {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<TicketTypeDto>> {
     return this.ticketTypeService.findOne(id);
   }
 
   @Patch(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() updateTicketTypeDto: UpdateTicketTypeDto): Promise<ApiResponse<TicketTypeDto>> {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateTicketTypeDto: UpdateTicketTypeDto,
+  ): Promise<ApiResponse<TicketTypeDto>> {
     return this.ticketTypeService.update(id, updateTicketTypeDto);
   }
 

@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -11,10 +20,12 @@ import { ApiPaginationQuery, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 @Controller('roles')
 export class RoleController {
-  constructor(private readonly roleService: RoleService) { }
+  constructor(private readonly roleService: RoleService) {}
 
   @Post()
-  async create(@Body() createRoleDto: CreateRoleDto): Promise<ApiResponse<RoleDto>> {
+  async create(
+    @Body() createRoleDto: CreateRoleDto,
+  ): Promise<ApiResponse<RoleDto>> {
     return this.roleService.create(createRoleDto);
   }
 
@@ -24,7 +35,9 @@ export class RoleController {
     // filterableColumns: { status: [FilterOperator.EQ] },
   })
   @ApiOperation({ operationId: 'GetRoles' })
-  async findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  async findAll(
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
     return this.roleService.findAll(query);
   }
 
@@ -40,7 +53,10 @@ export class RoleController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto): Promise<ApiResponse<RoleResDto>> {
+  update(
+    @Param('id') id: string,
+    @Body() updateRoleDto: UpdateRoleDto,
+  ): Promise<ApiResponse<RoleResDto>> {
     return this.roleService.update(id, updateRoleDto);
   }
 

@@ -1,8 +1,25 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseUUIDPipe, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { OrganizationService } from './organization.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation } from "@nestjs/swagger"
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+} from '@nestjs/swagger';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { Query } from '@nestjs/common';
@@ -22,10 +39,10 @@ import type { PaginateQuery } from 'nestjs-paginate';
 // @UseGuards(JwtGuard)
 @Controller('organizations')
 export class OrganizationController {
-
-  constructor(private readonly organizationService: OrganizationService,
+  constructor(
+    private readonly organizationService: OrganizationService,
     private readonly roleService: RoleService,
-  ) { }
+  ) {}
 
   @Post()
   @UseInterceptors(FileInterceptor('logo'))
@@ -42,10 +59,12 @@ export class OrganizationController {
     sortableColumns: ['name', 'email', 'owner.fullName'],
     filterableColumns: {
       isActive: [FilterOperator.EQ],
-      status: [FilterOperator.EQ]
+      status: [FilterOperator.EQ],
     },
   })
-  async findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
+  async findAll(
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
     return this.organizationService.findAll(query);
   }
 
@@ -60,20 +79,29 @@ export class OrganizationController {
     return this.organizationService.GetMembersByOrgId(id);
   }
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<OrganizationResDto>> {
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     return this.organizationService.GetOrgById(id);
   }
   @Patch(':id/banner')
-  changeBanner(@Param('id') id: string, @Body() updateBannerDto: UpdateBannerDto): Promise<ApiResponse<UpdateBannerDto>> {
+  changeBanner(
+    @Param('id') id: string,
+    @Body() updateBannerDto: UpdateBannerDto,
+  ): Promise<ApiResponse<UpdateBannerDto>> {
     return this.organizationService.updateBanner(id, updateBannerDto);
   }
   @Get('detail/:slug')
-  findOrgBySlug(@Param('slug') slug: string): Promise<ApiResponse<OrganizationResDto>> {
+  findOrgBySlug(
+    @Param('slug') slug: string,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     return this.organizationService.GetOrgBySlug(slug);
   }
   @Get(':orgId/roles')
   @ApiOperation({ operationId: 'getRoleOrg' })
-  async getRolesByOrg(@Param('orgId') orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {
+  async getRolesByOrg(
+    @Param('orgId') orgId: string,
+  ): Promise<ApiResponse<RoleOrgDto[]>> {
     return this.roleService.findAllByOrg(orgId);
   }
   @Patch('/delete')
@@ -82,13 +110,19 @@ export class OrganizationController {
     return this.organizationService.deleteSort(deleteSort);
   }
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateOrganizationDto: UpdateOrganizationDto): Promise<ApiResponse<UpdateOrganizationDto>> {
+  update(
+    @Param('id') id: string,
+    @Body() updateOrganizationDto: UpdateOrganizationDto,
+  ): Promise<ApiResponse<UpdateOrganizationDto>> {
     return this.organizationService.update(id, updateOrganizationDto);
   }
 
   @Patch(':id/active')
   @ApiOperation({ operationId: 'updateActive' })
-  updateActive(@Param('id') id: string, @Body() updateActiveDto: UpdateActiveDto): Promise<ApiResponse<OrganizationResDto>> {
+  updateActive(
+    @Param('id') id: string,
+    @Body() updateActiveDto: UpdateActiveDto,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     return this.organizationService.updateActive(id, updateActiveDto.active);
   }
 

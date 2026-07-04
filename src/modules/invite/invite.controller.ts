@@ -1,27 +1,41 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { UpdateInviteDto } from './dto/update-invite.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { ApiBody, ApiOperation } from '@nestjs/swagger';
 import { InvitationStatus } from 'src/shared/enum/enum';
-import { InviteStatusResDto, UpdateInviteStatusDto } from './dto/update-status.dto';
+import {
+  InviteStatusResDto,
+  UpdateInviteStatusDto,
+} from './dto/update-status.dto';
 import { checkEmailDto, checkEmailResDto } from './dto/chekc-email.dto';
 
 @Controller('invites')
 export class InviteController {
-  constructor(private readonly inviteService: InviteService) { }
+  constructor(private readonly inviteService: InviteService) {}
 
   @Post()
   @ApiOperation({ operationId: 'createInvite' })
-  create(@Body() createInviteDto: CreateInviteDto): Promise<ApiResponse<
-    {
-      email: string;
-      token: string;
-    }[]
-  >> {
+  create(@Body() createInviteDto: CreateInviteDto): Promise<
+    ApiResponse<
+      {
+        email: string;
+        token: string;
+      }[]
+    >
+  > {
     return this.inviteService.create(createInviteDto);
-  } s
+  }
+  s;
 
   @Get()
   findAll() {
@@ -39,14 +53,19 @@ export class InviteController {
   }
 
   @Patch(':token/status')
-  @ApiOperation({ operationId: "updateStatus" })
-  updateStatus(@Param('token') token: string, @Body() updateStatusDto: UpdateInviteStatusDto): Promise<ApiResponse<InviteStatusResDto>> {
+  @ApiOperation({ operationId: 'updateStatus' })
+  updateStatus(
+    @Param('token') token: string,
+    @Body() updateStatusDto: UpdateInviteStatusDto,
+  ): Promise<ApiResponse<InviteStatusResDto>> {
     return this.inviteService.updateStatus(token, updateStatusDto);
   }
 
   @Post('check-email')
-  @ApiOperation({ operationId: "checkEmail" })
-  async sendInvitations(@Body() dto: checkEmailDto): Promise<ApiResponse<checkEmailResDto[]>> {
+  @ApiOperation({ operationId: 'checkEmail' })
+  async sendInvitations(
+    @Body() dto: checkEmailDto,
+  ): Promise<ApiResponse<checkEmailResDto[]>> {
     return this.inviteService.checkEmails(dto);
   }
 

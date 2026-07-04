@@ -1,15 +1,15 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsNumber, IsString, Min } from "class-validator";
+import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsNumber, IsString, Min } from 'class-validator';
 
 export class CreateTicketTypeDto {
   @IsString()
   @IsNotEmpty()
-  @ApiProperty({ example: "Standard Ticket" })
+  @ApiProperty({ example: 'Standard Ticket' })
   name: string;
 
   @IsNumber()
   @Min(0)
-  @ApiProperty({ example: 50.00 })
+  @ApiProperty({ example: 50.0 })
   price: number;
 
   @IsNumber()
@@ -19,6 +19,6 @@ export class CreateTicketTypeDto {
 
   @IsString()
   @IsNotEmpty()
-  @ApiProperty({ example: "uuid" })
+  @ApiProperty({ example: 'uuid' })
   eventId: string;
 }

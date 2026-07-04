@@ -1,4 +1,4 @@
-import { OwnerResponseDto } from "./organization.dto";
+import { OwnerResponseDto } from './organization.dto';
 
 export class OrganizationResDto {
   id: string;

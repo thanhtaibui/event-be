@@ -8,14 +8,22 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
 import { Repository } from 'typeorm';
 import { UnauthorizedException } from '@nestjs/common';
-import { UserResponseDto } from '../user/dto/users.dto';
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService, @InjectRepository(User) private userRepo: Repository<User>) { }
+  constructor(
+    private jwtService: JwtService,
+    @InjectRepository(User) private userRepo: Repository<User>,
+  ) {}
   async login(loginDto: LoginDto): Promise<ApiResponse<any>> {
     const { email, password } = loginDto;
     const user = await this.userRepo.findOne({
       where: { email },
+      relations: [
+        'memberships',
+        'memberships.organization',
+        'memberships.role',
+        'memberships.role.permissions',
+      ],
     });
 
     if (!user) {
@@ -39,16 +47,23 @@ export class AuthService {
       message: 'Login successful',
       data: {
         ...tokens,
-      }
+      },
     };
   }
-  async getTokens(userId: string, user: UserResponseDto, rememberMe?: boolean) {
-    const payload = { sub: userId, email: user.email, fullName: user.fullName };
+  async getTokens(userId: string, user: User, rememberMe?: boolean) {
+    const payload = {
+      sub: userId,
+      email: user.email,
+      fullName: user.fullName,
+      role: await this.buildRolePayload(user),
+    };
     const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET, expiresIn: rememberMe ? '1h' : '5m'
+      secret: process.env.JWT_SECRET,
+      expiresIn: rememberMe ? '1h' : '5m',
     });
     const refreshToken = this.jwtService.sign(payload, {
-      secret: process.env.REFRESH_JWT_SECRET, expiresIn: rememberMe ? '30d' : '7d'
+      secret: process.env.REFRESH_JWT_SECRET,
+      expiresIn: rememberMe ? '30d' : '7d',
     });
     return {
       accessToken,
@@ -65,6 +80,12 @@ export class AuthService {
       // 2. Tìm user
       const user = await this.userRepo.findOne({
         where: { id: payload.sub },
+        relations: [
+          'memberships',
+          'memberships.organization',
+          'memberships.role',
+          'memberships.role.permissions',
+        ],
       });
 
       if (!user) {
@@ -72,10 +93,7 @@ export class AuthService {
       }
 
       // 3. So sánh refresh token (đã hash)
-      const isMatch = await bcrypt.compare(
-        refreshToken,
-        user.refreshToken,
-      );
+      const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
 
       if (!isMatch) {
         throw new UnauthorizedException('Invalid refresh token');
@@ -107,11 +125,41 @@ export class AuthService {
         statusCode: 200,
         message: 'Token refreshed successfully',
         data: {
-          ...tokens
+          ...tokens,
         },
       };
     } catch (err) {
       throw new UnauthorizedException('Refresh token expired');
     }
+  }
+
+  private async buildRolePayload(user: User) {
+    const memberships = (user.memberships || []).filter(
+      (membership) => membership.isActive && membership.role,
+    );
+    const isSuperAdmin = memberships.some(
+      (membership) => membership.role.role_code === 'SUPER_ADMIN',
+    );
+
+    return {
+      isSuperAdmin,
+      permissions: isSuperAdmin
+        ? ['*']
+        : [
+            ...new Set(
+              memberships.flatMap((membership) =>
+                this.getPermissionCodes(membership.role.permissions || []),
+              ),
+            ),
+          ],
+    };
+  }
+
+  private getPermissionCodes(
+    permissions: { permission_code: string }[],
+  ): string[] {
+    return [
+      ...new Set(permissions.map((permission) => permission.permission_code)),
+    ];
   }
 }

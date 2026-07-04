@@ -5,7 +5,7 @@ import {
   IsDateString,
   IsNumber,
   Min,
-  IsUUID
+  IsUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EventStatus } from 'src/shared/enum/enum';
@@ -71,11 +71,11 @@ export class CreateEventDto {
 
   @IsString()
   @IsOptional()
-  @ApiProperty({ example: "description" })
+  @ApiProperty({ example: 'description' })
   description: string;
 
   @IsString()
   @IsOptional()
-  @ApiProperty({ example: "place" })
+  @ApiProperty({ example: 'place' })
   place: string;
 }

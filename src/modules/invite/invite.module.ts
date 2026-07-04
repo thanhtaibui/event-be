@@ -6,8 +6,8 @@ import { Invite } from './entities/invite.entity';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { Event } from '../event/entities/event.entity';
 @Module({
-  imports: [TypeOrmModule.forFeature([Invite, Event,]), MailerModule],
+  imports: [TypeOrmModule.forFeature([Invite, Event]), MailerModule],
   controllers: [InviteController],
   providers: [InviteService],
 })
-export class InviteModule { }
+export class InviteModule {}

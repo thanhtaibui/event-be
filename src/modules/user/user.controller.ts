@@ -29,12 +29,17 @@ import type { PaginateQuery } from 'nestjs-paginate';
 // @UseGuards(JwtGuard)
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService, private readonly membershipService: MembershipService) { }
+  constructor(
+    private readonly userService: UserService,
+    private readonly membershipService: MembershipService,
+  ) {}
 
   @Post()
-  @ApiProperty({ type: CreateUserDto, })
+  @ApiProperty({ type: CreateUserDto })
   @ApiOperation({ operationId: 'createUser' })
-  create(@Body() createUserDto: CreateUserDto): Promise<ApiResponse<UserResponseDto>> {
+  create(
+    @Body() createUserDto: CreateUserDto,
+  ): Promise<ApiResponse<UserResponseDto>> {
     return this.userService.create(createUserDto);
   }
 
@@ -45,7 +50,9 @@ export class UserController {
     filterableColumns: { isActive: [FilterOperator.EQ] },
   })
   @ApiOperation({ operationId: 'getUsers' })
-  findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
+  findAll(
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
     return this.userService.findAll(query);
   }
 
@@ -55,12 +62,17 @@ export class UserController {
   }
   @Get(':userId/organizations')
   @ApiOperation({ operationId: 'getUserOrgs' })
-  getUserOrgs(@Param('userId') userId: string): Promise<ApiResponse<MembershipDto[]>> {
+  getUserOrgs(
+    @Param('userId') userId: string,
+  ): Promise<ApiResponse<MembershipDto[]>> {
     return this.membershipService.findUserOrganizations(userId);
   }
   @Patch(':id/active')
   @ApiOperation({ operationId: 'updateActive' })
-  updateActive(@Param('id') id: string, @Body() updateActiveDto: UpdateActiveDto): Promise<ApiResponse<UserResponseDto>> {
+  updateActive(
+    @Param('id') id: string,
+    @Body() updateActiveDto: UpdateActiveDto,
+  ): Promise<ApiResponse<UserResponseDto>> {
     return this.userService.updateActive(id, updateActiveDto.active);
   }
 
@@ -72,7 +84,10 @@ export class UserController {
 
   @Patch(':id')
   @ApiOperation({ operationId: 'updateUser' })
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto): Promise<ApiResponse<UpdateUserResDto>> {
+  update(
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ): Promise<ApiResponse<UpdateUserResDto>> {
     return this.userService.update(id, updateUserDto);
   }
 

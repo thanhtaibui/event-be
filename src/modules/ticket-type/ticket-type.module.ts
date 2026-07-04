@@ -10,4 +10,4 @@ import { Event } from '../../modules/event/entities/event.entity';
   controllers: [TicketTypeController],
   providers: [TicketTypeService],
 })
-export class TicketTypeModule { }
+export class TicketTypeModule {}

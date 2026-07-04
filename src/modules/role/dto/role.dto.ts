@@ -1,6 +1,9 @@
 // import { MembershipDto } from "src/modules/membership/dto/membership.dto";
-import { OrgRoleDto } from "src/modules/organization/dto/org-role.dto";
-import { PermissionDto, PermissionTreeDto } from "src/modules/permission/dto/permission.dto";
+import { OrgRoleDto } from 'src/modules/organization/dto/org-role.dto';
+import {
+  PermissionDto,
+  PermissionTreeDto,
+} from 'src/modules/permission/dto/permission.dto';
 
 export class RoleDto {
   id: string;
@@ -11,10 +14,9 @@ export class RoleDto {
 
   permissions: PermissionDto[];
 
-  colorKey?: string
+  colorKey?: string;
 
   org: OrgRoleDto;
-
 }
 export class RoleResDto {
   id: string;
@@ -25,8 +27,7 @@ export class RoleResDto {
 
   permissions: PermissionTreeDto[];
 
-  colorKey?: string
+  colorKey?: string;
 
   org: OrgRoleDto;
-
 }

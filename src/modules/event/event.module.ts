@@ -11,4 +11,4 @@ import { UploadService } from '../upload/upload.service';
   controllers: [EventController],
   providers: [EventService, UploadService],
 })
-export class EventModule { }
+export class EventModule {}

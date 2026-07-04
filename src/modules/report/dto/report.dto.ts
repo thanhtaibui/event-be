@@ -1,4 +1,4 @@
-import { ReportStatus } from "../../../shared/enum/enum"
+import { ReportStatus } from '../../../shared/enum/enum';
 
 class UserMinInfo {
   id: string;
@@ -15,6 +15,8 @@ class OrganizationMinInfo {
 }
 
 export class ReportDto {
+  id: string;
+
   user: UserMinInfo;
 
   organization: OrganizationMinInfo;

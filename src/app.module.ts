@@ -70,4 +70,4 @@ import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-ite
   controllers: [AppController],
   providers: [AppService, UploadService],
 })
-export class AppModule { }
+export class AppModule {}

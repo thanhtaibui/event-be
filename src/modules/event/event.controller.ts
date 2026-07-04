@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -13,10 +22,12 @@ import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 @Controller('events')
 export class EventController {
-  constructor(private readonly eventService: EventService) { }
+  constructor(private readonly eventService: EventService) {}
 
   @Post()
-  async create(@Body() createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
+  async create(
+    @Body() createEventDto: CreateEventDto,
+  ): Promise<ApiResponse<EventDto>> {
     return this.eventService.create(createEventDto);
   }
 
@@ -30,30 +41,43 @@ export class EventController {
     },
   })
   @ApiOperation({ operationId: 'getEvents' })
-  async findAll(@Paginate() query: PaginateQuery): Promise<ApiResponse<PaginationResult<EventDto>>> {
+  async findAll(
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     return await this.eventService.findAll(query);
   }
 
   @Patch('/cancelled')
   @ApiOperation({ operationId: 'cancelled' })
-  deleteSort(@Body() cancelledDto: CancelledDto): Promise<ApiResponse<CancelledDto>> {
+  deleteSort(
+    @Body() cancelledDto: CancelledDto,
+  ): Promise<ApiResponse<CancelledDto>> {
     return this.eventService.cancelled(cancelledDto);
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<EventDto>> {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<EventDto>> {
     return this.eventService.findOne(id);
   }
   @Get(':id/ticket-types')
-  async getTicketTypes(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<TicketTypeDto[]>> {
+  async getTicketTypes(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<TicketTypeDto[]>> {
     return this.eventService.getTicketTypes(id);
   }
   @Get(':id/invites')
-  async getInvites(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<InviteDashboardDto>> {
+  async getInvites(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<InviteDashboardDto>> {
     return this.eventService.getInvites(id);
   }
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto): Promise<ApiResponse<EventDto>> {
+  update(
+    @Param('id') id: string,
+    @Body() updateEventDto: UpdateEventDto,
+  ): Promise<ApiResponse<EventDto>> {
     return this.eventService.update(id, updateEventDto);
   }
 

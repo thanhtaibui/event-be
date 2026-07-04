@@ -1,9 +1,15 @@
-import { Role } from "src/modules/role/entities/role.entity";
-import { Column, Entity, JoinColumn, ManyToMany, ManyToOne, OneToMany } from "typeorm";
+import { Role } from 'src/modules/role/entities/role.entity';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToMany,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { BaseEntity } from '../../../shared/base/base.entity';
 @Entity('permissions')
 export class Permission extends BaseEntity {
-
   @Column({ unique: true })
   permission_code: string;
 
@@ -15,9 +21,9 @@ export class Permission extends BaseEntity {
 
   @ManyToOne(() => Permission, (permission) => permission.children, {
     nullable: true,
-    onDelete: "CASCADE",
+    onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: "parent_id" })
+  @JoinColumn({ name: 'parent_id' })
   parent: Permission;
 
   @OneToMany(() => Permission, (permission) => permission.parent)

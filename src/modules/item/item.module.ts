@@ -10,4 +10,4 @@ import { Event } from '../event/entities/event.entity';
   controllers: [ItemController],
   providers: [ItemService],
 })
-export class ItemModule { }
+export class ItemModule {}

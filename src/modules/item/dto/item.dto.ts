@@ -1,6 +1,5 @@
-
 export class ItemDto {
-  id: string
+  id: string;
 
   name: string;
 
