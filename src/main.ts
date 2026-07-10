@@ -12,7 +12,12 @@ async function bootstrap() {
     process.env.API_URL ||
     process.env.RENDER_EXTERNAL_URL ||
     `http://localhost:${port}`;
-  const corsOrigins = (process.env.CORS_ORIGIN || process.env.FE_URL || '')
+  const corsOrigins = (
+    process.env.CORS_ORIGIN ||
+    [process.env.FE_URL, process.env.ADMIN_FE_URL, process.env.USER_FE_URL]
+      .filter(Boolean)
+      .join(',')
+  )
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);

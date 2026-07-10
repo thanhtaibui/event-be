@@ -5,12 +5,29 @@ import { LoginDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { ApiOperation } from '@nestjs/swagger';
 import { Res, Req } from '@nestjs/common';
-import type { Response } from 'express';
+import type { CookieOptions, Response } from 'express';
 import type { Request } from 'express';
-import { Logger } from '@nestjs/common';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  private getRefreshCookieOptions(rememberMe?: boolean): CookieOptions {
+    const isProduction = process.env.NODE_ENV === 'production';
+    return {
+      httpOnly: true,
+      secure: process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === 'true'
+        : isProduction,
+      sameSite: process.env.COOKIE_SAME_SITE
+        ? (process.env.COOKIE_SAME_SITE as CookieOptions['sameSite'])
+        : isProduction
+          ? 'none'
+          : 'lax',
+      path: '/',
+      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
+    };
+  }
+
   @Post('login')
   @ApiOperation({ operationId: 'login' })
   async login(
@@ -19,20 +36,11 @@ export class AuthController {
   ): Promise<ApiResponse<any>> {
     const tokens = await this.authService.login(loginDto);
 
-    // cookie nằm ở đây
-    // có bảo mật không cho xem
-    // res.cookie('refreshToken', tokens.data.refreshToken, {
-    //   httpOnly: true,
-    //   secure: true,
-    //   sameSite: 'strict',
-    // });
-    // để test thì để secure: false, khi deploy thì đổi lại secure: true
-    res.cookie('refreshToken', tokens.data.refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie(
+      'refreshToken',
+      tokens.data.refreshToken,
+      this.getRefreshCookieOptions(loginDto.rememberMe),
+    );
 
     return {
       statusCode: 200,
@@ -49,12 +57,11 @@ export class AuthController {
   ) {
     const refreshToken = req.cookies.refreshToken;
     const tokens = await this.authService.refreshToken(refreshToken);
-    res.cookie('refreshToken', tokens.data.refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie(
+      'refreshToken',
+      tokens.data.refreshToken,
+      this.getRefreshCookieOptions(),
+    );
     return {
       statusCode: 200,
       message: 'Token refreshed successfully',
