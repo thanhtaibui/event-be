@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -57,13 +57,28 @@ export class AuthService {
       fullName: user.fullName,
       role: await this.buildRolePayload(user),
     };
+    const accessTokenExpiresIn = (
+      rememberMe
+        ? process.env.JWT_REMEMBER_EXPIRES_IN ||
+          process.env.JWT_EXPIRES_IN ||
+          '1h'
+        : process.env.JWT_EXPIRES_IN || '5m'
+    ) as JwtSignOptions['expiresIn'];
+    const refreshTokenExpiresIn = (
+      rememberMe
+        ? process.env.REFRESH_JWT_REMEMBER_EXPIRES_IN ||
+          process.env.REFRESH_JWT_EXPIRES_IN ||
+          '30d'
+        : process.env.REFRESH_JWT_EXPIRES_IN || '7d'
+    ) as JwtSignOptions['expiresIn'];
+
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: rememberMe ? '1h' : '5m',
+      expiresIn: accessTokenExpiresIn,
     });
     const refreshToken = this.jwtService.sign(payload, {
       secret: process.env.REFRESH_JWT_SECRET,
-      expiresIn: rememberMe ? '30d' : '7d',
+      expiresIn: refreshTokenExpiresIn,
     });
     return {
       accessToken,
