@@ -8,12 +8,14 @@ import { Item } from 'src/modules/item/entities/item.entity';
 import { Category } from 'src/modules/category/entities/category.entity';
 @Entity('events')
 export class Event extends BaseEntity {
-
   @Column()
   title: string;
 
   @Column({ nullable: true })
   eventPoster: string;
+
+  @Column({ nullable: true })
+  eventBanner: string;
 
   @Column()
   description: string;
@@ -50,7 +52,6 @@ export class Event extends BaseEntity {
 
   @ManyToOne(() => Category, (category) => category.events)
   category: Category;
-
 
   @OneToMany(() => TicketType, (type) => type.event)
   ticketTypes: TicketType[];

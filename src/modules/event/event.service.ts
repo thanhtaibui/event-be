@@ -41,6 +41,7 @@ export class EventService {
       id: saveEvent.id,
       title: saveEvent.title,
       eventPoster: saveEvent.eventPoster,
+      eventBanner: saveEvent.eventBanner,
       startDateTime: saveEvent.startDateTime,
       endDateTime: saveEvent.endDateTime,
       registrationEndDate: saveEvent.registrationEndDate,
@@ -91,6 +92,7 @@ export class EventService {
       EventDto,
       result.data.map((e) => ({
         ...e,
+        eventPoster: e.eventBanner ?? e.eventPoster,
         soldTickets: soldMapById[e.id] ?? 0,
       })),
       { excludeExtraneousValues: true },
@@ -201,6 +203,7 @@ export class EventService {
       relations: ['organization'],
     });
     const oldPosterUrl = event?.eventPoster;
+    const oldBannerUrl = event?.eventBanner;
 
     if (!event) throw new BadRequestException('Event not found');
 
@@ -221,6 +224,9 @@ export class EventService {
     const saved = await this.eventRepo.save(event);
     if (oldPosterUrl && saved.eventPoster !== oldPosterUrl) {
       await this.uploadService.deleteFile(oldPosterUrl);
+    }
+    if (oldBannerUrl && saved.eventBanner !== oldBannerUrl) {
+      await this.uploadService.deleteFile(oldBannerUrl);
     }
     return Response(
       200,

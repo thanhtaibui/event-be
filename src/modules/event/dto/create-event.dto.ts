@@ -6,6 +6,7 @@ import {
   IsNumber,
   Min,
   IsUUID,
+  IsUrl,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EventStatus } from 'src/shared/enum/enum';
@@ -24,6 +25,17 @@ export class CreateEventDto {
   @IsString()
   @IsOptional()
   eventPoster?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/banner.jpg',
+    description: 'Horizontal banner image for user event pages',
+  })
+  @IsUrl(
+    { require_protocol: true },
+    { message: 'Event banner must be a valid URL' },
+  )
+  @IsOptional()
+  eventBanner?: string;
 
   @ApiProperty({
     example: '2026-05-20T08:00:00Z',

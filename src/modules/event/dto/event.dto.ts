@@ -14,6 +14,9 @@ export class EventDto {
   eventPoster: string;
 
   @Expose()
+  eventBanner: string;
+
+  @Expose()
   description: string;
 
   @Expose()
