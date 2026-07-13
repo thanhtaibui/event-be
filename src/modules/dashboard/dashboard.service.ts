@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
 import { Between, MoreThanOrEqual, Repository } from 'typeorm';
@@ -8,6 +8,7 @@ import { EventStatus } from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class DashboardService {
@@ -17,6 +18,8 @@ export class DashboardService {
     @InjectRepository(Organization)
     private OrganizationRepo: Repository<Organization>,
     @InjectRepository(Ticket) private ticketRepo: Repository<Ticket>,
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
   ) {}
 
   async GetAllDashboard(): Promise<ApiResponse<DashboardDto>> {
@@ -212,14 +215,9 @@ export class DashboardService {
 
   async GetDashboardByOrgSlug(
     slug: string,
+    userId: string,
   ): Promise<ApiResponse<DashboardDto>> {
-    const organization = await this.OrganizationRepo.findOne({
-      where: { slug },
-    });
-
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
-    }
+    const organization = await this.assertUserInOrganization(slug, userId);
 
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -391,5 +389,32 @@ export class DashboardService {
       message: 'Get organization dashboard successfully',
       data: dashboardData,
     };
+  }
+
+  private async assertUserInOrganization(
+    slug: string,
+    userId: string,
+  ): Promise<Organization> {
+    const organization = await this.OrganizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: userId },
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    return organization;
   }
 }

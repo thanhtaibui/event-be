@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { MembershipService } from './membership.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
@@ -15,6 +17,7 @@ import {
   UpdateMembershipStatusDto,
   UpdateMembershipDto,
 } from './dto/update-membership.dto';
+import { JwtGuard } from 'src/common/guards/jwt.guard';
 
 @Controller('membership')
 export class MembershipController {
@@ -36,8 +39,12 @@ export class MembershipController {
   }
 
   @Get('org/:slug')
-  findByOrganizationSlug(@Param('slug') slug: string) {
-    return this.membershipService.findByOrganizationSlug(slug);
+  @UseGuards(JwtGuard)
+  findByOrganizationSlug(@Param('slug') slug: string, @Req() req: any) {
+    return this.membershipService.findByOrganizationSlug(
+      slug,
+      req.user.userId,
+    );
   }
 
   @Get(':id')

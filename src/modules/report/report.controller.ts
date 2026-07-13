@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -43,12 +44,18 @@ export class ReportController {
   }
 
   @Get('org/:slug')
+  @UseGuards(JwtGuard)
   @ApiOperation({ operationId: 'GetReportsByOrgSlug' })
   async findAllByOrgSlug(
     @Param('slug') slug: string,
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    return await this.reportService.findAllByOrgSlug(slug, query);
+    return await this.reportService.findAllByOrgSlug(
+      slug,
+      req.user.userId,
+      query,
+    );
   }
 
   @Get(':id')

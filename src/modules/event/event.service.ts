@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
@@ -17,6 +21,7 @@ import { Invite } from '../invite/entities/invite.entity';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 import { UploadService } from '../upload/upload.service';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class EventService {
@@ -24,6 +29,8 @@ export class EventService {
     @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
     @InjectRepository(Organization)
     private organizationRepo: Repository<Organization>,
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
     // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
     private readonly uploadService: UploadService,
@@ -109,15 +116,10 @@ export class EventService {
 
   async findAllByOrgSlug(
     slug: string,
+    userId: string,
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
-    const organization = await this.organizationRepo.findOne({
-      where: { slug },
-    });
-
-    if (!organization) {
-      throw new BadRequestException('Organization not found');
-    }
+    const organization = await this.assertUserInOrganization(slug, userId);
 
     const result = await paginate(query, this.eventRepo, {
       sortableColumns: ['title', 'capacity'],
@@ -167,6 +169,33 @@ export class EventService {
       total: result.meta.totalItems ?? 0,
       totalPages: result.meta.totalPages ?? 0,
     });
+  }
+
+  private async assertUserInOrganization(
+    slug: string,
+    userId: string,
+  ): Promise<Organization> {
+    const organization = await this.organizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new BadRequestException('Organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: userId },
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    return organization;
   }
 
   async cancelled(cancelled: CancelledDto): Promise<ApiResponse<CancelledDto>> {

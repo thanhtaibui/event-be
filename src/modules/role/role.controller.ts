@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -18,6 +20,7 @@ import { RoleDto, RoleResDto } from './dto/role.dto';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { ApiPaginationQuery, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
+import { JwtGuard } from 'src/common/guards/jwt.guard';
 @Controller('roles')
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
@@ -42,15 +45,17 @@ export class RoleController {
   }
 
   @Get('org/:slug')
+  @UseGuards(JwtGuard)
   @ApiPaginationQuery({
     sortableColumns: ['role_name', 'role_code', 'organization.name'],
   })
   @ApiOperation({ operationId: 'GetRolesByOrgSlug' })
   async findAllByOrgSlug(
     @Param('slug') slug: string,
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
-    return this.roleService.findAllByOrgSlug(slug, query);
+    return this.roleService.findAllByOrgSlug(slug, req.user.userId, query);
   }
 
   @Patch('/delete')

@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateReportDto } from './dto/create-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
@@ -11,6 +16,7 @@ import { User } from '../user/entities/user.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { paginate, type PaginateQuery } from 'nestjs-paginate';
 import { ReportStatus } from 'src/shared/enum/enum';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class ReportService {
@@ -19,6 +25,8 @@ export class ReportService {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Organization)
     private organizationRepo: Repository<Organization>,
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
   ) {}
   async create(
     createReportDto: CreateReportDto,
@@ -73,15 +81,10 @@ export class ReportService {
 
   async findAllByOrgSlug(
     slug: string,
+    userId: string,
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    const organization = await this.organizationRepo.findOne({
-      where: { slug },
-    });
-
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
-    }
+    const organization = await this.assertUserInOrganization(slug, userId);
 
     const result = await paginate(query, this.reportRepo, {
       sortableColumns: ['user.fullName', 'organization.name', 'status'],
@@ -103,6 +106,33 @@ export class ReportService {
       total: result.meta.totalItems ?? 0,
       totalPages: result.meta.totalPages ?? 1,
     });
+  }
+
+  private async assertUserInOrganization(
+    slug: string,
+    userId: string,
+  ): Promise<Organization> {
+    const organization = await this.organizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: userId },
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    return organization;
   }
 
   async findOne(id: string): Promise<ApiResponse<ReportDto>> {

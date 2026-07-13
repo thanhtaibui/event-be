@@ -5,8 +5,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Report } from './entities/report.entity';
 import { User } from '../user/entities/user.entity';
 import { Organization } from '../organization/entities/organization.entity';
+import { Membership } from '../membership/entities/membership.entity';
 @Module({
-  imports: [TypeOrmModule.forFeature([Report, User, Organization])],
+  imports: [TypeOrmModule.forFeature([Report, User, Organization, Membership])],
   controllers: [ReportController],
   providers: [ReportService],
 })

@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -20,6 +22,7 @@ import type { PaginateQuery } from 'nestjs-paginate';
 import { CancelledDto } from './dto/cancelled-event.dto';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
+import { JwtGuard } from 'src/common/guards/jwt.guard';
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) {}
@@ -48,6 +51,7 @@ export class EventController {
   }
 
   @Get('org/:slug')
+  @UseGuards(JwtGuard)
   @ApiPaginationQuery({
     sortableColumns: ['title', 'capacity'],
     searchableColumns: ['title', 'organization.name'],
@@ -59,9 +63,14 @@ export class EventController {
   @ApiOperation({ operationId: 'getEventsByOrgSlug' })
   async findAllByOrgSlug(
     @Param('slug') slug: string,
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
-    return await this.eventService.findAllByOrgSlug(slug, query);
+    return await this.eventService.findAllByOrgSlug(
+      slug,
+      req.user.userId,
+      query,
+    );
   }
 
   @Patch('/cancelled')

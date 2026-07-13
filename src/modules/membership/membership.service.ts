@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -82,6 +83,7 @@ export class MembershipService {
 
   async findByOrganizationSlug(
     slug: string,
+    userId: string,
   ): Promise<ApiResponse<OrganizationMembershipDto[]>> {
     const organization = await this.organizationRepo.findOne({
       where: { slug },
@@ -89,6 +91,18 @@ export class MembershipService {
 
     if (!organization) {
       throw new NotFoundException('Organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: userId },
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
     }
 
     return this.findByOrganization(organization.id);

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -19,12 +20,15 @@ import { relative } from 'path';
 import { response } from 'express';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { paginate, PaginateQuery } from 'nestjs-paginate';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class RoleService {
   constructor(
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(Organization) private orgRepo: Repository<Organization>,
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
     @InjectRepository(Permission)
     private permissionRepo: Repository<Permission>,
   ) {}
@@ -141,12 +145,10 @@ export class RoleService {
 
   async findAllByOrgSlug(
     slug: string,
+    userId: string,
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
-    const organization = await this.orgRepo.findOne({ where: { slug } });
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
-    }
+    const organization = await this.assertUserInOrganization(slug, userId);
 
     const result = await paginate(query, this.roleRepo, {
       sortableColumns: ['role_name', 'role_code', 'organization.name'],
@@ -179,6 +181,30 @@ export class RoleService {
       total: result.meta.totalItems ?? 0,
       totalPages: result.meta.totalPages ?? 1,
     });
+  }
+
+  private async assertUserInOrganization(
+    slug: string,
+    userId: string,
+  ): Promise<Organization> {
+    const organization = await this.orgRepo.findOne({ where: { slug } });
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: userId },
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    return organization;
   }
 
   async buildPermissionTree(permissions: any[]) {
