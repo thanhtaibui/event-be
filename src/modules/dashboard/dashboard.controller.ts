@@ -13,10 +13,13 @@ import { DashboardService } from './dashboard.service';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { DashboardDto } from './dto/dashboard.dto';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('dashboard')
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(private readonly dashboardService: DashboardService) { }
 
   @Get()
   findAll(): Promise<ApiResponse<DashboardDto>> {
@@ -24,7 +27,6 @@ export class DashboardController {
   }
 
   @Get('org/:slug')
-  @UseGuards(JwtGuard)
   getDashboardByOrgSlug(
     @Param('slug') slug: string,
     @Req() req: any,

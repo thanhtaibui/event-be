@@ -18,10 +18,13 @@ import {
   UpdateMembershipDto,
 } from './dto/update-membership.dto';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('membership')
 export class MembershipController {
-  constructor(private readonly membershipService: MembershipService) {}
+  constructor(private readonly membershipService: MembershipService) { }
 
   @Post()
   create(@Body() createMembershipDto: CreateMembershipDto) {
@@ -39,7 +42,6 @@ export class MembershipController {
   }
 
   @Get('org/:slug')
-  @UseGuards(JwtGuard)
   findByOrganizationSlug(@Param('slug') slug: string, @Req() req: any) {
     return this.membershipService.findByOrganizationSlug(
       slug,

@@ -21,9 +21,13 @@ import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { ApiPaginationQuery, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
+
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('roles')
 export class RoleController {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(private readonly roleService: RoleService) { }
 
   @Post()
   async create(
@@ -45,7 +49,6 @@ export class RoleController {
   }
 
   @Get('org/:slug')
-  @UseGuards(JwtGuard)
   @ApiPaginationQuery({
     sortableColumns: ['role_name', 'role_code', 'organization.name'],
   })

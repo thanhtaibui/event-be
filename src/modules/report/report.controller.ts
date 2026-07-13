@@ -21,11 +21,11 @@ import { Query } from '@nestjs/common';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
-// @ApiBearerAuth('access-token')
-// @UseGuards(JwtGuard)
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('reports')
 export class ReportController {
-  constructor(private readonly reportService: ReportService) {}
+  constructor(private readonly reportService: ReportService) { }
 
   @Post()
   @ApiOperation({ operationId: 'CreateReport' })
@@ -44,7 +44,6 @@ export class ReportController {
   }
 
   @Get('org/:slug')
-  @UseGuards(JwtGuard)
   @ApiOperation({ operationId: 'GetReportsByOrgSlug' })
   async findAllByOrgSlug(
     @Param('slug') slug: string,

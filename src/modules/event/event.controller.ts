@@ -23,9 +23,13 @@ import { CancelledDto } from './dto/cancelled-event.dto';
 import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
+
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('events')
 export class EventController {
-  constructor(private readonly eventService: EventService) {}
+  constructor(private readonly eventService: EventService) { }
 
   @Post()
   async create(
@@ -51,7 +55,6 @@ export class EventController {
   }
 
   @Get('org/:slug')
-  @UseGuards(JwtGuard)
   @ApiPaginationQuery({
     sortableColumns: ['title', 'capacity'],
     searchableColumns: ['title', 'organization.name'],
