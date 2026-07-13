@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto, UpdateUserResDto } from './dto/update-user.dto';
-import { UserResponseDto } from './dto/users.dto';
+import { MemberOfUserDto, UserResponseDto } from './dto/users.dto';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -253,6 +253,36 @@ export class UserService {
         })),
     });
   }
+
+  async findMemberOfUser(userId: string): Promise<ApiResponse<MemberOfUserDto>> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: { user: { id: userId } },
+      relations: ['organization', 'role'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const membership = memberships
+      .filter((m) => m.role !== null && m.organization !== null)
+      .map((m) => ({
+        role_name: m.role.role_name,
+        orgName: m.organization.name,
+        slug: m.organization.slug || '',
+      }));
+
+    return Response(200, 'Get Member Of User Successfully', {
+      fullName: user.fullName,
+      membership,
+    });
+  }
+
   async findOne(id: string) {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) {

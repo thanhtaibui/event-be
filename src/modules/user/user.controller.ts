@@ -21,18 +21,14 @@ import { JwtGuard } from '../../common/guards/jwt.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { DeleteSort } from './dto/delete-sort-user.dto';
 import { UpdateActiveDto } from './dto/updateActiveDto.dto';
-import { MembershipService } from '../membership/membership.service';
-import { MembershipDto } from '../membership/dto/membership.dto';
+import { MemberOfUserDto } from './dto/users.dto';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 // @ApiBearerAuth('access-token')
 // @UseGuards(JwtGuard)
 @Controller('users')
 export class UserController {
-  constructor(
-    private readonly userService: UserService,
-    private readonly membershipService: MembershipService,
-  ) {}
+  constructor(private readonly userService: UserService) {}
 
   @Post()
   @ApiProperty({ type: CreateUserDto })
@@ -61,11 +57,11 @@ export class UserController {
     return this.userService.GetUserById(id);
   }
   @Get(':userId/organizations')
-  @ApiOperation({ operationId: 'getUserOrgs' })
+  @ApiOperation({ operationId: 'getMemberOfUser' })
   getUserOrgs(
     @Param('userId') userId: string,
-  ): Promise<ApiResponse<MembershipDto[]>> {
-    return this.membershipService.findUserOrganizations(userId);
+  ): Promise<ApiResponse<MemberOfUserDto>> {
+    return this.userService.findMemberOfUser(userId);
   }
   @Patch(':id/active')
   @ApiOperation({ operationId: 'updateActive' })

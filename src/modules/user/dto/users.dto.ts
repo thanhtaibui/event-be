@@ -26,3 +26,17 @@ export class UserResponseDto {
 
   // refreshToken: string;
 }
+
+export class MemberOfUserMembershipDto {
+  role_name: string;
+
+  orgName: string;
+
+  slug: string;
+}
+
+export class MemberOfUserDto {
+  fullName: string;
+
+  membership: MemberOfUserMembershipDto[];
+}
