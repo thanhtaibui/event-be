@@ -107,6 +107,68 @@ export class EventService {
     });
   }
 
+  async findAllByOrgSlug(
+    slug: string,
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<EventDto>>> {
+    const organization = await this.organizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new BadRequestException('Organization not found');
+    }
+
+    const result = await paginate(query, this.eventRepo, {
+      sortableColumns: ['title', 'capacity'],
+      searchableColumns: ['title', 'organization.name'],
+      filterableColumns: {
+        status: [FilterOperator.EQ],
+        capacity: [FilterOperator.GTE, FilterOperator.LTE],
+      },
+      where: { organization: { id: organization.id } },
+      relations: ['organization'],
+      defaultSortBy: [['createdAt', 'DESC']],
+    });
+
+    const eventIds = result.data.map((e) => e.id);
+    const soldMapById: Record<string, number> = {};
+
+    if (eventIds.length > 0) {
+      const soldMap = await this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoin('event.ticketTypes', 'ticketType')
+        .leftJoin('ticketType.tickets', 'ticket')
+        .select('event.id', 'eventId')
+        .addSelect('COUNT(ticket.id)', 'soldTickets')
+        .where('event.id IN (:...ids)', { ids: eventIds })
+        .groupBy('event.id')
+        .getRawMany();
+
+      soldMap.forEach((r) => {
+        soldMapById[r.eventId] = Number(r.soldTickets);
+      });
+    }
+
+    const items = plainToInstance(
+      EventDto,
+      result.data.map((e) => ({
+        ...e,
+        eventPoster: e.eventBanner ?? e.eventPoster,
+        soldTickets: soldMapById[e.id] ?? 0,
+      })),
+      { excludeExtraneousValues: true },
+    );
+
+    return Response(200, 'Get Events Of Organization Successfully', {
+      items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 0,
+    });
+  }
+
   async cancelled(cancelled: CancelledDto): Promise<ApiResponse<CancelledDto>> {
     const events = await this.eventRepo.find({
       where: { id: In(cancelled.ids) },

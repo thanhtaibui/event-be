@@ -138,6 +138,49 @@ export class RoleService {
 
     return Response(200, 'Get All Role Of Org Successfully', result);
   }
+
+  async findAllByOrgSlug(
+    slug: string,
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+    const organization = await this.orgRepo.findOne({ where: { slug } });
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const result = await paginate(query, this.roleRepo, {
+      sortableColumns: ['role_name', 'role_code', 'organization.name'],
+      searchableColumns: ['role_name', 'role_code', 'organization.name'],
+      where: {
+        organization: { id: organization.id },
+        deletedAt: IsNull(),
+      },
+      relations: ['permissions', 'permissions.parent', 'organization'],
+      defaultSortBy: [['createdAt', 'DESC']],
+    });
+
+    const itemPromises = result.data.map(async (r) => ({
+      id: r.id,
+      role_name: r.role_name,
+      role_code: r.role_code,
+      colorKey: r.colorKey,
+      org: {
+        id: r.organization.id,
+        name: r.organization.name,
+      },
+      permissions: await this.buildPermissionTree(r.permissions),
+    }));
+    const items = await Promise.all(itemPromises);
+
+    return Response(200, 'Get Roles Of Organization Successfully', {
+      items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 1,
+    });
+  }
+
   async buildPermissionTree(permissions: any[]) {
     // Logger.warn("permissions", permissions)
     const map = new Map<string, any>();

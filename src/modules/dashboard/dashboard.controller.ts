@@ -19,6 +19,14 @@ export class DashboardController {
   findAll(): Promise<ApiResponse<DashboardDto>> {
     return this.dashboardService.GetAllDashboard();
   }
+
+  @Get('org/:slug')
+  getDashboardByOrgSlug(
+    @Param('slug') slug: string,
+  ): Promise<ApiResponse<DashboardDto>> {
+    return this.dashboardService.GetDashboardByOrgSlug(slug);
+  }
+
   @Get(':id')
   getDashboardById(
     @Param('id') id: string,

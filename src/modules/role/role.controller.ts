@@ -41,6 +41,18 @@ export class RoleController {
     return this.roleService.findAll(query);
   }
 
+  @Get('org/:slug')
+  @ApiPaginationQuery({
+    sortableColumns: ['role_name', 'role_code', 'organization.name'],
+  })
+  @ApiOperation({ operationId: 'GetRolesByOrgSlug' })
+  async findAllByOrgSlug(
+    @Param('slug') slug: string,
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+    return this.roleService.findAllByOrgSlug(slug, query);
+  }
+
   @Patch('/delete')
   @ApiOperation({ operationId: 'deleteSort' })
   deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {

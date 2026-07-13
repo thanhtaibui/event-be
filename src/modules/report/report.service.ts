@@ -71,6 +71,40 @@ export class ReportService {
     });
   }
 
+  async findAllByOrgSlug(
+    slug: string,
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
+    const organization = await this.organizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const result = await paginate(query, this.reportRepo, {
+      sortableColumns: ['user.fullName', 'organization.name', 'status'],
+      searchableColumns: ['user.fullName', 'organization.name', 'status'],
+      where: {
+        status: Not(ReportStatus.SPAM),
+        organization: { id: organization.id },
+      },
+      relations: ['user', 'organization'],
+      defaultSortBy: [['createdAt', 'DESC']],
+    });
+
+    const items = result.data.map((report) => this.toReportDto(report));
+
+    return Response(200, 'Get reports of organization successfully', {
+      items,
+      page: result.meta.currentPage ?? 1,
+      limit: result.meta.itemsPerPage,
+      total: result.meta.totalItems ?? 0,
+      totalPages: result.meta.totalPages ?? 1,
+    });
+  }
+
   async findOne(id: string): Promise<ApiResponse<ReportDto>> {
     const report = await this.findReportById(id);
 

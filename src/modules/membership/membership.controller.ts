@@ -35,6 +35,11 @@ export class MembershipController {
     return this.membershipService.findByOrganization(orgId);
   }
 
+  @Get('org/:slug')
+  findByOrganizationSlug(@Param('slug') slug: string) {
+    return this.membershipService.findByOrganizationSlug(slug);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.membershipService.findOne(id);

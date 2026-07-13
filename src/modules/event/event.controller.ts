@@ -47,6 +47,23 @@ export class EventController {
     return await this.eventService.findAll(query);
   }
 
+  @Get('org/:slug')
+  @ApiPaginationQuery({
+    sortableColumns: ['title', 'capacity'],
+    searchableColumns: ['title', 'organization.name'],
+    filterableColumns: {
+      status: [FilterOperator.EQ],
+      capacity: [FilterOperator.GTE, FilterOperator.LTE],
+    },
+  })
+  @ApiOperation({ operationId: 'getEventsByOrgSlug' })
+  async findAllByOrgSlug(
+    @Param('slug') slug: string,
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<EventDto>>> {
+    return await this.eventService.findAllByOrgSlug(slug, query);
+  }
+
   @Patch('/cancelled')
   @ApiOperation({ operationId: 'cancelled' })
   deleteSort(

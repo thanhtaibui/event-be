@@ -42,6 +42,15 @@ export class ReportController {
     return await this.reportService.findAll(query);
   }
 
+  @Get('org/:slug')
+  @ApiOperation({ operationId: 'GetReportsByOrgSlug' })
+  async findAllByOrgSlug(
+    @Param('slug') slug: string,
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
+    return await this.reportService.findAllByOrgSlug(slug, query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.reportService.findOne(id);

@@ -15,6 +15,7 @@ import { IsNull, Repository } from 'typeorm';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { MembershipDto, OrganizationMembershipDto } from './dto/membership.dto';
 import { Role } from '../role/entities/role.entity';
+import { Organization } from '../organization/entities/organization.entity';
 
 @Injectable()
 export class MembershipService {
@@ -23,6 +24,8 @@ export class MembershipService {
     private membershipRepo: Repository<Membership>,
     @InjectRepository(Role)
     private roleRepo: Repository<Role>,
+    @InjectRepository(Organization)
+    private organizationRepo: Repository<Organization>,
   ) {}
 
   create(createMembershipDto: CreateMembershipDto) {
@@ -75,6 +78,20 @@ export class MembershipService {
       'Get Memberships Of Organization Successfully',
       result,
     );
+  }
+
+  async findByOrganizationSlug(
+    slug: string,
+  ): Promise<ApiResponse<OrganizationMembershipDto[]>> {
+    const organization = await this.organizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    return this.findByOrganization(organization.id);
   }
 
   async findOne(id: string): Promise<ApiResponse<OrganizationMembershipDto>> {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
 import { Between, MoreThanOrEqual, Repository } from 'typeorm';
@@ -206,6 +206,189 @@ export class DashboardService {
     return {
       statusCode: 200,
       message: 'Get dashboard by id successfully',
+      data: dashboardData,
+    };
+  }
+
+  async GetDashboardByOrgSlug(
+    slug: string,
+  ): Promise<ApiResponse<DashboardDto>> {
+    const organization = await this.OrganizationRepo.findOne({
+      where: { slug },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      0,
+      23,
+      59,
+      59,
+    );
+
+    const EventThisMonth = await this.eventRepo.count({
+      where: {
+        organization: { id: organization.id },
+        createdAt: MoreThanOrEqual(startOfThisMonth),
+      },
+    });
+    const EventLastMonth = await this.eventRepo.count({
+      where: {
+        organization: { id: organization.id },
+        createdAt: Between(startOfLastMonth, endOfLastMonth),
+      },
+    });
+    const trendEvent =
+      EventLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((EventThisMonth - EventLastMonth) / EventLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
+    const ticketQuery = this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .where('event.organizationId = :orgId', { orgId: organization.id });
+
+    const totalTickets = await ticketQuery.getCount();
+
+    const TicketThisMonth = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .where('event.organizationId = :orgId', { orgId: organization.id })
+      .andWhere('ticket.createdAt >= :start', { start: startOfThisMonth })
+      .getCount();
+    const TicketLastMonth = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .where('event.organizationId = :orgId', { orgId: organization.id })
+      .andWhere('ticket.createdAt BETWEEN :start AND :end', {
+        start: startOfLastMonth,
+        end: endOfLastMonth,
+      })
+      .getCount();
+    const trendTicket =
+      TicketLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((TicketThisMonth - TicketLastMonth) / TicketLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
+    const revenueThisMonth = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .select('SUM(ticketType.price)', 'total')
+      .where('event.organizationId = :orgId', { orgId: organization.id })
+      .andWhere('ticket.createdAt >= :start', { start: startOfThisMonth })
+      .getRawOne();
+    const revenueLastMonth = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .select('SUM(ticketType.price)', 'total')
+      .where('event.organizationId = :orgId', { orgId: organization.id })
+      .andWhere('ticket.createdAt BETWEEN :start AND :end', {
+        start: startOfLastMonth,
+        end: endOfLastMonth,
+      })
+      .getRawOne();
+    const thisRevenue = Number(revenueThisMonth?.total ?? 0);
+    const lastRevenue = Number(revenueLastMonth?.total ?? 0);
+    const trendRevenue =
+      lastRevenue === 0
+        ? 0
+        : Number(
+            (((thisRevenue - lastRevenue) / lastRevenue) * 100).toFixed(1),
+          );
+
+    const totalRevenue = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .leftJoin('ticketType.event', 'event')
+      .select('SUM(ticketType.price)', 'total')
+      .where('event.organizationId = :orgId', { orgId: organization.id })
+      .getRawOne();
+
+    const totalEvents = await this.eventRepo.count({
+      where: { organization: { id: organization.id } },
+    });
+    const [upcoming, ongoing, ended, cancelled] = await Promise.all([
+      this.eventRepo.count({
+        where: {
+          organization: { id: organization.id },
+          status: EventStatus.UPCOMING,
+        },
+      }),
+      this.eventRepo.count({
+        where: {
+          organization: { id: organization.id },
+          status: EventStatus.ONGOING,
+        },
+      }),
+      this.eventRepo.count({
+        where: {
+          organization: { id: organization.id },
+          status: EventStatus.ENDED,
+        },
+      }),
+      this.eventRepo.count({
+        where: {
+          organization: { id: organization.id },
+          status: EventStatus.CANCELLED,
+        },
+      }),
+    ]);
+
+    const dashboardData: DashboardDto = {
+      cards: [
+        {
+          key: 'events',
+          title: 'Events',
+          value: totalEvents,
+          trend: trendEvent,
+        },
+        {
+          key: 'revenue',
+          title: 'Revenue',
+          value: Number(totalRevenue?.total ?? 0),
+          trend: trendRevenue,
+        },
+        {
+          key: 'tickets',
+          title: 'Tickets',
+          value: totalTickets,
+          trend: trendTicket,
+        },
+      ],
+      lineChart: [],
+      pieChart: [
+        { label: 'Upcoming', value: upcoming },
+        { label: 'Ongoing', value: ongoing },
+        { label: 'Ended', value: ended },
+        { label: 'Cancelled', value: cancelled },
+      ],
+    };
+
+    return {
+      statusCode: 200,
+      message: 'Get organization dashboard successfully',
       data: dashboardData,
     };
   }
