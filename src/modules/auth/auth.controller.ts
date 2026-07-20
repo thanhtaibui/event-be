@@ -1,7 +1,7 @@
 import { Controller, Post, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Body } from '@nestjs/common';
-import { LoginDto } from './dto/login.dto';
+import { GoogleOAuthDto, LoginDto, RegisterDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { ApiOperation } from '@nestjs/swagger';
 import { Res, Req } from '@nestjs/common';
@@ -50,6 +50,53 @@ export class AuthController {
       },
     };
   }
+
+  @Post('register')
+  @ApiOperation({ operationId: 'register' })
+  async register(
+    @Body() registerDto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<any>> {
+    const tokens = await this.authService.register(registerDto);
+
+    res.cookie(
+      'refreshToken',
+      tokens.data.refreshToken,
+      this.getRefreshCookieOptions(registerDto.rememberMe),
+    );
+
+    return {
+      statusCode: 201,
+      message: 'Register successful',
+      data: {
+        accessToken: tokens.data.accessToken,
+      },
+    };
+  }
+
+  @Post('google')
+  @ApiOperation({ operationId: 'googleOAuth' })
+  async googleOAuth(
+    @Body() googleOAuthDto: GoogleOAuthDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<any>> {
+    const tokens = await this.authService.googleOAuth(googleOAuthDto);
+
+    res.cookie(
+      'refreshToken',
+      tokens.data.refreshToken,
+      this.getRefreshCookieOptions(googleOAuthDto.rememberMe),
+    );
+
+    return {
+      statusCode: 200,
+      message: 'Google login successful',
+      data: {
+        accessToken: tokens.data.accessToken,
+      },
+    };
+  }
+
   @Post('refresh')
   async refresh(
     @Req() req: Request,
