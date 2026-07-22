@@ -6,9 +6,12 @@ import { Event } from './entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { UploadService } from '../upload/upload.service';
 import { Membership } from '../membership/entities/membership.entity';
+import { Category } from '../category/entities/category.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Event, Organization, Membership])],
+  imports: [
+    TypeOrmModule.forFeature([Event, Organization, Membership, Category]),
+  ],
   controllers: [EventController],
   providers: [EventService, UploadService],
 })

@@ -22,6 +22,7 @@ import { TicketTypeDto } from '../ticket-type/dto/ticket-type.dto';
 import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 import { UploadService } from '../upload/upload.service';
 import { Membership } from '../membership/entities/membership.entity';
+import { Category } from '../category/entities/category.entity';
 
 @Injectable()
 export class EventService {
@@ -31,6 +32,8 @@ export class EventService {
     private organizationRepo: Repository<Organization>,
     @InjectRepository(Membership)
     private membershipRepo: Repository<Membership>,
+    @InjectRepository(Category)
+    private categoryRepo: Repository<Category>,
     // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
     private readonly uploadService: UploadService,
@@ -38,10 +41,14 @@ export class EventService {
 
   async create(createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
     const status = EventStatus.DRAFT;
+    const { categoryIds, ...eventData } = createEventDto;
+    const categories = await this.findCategoriesByIds(categoryIds);
+
     const event = this.eventRepo.create({
-      ...createEventDto,
+      ...eventData,
       status,
       organization: { id: createEventDto.organizationId },
+      categories,
     });
     const saveEvent = await this.eventRepo.save(event);
     const item: EventDto = {
@@ -55,6 +62,7 @@ export class EventService {
       capacity: saveEvent.capacity,
       status: saveEvent.status,
       organization: saveEvent.organization,
+      categories: saveEvent.categories,
       description: saveEvent.description,
       place: saveEvent.place,
     };
@@ -65,13 +73,15 @@ export class EventService {
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     const result = await paginate(query, this.eventRepo, {
-      sortableColumns: ['title', 'capacity'],
-      searchableColumns: ['title', 'organization.name'],
+      sortableColumns: ['title', 'capacity', 'categories.name'],
+      searchableColumns: ['title', 'organization.name', 'categories.name'],
       filterableColumns: {
         status: [FilterOperator.EQ],
         capacity: [FilterOperator.GTE, FilterOperator.LTE],
+        'categories.id': [FilterOperator.EQ],
+        'categories.name': [FilterOperator.EQ],
       },
-      relations: ['organization'],
+      relations: ['organization', 'categories'],
       defaultSortBy: [['createdAt', 'DESC']],
     });
 
@@ -122,14 +132,16 @@ export class EventService {
     const organization = await this.assertUserInOrganization(slug, userId);
 
     const result = await paginate(query, this.eventRepo, {
-      sortableColumns: ['title', 'capacity'],
-      searchableColumns: ['title', 'organization.name'],
+      sortableColumns: ['title', 'capacity', 'categories.name'],
+      searchableColumns: ['title', 'organization.name', 'categories.name'],
       filterableColumns: {
         status: [FilterOperator.EQ],
         capacity: [FilterOperator.GTE, FilterOperator.LTE],
+        'categories.id': [FilterOperator.EQ],
+        'categories.name': [FilterOperator.EQ],
       },
       where: { organization: { id: organization.id } },
-      relations: ['organization'],
+      relations: ['organization', 'categories'],
       defaultSortBy: [['createdAt', 'DESC']],
     });
 
@@ -225,7 +237,7 @@ export class EventService {
   async findOne(id: string): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
-      relations: ['organization'],
+      relations: ['organization', 'categories'],
     });
     if (!event) throw new BadRequestException('Event not found');
     const soldResult = await this.eventRepo
@@ -291,7 +303,7 @@ export class EventService {
   ): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
-      relations: ['organization'],
+      relations: ['organization', 'categories'],
     });
     const oldPosterUrl = event?.eventPoster;
     const oldBannerUrl = event?.eventBanner;
@@ -310,7 +322,14 @@ export class EventService {
       event.organization = org;
     }
 
-    Object.assign(event, updateEventDto);
+    if (updateEventDto.categoryIds !== undefined) {
+      event.categories = await this.findCategoriesByIds(
+        updateEventDto.categoryIds,
+      );
+    }
+
+    const { categoryIds, ...eventData } = updateEventDto;
+    Object.assign(event, eventData);
 
     const saved = await this.eventRepo.save(event);
     if (oldPosterUrl && saved.eventPoster !== oldPosterUrl) {
@@ -330,5 +349,24 @@ export class EventService {
 
   remove(id: number) {
     return `This action removes a #${id} event`;
+  }
+
+  private async findCategoriesByIds(
+    categoryIds?: string[],
+  ): Promise<Category[]> {
+    if (!categoryIds || categoryIds.length === 0) {
+      return [];
+    }
+
+    const uniqueCategoryIds = [...new Set(categoryIds)];
+    const categories = await this.categoryRepo.find({
+      where: { id: In(uniqueCategoryIds) },
+    });
+
+    if (categories.length !== uniqueCategoryIds.length) {
+      throw new BadRequestException('Some categories not found');
+    }
+
+    return categories;
   }
 }

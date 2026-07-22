@@ -40,11 +40,13 @@ export class EventController {
 
   @Get()
   @ApiPaginationQuery({
-    sortableColumns: ['title', 'capacity'],
-    searchableColumns: ['title', 'organization.name'],
+    sortableColumns: ['title', 'capacity', 'categories.name'],
+    searchableColumns: ['title', 'organization.name', 'categories.name'],
     filterableColumns: {
       status: [FilterOperator.EQ],
       capacity: [FilterOperator.GTE, FilterOperator.LTE],
+      'categories.id': [FilterOperator.EQ],
+      'categories.name': [FilterOperator.EQ],
     },
   })
   @ApiOperation({ operationId: 'getEvents' })
@@ -56,11 +58,13 @@ export class EventController {
 
   @Get('org/:slug')
   @ApiPaginationQuery({
-    sortableColumns: ['title', 'capacity'],
-    searchableColumns: ['title', 'organization.name'],
+    sortableColumns: ['title', 'capacity', 'categories.name'],
+    searchableColumns: ['title', 'organization.name', 'categories.name'],
     filterableColumns: {
       status: [FilterOperator.EQ],
       capacity: [FilterOperator.GTE, FilterOperator.LTE],
+      'categories.id': [FilterOperator.EQ],
+      'categories.name': [FilterOperator.EQ],
     },
   })
   @ApiOperation({ operationId: 'getEventsByOrgSlug' })

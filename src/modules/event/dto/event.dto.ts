@@ -48,5 +48,9 @@ export class EventDto {
   @Type(() => OrgRoleDto)
   organization: OrgRoleDto;
 
+  @Expose()
+  @Type(() => OrgRoleDto)
+  categories: OrgRoleDto[];
+
   // ticketTypes: TicketTypeDto[];
 }

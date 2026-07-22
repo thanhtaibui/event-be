@@ -7,6 +7,7 @@ import {
   Min,
   IsUUID,
   IsUrl,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EventStatus } from 'src/shared/enum/enum';
@@ -80,6 +81,17 @@ export class CreateEventDto {
   @IsUUID('4', { message: 'Organization ID must be a valid UUID' })
   @IsNotEmpty({ message: 'Organization ID is required' })
   organizationId: string;
+
+  @ApiPropertyOptional({
+    example: ['uuid'],
+  })
+  @IsArray({ message: 'Category IDs must be an array' })
+  @IsUUID('4', {
+    each: true,
+    message: 'Each category ID must be a valid UUID',
+  })
+  @IsOptional()
+  categoryIds?: string[];
 
   @IsString()
   @IsOptional()

@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany } from 'typeorm';
+import { Entity, Column, ManyToMany } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { BaseEntity } from 'src/shared/base/base.entity';
 import { Event } from 'src/modules/event/entities/event.entity';
@@ -13,7 +13,7 @@ export class Category extends BaseEntity {
   @Column({ nullable: true, type: 'text' })
   description?: string | null;
 
-  @OneToMany(() => Event, (event) => event.category)
+  @ManyToMany(() => Event, (event) => event.categories)
   events: Event[];
 }
 

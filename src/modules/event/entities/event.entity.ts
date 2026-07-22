@@ -1,4 +1,11 @@
-import { Column, ManyToOne, OneToMany, Entity } from 'typeorm';
+import {
+  Column,
+  ManyToOne,
+  OneToMany,
+  Entity,
+  ManyToMany,
+  JoinTable,
+} from 'typeorm';
 import { BaseEntity } from '../../../shared/base/base.entity';
 import { EventStatus } from '../../../shared/enum/enum';
 import { Organization } from '../../organization/entities/organization.entity';
@@ -50,8 +57,13 @@ export class Event extends BaseEntity {
   @ManyToOne(() => Organization, (org) => org.events)
   organization: Organization;
 
-  @ManyToOne(() => Category, (category) => category.events)
-  category: Category;
+  @ManyToMany(() => Category, (category) => category.events)
+  @JoinTable({
+    name: 'event_categories',
+    joinColumn: { name: 'eventId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'categoryId', referencedColumnName: 'id' },
+  })
+  categories: Category[];
 
   @OneToMany(() => TicketType, (type) => type.event)
   ticketTypes: TicketType[];
