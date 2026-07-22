@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
@@ -21,7 +21,7 @@ export class CategoryService {
     createCategoryDto: CreateCategoryDto,
   ): Promise<ApiResponse<Category>> {
     const existing = await this.categoryRepo.findOne({
-      where: { name: createCategoryDto.name },
+      where: { name: createCategoryDto.name, deletedAt: IsNull() },
     });
 
     if (existing) {
@@ -39,6 +39,7 @@ export class CategoryService {
 
   async findAll(): Promise<ApiResponse<Category[]>> {
     const categories = await this.categoryRepo.find({
+      where: { deletedAt: IsNull() },
       order: { createdAt: 'DESC' },
     });
     return Response(200, 'Categories retrieved successfully', categories);
@@ -46,7 +47,7 @@ export class CategoryService {
 
   async findOne(id: string): Promise<ApiResponse<Category>> {
     const category = await this.categoryRepo.findOne({
-      where: { id },
+      where: { id, deletedAt: IsNull() },
     });
 
     if (!category) {
@@ -60,7 +61,9 @@ export class CategoryService {
     id: string,
     updateCategoryDto: UpdateCategoryDto,
   ): Promise<ApiResponse<Category>> {
-    const category = await this.categoryRepo.findOne({ where: { id } });
+    const category = await this.categoryRepo.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
 
     if (!category) {
       throw new NotFoundException('Category not found');
@@ -68,7 +71,11 @@ export class CategoryService {
 
     if (updateCategoryDto.name && updateCategoryDto.name !== category.name) {
       const conflict = await this.categoryRepo.findOne({
-        where: { name: updateCategoryDto.name },
+        where: {
+          id: Not(id),
+          name: updateCategoryDto.name,
+          deletedAt: IsNull(),
+        },
       });
 
       if (conflict) {
@@ -83,12 +90,14 @@ export class CategoryService {
   }
 
   async remove(id: string): Promise<ApiResponse<{ deleted: true }>> {
-    const category = await this.categoryRepo.findOne({ where: { id } });
+    const category = await this.categoryRepo.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!category) {
       throw new NotFoundException('Category not found');
     }
 
-    await this.categoryRepo.delete(id);
+    await this.categoryRepo.softDelete(id);
     return Response(200, 'Category deleted successfully', { deleted: true });
   }
 }
