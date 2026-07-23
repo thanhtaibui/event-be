@@ -298,9 +298,14 @@ export class AuthService {
 
     const googleUser = (await response.json()) as GoogleTokenInfo;
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
     if (!googleClientId) {
       throw new BadRequestException('Google client is not configured');
+    }
+
+    if (!googleClientSecret) {
+      throw new BadRequestException('Google client secret is not configured');
     }
 
     if (googleUser.aud !== googleClientId) {
