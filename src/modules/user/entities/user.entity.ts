@@ -6,6 +6,7 @@ import { Membership } from '../../membership/entities/membership.entity';
 import { Report } from '../../report/entities/report.entity';
 import { Feedback } from '../../feedback/entities/feedback.entity';
 import { RoleUser } from '../../../shared/enum/enum';
+import { Ticket } from '../../ticket/entities/ticket.entity';
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -38,6 +39,9 @@ export class User extends BaseEntity {
 
   @OneToMany(() => Feedback, (feedback) => feedback.user)
   feedbacks: Feedback[];
+
+  @OneToMany(() => Ticket, (ticket) => ticket.user)
+  tickets: Ticket[];
 
   @Column({ nullable: true })
   refreshToken: string;

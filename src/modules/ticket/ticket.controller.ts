@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { TicketService } from './ticket.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -25,9 +26,14 @@ export class TicketController {
     return this.ticketService.findAll();
   }
 
+  @Get('user/:userId')
+  findByUser(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.ticketService.findByUser(userId);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ticketService.findOne(+id);
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ticketService.findOne(id);
   }
 
   @Patch(':id')
