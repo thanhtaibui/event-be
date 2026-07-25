@@ -66,26 +66,6 @@ export class TicketService {
     return Response(200, 'Get ticket successfully', this.toTicketDto(ticket));
   }
 
-  async findByUser(userId: string): Promise<ApiResponse<any[]>> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const tickets = await this.ticketRepo.find({
-      where: { user: { id: userId } },
-      relations: ['user', 'ticketType', 'ticketType.event'],
-      order: { createdAt: 'DESC' },
-    });
-
-    return Response(
-      200,
-      'Get tickets of user successfully',
-      tickets.map((ticket) => this.toTicketDto(ticket)),
-    );
-  }
-
   update(id: number, updateTicketDto: UpdateTicketDto) {
     return `This action updates a #${id} ticket`;
   }

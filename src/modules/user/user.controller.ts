@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   Logger,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -50,6 +51,12 @@ export class UserController {
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
     return this.userService.findAll(query);
+  }
+
+  @Get(':id/ticket')
+  @ApiOperation({ operationId: 'getUserTickets' })
+  getUserTickets(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService.findTicketsByUser(id);
   }
 
   @Get(':id')

@@ -1,5 +1,4 @@
 import { BaseEntity } from '../../../shared/base/base.entity';
-import { Order } from '../../order/entities/order.entity';
 import { Column, Entity, ManyToOne, OneToMany } from 'typeorm';
 import { Event } from '../../event/entities/event.entity';
 import { Ticket } from '../../ticket/entities/ticket.entity';
@@ -20,9 +19,6 @@ export class TicketType extends BaseEntity {
 
   @OneToMany(() => Ticket, (ticket) => ticket.ticketType)
   tickets: Ticket[];
-
-  @ManyToOne(() => Order, (order) => order.ticketType)
-  order: Order;
 
   @OneToMany(() => TicketTypeItem, (tti) => tti.ticketType)
   ticketItems: TicketTypeItem[];

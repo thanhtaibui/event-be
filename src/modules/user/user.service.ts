@@ -18,6 +18,7 @@ import { Membership } from '../membership/entities/membership.entity';
 import { Role } from '../role/entities/role.entity';
 import { DeleteSort } from './dto/delete-sort-user.dto';
 import { FilterOperator, paginate, type PaginateQuery } from 'nestjs-paginate';
+import { Ticket } from '../ticket/entities/ticket.entity';
 @Injectable()
 export class UserService {
   constructor(
@@ -26,6 +27,8 @@ export class UserService {
     @InjectRepository(Organization) private orgRepo: Repository<Organization>,
     @InjectRepository(Membership)
     private membershipRepo: Repository<Membership>,
+    @InjectRepository(Ticket)
+    private ticketRepo: Repository<Ticket>,
   ) {}
 
   async create(
@@ -281,6 +284,49 @@ export class UserService {
       fullName: user.fullName,
       membership,
     });
+  }
+
+  async findTicketsByUser(userId: string): Promise<ApiResponse<any[]>> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const tickets = await this.ticketRepo.find({
+      where: { user: { id: userId } },
+      relations: ['ticketType', 'ticketType.event', 'order'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return Response(
+      200,
+      'Get tickets of user successfully',
+      tickets.map((ticket) => ({
+        id: ticket.id,
+        createdAt: ticket.createdAt,
+        ticketType: {
+          id: ticket.ticketType?.id,
+          name: ticket.ticketType?.name,
+          price: ticket.ticketType?.price,
+        },
+        event: ticket.ticketType?.event
+          ? {
+              id: ticket.ticketType.event.id,
+              title: ticket.ticketType.event.title,
+              startDateTime: ticket.ticketType.event.startDateTime,
+              endDateTime: ticket.ticketType.event.endDateTime,
+              place: ticket.ticketType.event.place,
+            }
+          : null,
+        order: ticket.order
+          ? {
+              id: ticket.order.id,
+              totalPrice: ticket.order.totalPrice,
+            }
+          : null,
+      })),
+    );
   }
 
   async findOne(id: string) {

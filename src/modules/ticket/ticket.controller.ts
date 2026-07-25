@@ -26,11 +26,6 @@ export class TicketController {
     return this.ticketService.findAll();
   }
 
-  @Get('user/:userId')
-  findByUser(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.ticketService.findByUser(userId);
-  }
-
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ticketService.findOne(id);
