@@ -90,30 +90,26 @@ export class RoleService {
 
   async findAll(
     query: PaginateQuery,
-  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  ): Promise<ApiResponse<PaginationResult<any>>> {
     console.time('GET_ROLES');
     try {
       const result = await paginate(query, this.roleRepo, {
         sortableColumns: ['role_name', 'role_code', 'organization.name'],
         searchableColumns: ['role_name', 'role_code', 'organization.name'],
         where: { deletedAt: IsNull() },
-        relations: ['permissions', 'permissions.parent', 'organization'],
+        relations: ['organization'],
       });
 
-      const itemPromises = result.data.map(async (r) => {
-        return {
-          id: r.id,
-          role_name: r.role_name,
-          role_code: r.role_code,
-          colorKey: r.colorKey,
-          org: {
-            id: r.organization.id,
-            name: r.organization.name,
-          },
-          permissions: await this.buildPermissionTree(r.permissions),
-        };
-      });
-      const items = await Promise.all(itemPromises);
+      const items = result.data.map((r) => ({
+        id: r.id,
+        role_name: r.role_name,
+        role_code: r.role_code,
+        colorKey: r.colorKey,
+        org: {
+          id: r.organization.id,
+          name: r.organization.name,
+        },
+      }));
       return Response(200, 'get all roles successfully', {
         items: items,
         page: result.meta.currentPage ?? 1,
@@ -157,7 +153,7 @@ export class RoleService {
     slug: string,
     userId: string,
     query: PaginateQuery,
-  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  ): Promise<ApiResponse<PaginationResult<any>>> {
     console.time('GET_ROLES_BY_ORG_SLUG');
     try {
       const organization = await this.assertUserInOrganization(slug, userId);
@@ -169,11 +165,11 @@ export class RoleService {
           organization: { id: organization.id },
           deletedAt: IsNull(),
         },
-        relations: ['permissions', 'permissions.parent', 'organization'],
+        relations: ['organization'],
         defaultSortBy: [['createdAt', 'DESC']],
       });
 
-      const itemPromises = result.data.map(async (r) => ({
+      const items = result.data.map((r) => ({
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
@@ -182,9 +178,7 @@ export class RoleService {
           id: r.organization.id,
           name: r.organization.name,
         },
-        permissions: await this.buildPermissionTree(r.permissions),
       }));
-      const items = await Promise.all(itemPromises);
 
       return Response(200, 'Get Roles Of Organization Successfully', {
         items,
@@ -258,6 +252,26 @@ export class RoleService {
       tr.isAll = tr.children.length === totalChildren;
     }
     return tree.filter((tr) => tr.children && tr.children.length > 0);
+  }
+
+  async getRolePermissions(id: string): Promise<ApiResponse<any>> {
+    console.time('GET_ROLE_PERMISSIONS');
+    try {
+      const role = await this.roleRepo.findOne({
+        where: { id, deletedAt: IsNull() },
+        relations: ['permissions', 'permissions.parent'],
+      });
+
+      if (!role) {
+        throw new NotFoundException('Role not found');
+      }
+
+      return Response(200, 'get role permissions successfully', {
+        permissions: await this.buildPermissionTree(role.permissions || []),
+      });
+    } finally {
+      console.timeEnd('GET_ROLE_PERMISSIONS');
+    }
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {

@@ -44,7 +44,7 @@ export class RoleController {
   @ApiOperation({ operationId: 'GetRoles' })
   async findAll(
     @Paginate() query: PaginateQuery,
-  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  ): Promise<ApiResponse<PaginationResult<any>>> {
     return this.roleService.findAll(query);
   }
 
@@ -57,7 +57,7 @@ export class RoleController {
     @Param('slug') slug: string,
     @Req() req: any,
     @Paginate() query: PaginateQuery,
-  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+  ): Promise<ApiResponse<PaginationResult<any>>> {
     return this.roleService.findAllByOrgSlug(slug, req.user.userId, query);
   }
 
@@ -65,6 +65,12 @@ export class RoleController {
   @ApiOperation({ operationId: 'deleteSort' })
   deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
     return this.roleService.deleteSort(deleteSort);
+  }
+
+  @Get(':id/permissions')
+  @ApiOperation({ operationId: 'GetRolePermissions' })
+  getRolePermissions(@Param('id') id: string): Promise<ApiResponse<any>> {
+    return this.roleService.getRolePermissions(id);
   }
 
   @Get(':id')
