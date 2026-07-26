@@ -72,56 +72,61 @@ export class EventService {
   async findAll(
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
-    const result = await paginate(query, this.eventRepo, {
-      sortableColumns: ['title', 'capacity', 'categories.name'],
-      searchableColumns: ['title', 'organization.name', 'categories.name'],
-      filterableColumns: {
-        status: [FilterOperator.EQ],
-        capacity: [FilterOperator.GTE, FilterOperator.LTE],
-        'categories.id': [FilterOperator.EQ],
-        'categories.name': [FilterOperator.EQ],
-      },
-      relations: ['organization', 'categories'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
-
-    // soldTickets phải query riêng vì là virtual field
-    const eventIds = result.data.map((e) => e.id);
-    const soldMapById: Record<string, number> = {};
-
-    if (eventIds.length > 0) {
-      const soldMap = await this.eventRepo
-        .createQueryBuilder('event')
-        .leftJoin('event.ticketTypes', 'ticketType')
-        .leftJoin('ticketType.tickets', 'ticket')
-        .select('event.id', 'eventId')
-        .addSelect('COUNT(ticket.id)', 'soldTickets')
-        .where('event.id IN (:...ids)', { ids: eventIds })
-        .groupBy('event.id')
-        .getRawMany();
-
-      soldMap.forEach((r) => {
-        soldMapById[r.eventId] = Number(r.soldTickets);
+    console.time('GET_EVENTS');
+    try {
+      const result = await paginate(query, this.eventRepo, {
+        sortableColumns: ['title', 'capacity', 'categories.name'],
+        searchableColumns: ['title', 'organization.name', 'categories.name'],
+        filterableColumns: {
+          status: [FilterOperator.EQ],
+          capacity: [FilterOperator.GTE, FilterOperator.LTE],
+          'categories.id': [FilterOperator.EQ],
+          'categories.name': [FilterOperator.EQ],
+        },
+        relations: ['organization', 'categories'],
+        defaultSortBy: [['createdAt', 'DESC']],
       });
+
+      // soldTickets phải query riêng vì là virtual field
+      const eventIds = result.data.map((e) => e.id);
+      const soldMapById: Record<string, number> = {};
+
+      if (eventIds.length > 0) {
+        const soldMap = await this.eventRepo
+          .createQueryBuilder('event')
+          .leftJoin('event.ticketTypes', 'ticketType')
+          .leftJoin('ticketType.tickets', 'ticket')
+          .select('event.id', 'eventId')
+          .addSelect('COUNT(ticket.id)', 'soldTickets')
+          .where('event.id IN (:...ids)', { ids: eventIds })
+          .groupBy('event.id')
+          .getRawMany();
+
+        soldMap.forEach((r) => {
+          soldMapById[r.eventId] = Number(r.soldTickets);
+        });
+      }
+
+      const items = plainToInstance(
+        EventDto,
+        result.data.map((e) => ({
+          ...e,
+          eventPoster: e.eventBanner ?? e.eventPoster,
+          soldTickets: soldMapById[e.id] ?? 0,
+        })),
+        { excludeExtraneousValues: true },
+      );
+
+      return Response(200, 'Get All Events Successfully', {
+        items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 0,
+      });
+    } finally {
+      console.timeEnd('GET_EVENTS');
     }
-
-    const items = plainToInstance(
-      EventDto,
-      result.data.map((e) => ({
-        ...e,
-        eventPoster: e.eventBanner ?? e.eventPoster,
-        soldTickets: soldMapById[e.id] ?? 0,
-      })),
-      { excludeExtraneousValues: true },
-    );
-
-    return Response(200, 'Get All Events Successfully', {
-      items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 0,
-    });
   }
 
   async findAllByOrgSlug(
@@ -129,58 +134,63 @@ export class EventService {
     userId: string,
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
-    const organization = await this.assertUserInOrganization(slug, userId);
+    console.time('GET_EVENTS_BY_ORG_SLUG');
+    try {
+      const organization = await this.assertUserInOrganization(slug, userId);
 
-    const result = await paginate(query, this.eventRepo, {
-      sortableColumns: ['title', 'capacity', 'categories.name'],
-      searchableColumns: ['title', 'organization.name', 'categories.name'],
-      filterableColumns: {
-        status: [FilterOperator.EQ],
-        capacity: [FilterOperator.GTE, FilterOperator.LTE],
-        'categories.id': [FilterOperator.EQ],
-        'categories.name': [FilterOperator.EQ],
-      },
-      where: { organization: { id: organization.id } },
-      relations: ['organization', 'categories'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
-
-    const eventIds = result.data.map((e) => e.id);
-    const soldMapById: Record<string, number> = {};
-
-    if (eventIds.length > 0) {
-      const soldMap = await this.eventRepo
-        .createQueryBuilder('event')
-        .leftJoin('event.ticketTypes', 'ticketType')
-        .leftJoin('ticketType.tickets', 'ticket')
-        .select('event.id', 'eventId')
-        .addSelect('COUNT(ticket.id)', 'soldTickets')
-        .where('event.id IN (:...ids)', { ids: eventIds })
-        .groupBy('event.id')
-        .getRawMany();
-
-      soldMap.forEach((r) => {
-        soldMapById[r.eventId] = Number(r.soldTickets);
+      const result = await paginate(query, this.eventRepo, {
+        sortableColumns: ['title', 'capacity', 'categories.name'],
+        searchableColumns: ['title', 'organization.name', 'categories.name'],
+        filterableColumns: {
+          status: [FilterOperator.EQ],
+          capacity: [FilterOperator.GTE, FilterOperator.LTE],
+          'categories.id': [FilterOperator.EQ],
+          'categories.name': [FilterOperator.EQ],
+        },
+        where: { organization: { id: organization.id } },
+        relations: ['organization', 'categories'],
+        defaultSortBy: [['createdAt', 'DESC']],
       });
+
+      const eventIds = result.data.map((e) => e.id);
+      const soldMapById: Record<string, number> = {};
+
+      if (eventIds.length > 0) {
+        const soldMap = await this.eventRepo
+          .createQueryBuilder('event')
+          .leftJoin('event.ticketTypes', 'ticketType')
+          .leftJoin('ticketType.tickets', 'ticket')
+          .select('event.id', 'eventId')
+          .addSelect('COUNT(ticket.id)', 'soldTickets')
+          .where('event.id IN (:...ids)', { ids: eventIds })
+          .groupBy('event.id')
+          .getRawMany();
+
+        soldMap.forEach((r) => {
+          soldMapById[r.eventId] = Number(r.soldTickets);
+        });
+      }
+
+      const items = plainToInstance(
+        EventDto,
+        result.data.map((e) => ({
+          ...e,
+          eventPoster: e.eventBanner ?? e.eventPoster,
+          soldTickets: soldMapById[e.id] ?? 0,
+        })),
+        { excludeExtraneousValues: true },
+      );
+
+      return Response(200, 'Get Events Of Organization Successfully', {
+        items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 0,
+      });
+    } finally {
+      console.timeEnd('GET_EVENTS_BY_ORG_SLUG');
     }
-
-    const items = plainToInstance(
-      EventDto,
-      result.data.map((e) => ({
-        ...e,
-        eventPoster: e.eventBanner ?? e.eventPoster,
-        soldTickets: soldMapById[e.id] ?? 0,
-      })),
-      { excludeExtraneousValues: true },
-    );
-
-    return Response(200, 'Get Events Of Organization Successfully', {
-      items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 0,
-    });
   }
 
   private async assertUserInOrganization(
@@ -235,31 +245,36 @@ export class EventService {
   }
 
   async findOne(id: string): Promise<ApiResponse<EventDto>> {
-    const event = await this.eventRepo.findOne({
-      where: { id },
-      relations: ['organization', 'categories'],
-    });
-    if (!event) throw new BadRequestException('Event not found');
-    const soldResult = await this.eventRepo
-      .createQueryBuilder('event')
-      .leftJoin('event.ticketTypes', 'ticketType')
-      .leftJoin('ticketType.tickets', 'ticket')
-      .select('event.id', 'eventId')
-      .addSelect('COUNT(ticket.id)', 'soldTickets')
-      .where('event.id = :id', { id })
-      .groupBy('event.id')
-      .getRawOne();
-    const eventWithSold = {
-      ...event,
-      soldTickets: parseInt(soldResult?.soldTickets || '0', 10),
-    };
-    return Response(
-      200,
-      'Get Event By Id Successfully',
-      plainToInstance(EventDto, eventWithSold, {
-        excludeExtraneousValues: true,
-      }),
-    );
+    console.time('GET_EVENT_BY_ID');
+    try {
+      const event = await this.eventRepo.findOne({
+        where: { id },
+        relations: ['organization', 'categories'],
+      });
+      if (!event) throw new BadRequestException('Event not found');
+      const soldResult = await this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoin('event.ticketTypes', 'ticketType')
+        .leftJoin('ticketType.tickets', 'ticket')
+        .select('event.id', 'eventId')
+        .addSelect('COUNT(ticket.id)', 'soldTickets')
+        .where('event.id = :id', { id })
+        .groupBy('event.id')
+        .getRawOne();
+      const eventWithSold = {
+        ...event,
+        soldTickets: parseInt(soldResult?.soldTickets || '0', 10),
+      };
+      return Response(
+        200,
+        'Get Event By Id Successfully',
+        plainToInstance(EventDto, eventWithSold, {
+          excludeExtraneousValues: true,
+        }),
+      );
+    } finally {
+      console.timeEnd('GET_EVENT_BY_ID');
+    }
   }
 
   async getTicketTypes(id: string): Promise<ApiResponse<TicketTypeDto[]>> {

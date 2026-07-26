@@ -117,139 +117,164 @@ export class OrganizationService {
   }
 
   async SwitchOrg(): Promise<ApiResponse<SwitchOrgDto[]>> {
-    const orgs = await this.organizationRepo.find();
-    const result = orgs.map((org) => ({
-      id: org.id,
-      name: org.name,
-    }));
-    return Response(200, 'Get Switch Orgs Successfully', result);
+    console.time('GET_SWITCH_ORGS');
+    try {
+      const orgs = await this.organizationRepo.find();
+      const result = orgs.map((org) => ({
+        id: org.id,
+        name: org.name,
+      }));
+      return Response(200, 'Get Switch Orgs Successfully', result);
+    } finally {
+      console.timeEnd('GET_SWITCH_ORGS');
+    }
   }
 
   async findAll(
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
-    const result = await paginate(query, this.organizationRepo, {
-      searchableColumns: ['name', 'email', 'owner.fullName'],
-      sortableColumns: ['name', 'email', 'owner.fullName'],
-      filterableColumns: {
-        isActive: [FilterOperator.EQ],
-        status: [FilterOperator.EQ],
-      },
-      relations: ['memberships', 'events', 'owner'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
+    console.time('GET_ORGS');
+    try {
+      const result = await paginate(query, this.organizationRepo, {
+        searchableColumns: ['name', 'email', 'owner.fullName'],
+        sortableColumns: ['name', 'email', 'owner.fullName'],
+        filterableColumns: {
+          isActive: [FilterOperator.EQ],
+          status: [FilterOperator.EQ],
+        },
+        relations: ['memberships', 'events', 'owner'],
+        defaultSortBy: [['createdAt', 'DESC']],
+      });
 
-    const items = plainToInstance(OrganizationDto, result.data, {
-      excludeExtraneousValues: true,
-    });
+      const items = plainToInstance(OrganizationDto, result.data, {
+        excludeExtraneousValues: true,
+      });
 
-    // 5. Phân trang sau khi đã xử lý xong data
-    return Response(200, 'Get all organizations successfully', {
-      items: items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
+      // 5. Phân trang sau khi đã xử lý xong data
+      return Response(200, 'Get all organizations successfully', {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd('GET_ORGS');
+    }
   }
 
   async GetMembersByOrgId(orgId: string): Promise<ApiResponse<any>> {
-    // 1. Tìm Org và join sâu xuống User và Role
-    const org = await this.organizationRepo.findOne({
-      where: { id: orgId },
-      relations: ['memberships', 'memberships.user', 'memberships.role'],
-    });
+    console.time('GET_ORG_MEMBERS');
+    try {
+      // 1. Tìm Org và join sâu xuống User và Role
+      const org = await this.organizationRepo.findOne({
+        where: { id: orgId },
+        relations: ['memberships', 'memberships.user', 'memberships.role'],
+      });
 
-    if (!org) {
-      throw new BadRequestException('Organization not found');
+      if (!org) {
+        throw new BadRequestException('Organization not found');
+      }
+
+      // 2. Map lại dữ liệu để trả về danh sách Member (Phẳng hóa)
+      const members = (org.memberships || [])
+        .filter((m) => m.user !== null) // Loại bỏ nếu user không tồn tại
+        .map((m) => ({
+          membershipId: m.id,
+          userId: m.user.id,
+          fullName: m.user.fullName,
+          email: m.user.email,
+          phoneNumber: m.user.phoneNumber,
+          isActive: m.isActive, // Trạng thái của user trong Org này
+          role: m.role
+            ? {
+                id: m.role.id,
+                name: m.role.role_name,
+                color: m.role.colorKey,
+              }
+            : null,
+        }));
+
+      // 3. Trả về thông tin Org kèm danh sách members đã làm sạch
+      const result = {
+        id: org.id,
+        name: org.name,
+        status: org.status,
+        totalMembers: members.length,
+        members: members, // Đây là mảng đã được phẳng hóa
+      };
+
+      return Response(200, 'Get members of organization successfully', result);
+    } finally {
+      console.timeEnd('GET_ORG_MEMBERS');
     }
-
-    // 2. Map lại dữ liệu để trả về danh sách Member (Phẳng hóa)
-    const members = (org.memberships || [])
-      .filter((m) => m.user !== null) // Loại bỏ nếu user không tồn tại
-      .map((m) => ({
-        membershipId: m.id,
-        userId: m.user.id,
-        fullName: m.user.fullName,
-        email: m.user.email,
-        phoneNumber: m.user.phoneNumber,
-        isActive: m.isActive, // Trạng thái của user trong Org này
-        role: m.role
-          ? {
-              id: m.role.id,
-              name: m.role.role_name,
-              color: m.role.colorKey,
-            }
-          : null,
-      }));
-
-    // 3. Trả về thông tin Org kèm danh sách members đã làm sạch
-    const result = {
-      id: org.id,
-      name: org.name,
-      status: org.status,
-      totalMembers: members.length,
-      members: members, // Đây là mảng đã được phẳng hóa
-    };
-
-    return Response(200, 'Get members of organization successfully', result);
   }
 
   async GetOrgById(id: string): Promise<ApiResponse<OrganizationResDto>> {
-    const org = await this.organizationRepo.findOne({
-      where: { id: id },
-      relations: ['owner'],
-    });
+    console.time('GET_ORG_BY_ID');
+    try {
+      const org = await this.organizationRepo.findOne({
+        where: { id: id },
+        relations: ['owner'],
+      });
 
-    if (!org) {
-      throw new BadRequestException('Organization not found');
+      if (!org) {
+        throw new BadRequestException('Organization not found');
+      }
+      const result = {
+        id: org.id,
+        name: org.name,
+        bio: org.bio,
+        owner: org.owner,
+        slug: org.slug,
+        legalName: org.legalName,
+        industry: org.industry,
+        email: org.email,
+        phone: org.phone,
+        website: org.website,
+        address: org.address,
+        createdAt: org.createdAt,
+        bannerUrl: org.bannerUrl,
+        logoUrl: org.logoUrl,
+      };
+
+      return Response(200, 'Get Organization By Id Successfully', result);
+    } finally {
+      console.timeEnd('GET_ORG_BY_ID');
     }
-    const result = {
-      id: org.id,
-      name: org.name,
-      bio: org.bio,
-      owner: org.owner,
-      slug: org.slug,
-      legalName: org.legalName,
-      industry: org.industry,
-      email: org.email,
-      phone: org.phone,
-      website: org.website,
-      address: org.address,
-      createdAt: org.createdAt,
-      bannerUrl: org.bannerUrl,
-      logoUrl: org.logoUrl,
-    };
-
-    return Response(200, 'Get Organization By Id Successfully', result);
   }
   async GetOrgBySlug(slug: string): Promise<ApiResponse<OrganizationResDto>> {
-    const org = await this.organizationRepo.findOne({
-      where: { slug: slug.trim() },
-      relations: ['owner'],
-    });
+    console.time('GET_ORG_BY_SLUG');
+    try {
+      const org = await this.organizationRepo.findOne({
+        where: { slug: slug.trim() },
+        relations: ['owner'],
+      });
 
-    if (!org) {
-      throw new BadRequestException('Organization not found');
+      if (!org) {
+        throw new BadRequestException('Organization not found');
+      }
+      const result = {
+        id: org.id,
+        name: org.name,
+        bio: org.bio,
+        owner: org.owner,
+        slug: org.slug,
+        legalName: org.legalName,
+        industry: org.industry,
+        email: org.email,
+        phone: org.phone,
+        website: org.website,
+        address: org.address,
+        createdAt: org.createdAt,
+        bannerUrl: org.bannerUrl,
+        logoUrl: org.logoUrl,
+      };
+
+      return Response(200, 'Get Organization By Id Successfully', result);
+    } finally {
+      console.timeEnd('GET_ORG_BY_SLUG');
     }
-    const result = {
-      id: org.id,
-      name: org.name,
-      bio: org.bio,
-      owner: org.owner,
-      slug: org.slug,
-      legalName: org.legalName,
-      industry: org.industry,
-      email: org.email,
-      phone: org.phone,
-      website: org.website,
-      address: org.address,
-      createdAt: org.createdAt,
-      bannerUrl: org.bannerUrl,
-      logoUrl: org.logoUrl,
-    };
-
-    return Response(200, 'Get Organization By Id Successfully', result);
   }
 
   findOne(id: number) {

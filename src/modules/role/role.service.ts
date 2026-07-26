@@ -91,15 +91,89 @@ export class RoleService {
   async findAll(
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
-    const result = await paginate(query, this.roleRepo, {
-      sortableColumns: ['role_name', 'role_code', 'organization.name'],
-      searchableColumns: ['role_name', 'role_code', 'organization.name'],
-      where: { deletedAt: IsNull() },
-      relations: ['permissions', 'permissions.parent', 'organization'],
-    });
+    console.time('GET_ROLES');
+    try {
+      const result = await paginate(query, this.roleRepo, {
+        sortableColumns: ['role_name', 'role_code', 'organization.name'],
+        searchableColumns: ['role_name', 'role_code', 'organization.name'],
+        where: { deletedAt: IsNull() },
+        relations: ['permissions', 'permissions.parent', 'organization'],
+      });
 
-    const itemPromises = result.data.map(async (r) => {
-      return {
+      const itemPromises = result.data.map(async (r) => {
+        return {
+          id: r.id,
+          role_name: r.role_name,
+          role_code: r.role_code,
+          colorKey: r.colorKey,
+          org: {
+            id: r.organization.id,
+            name: r.organization.name,
+          },
+          permissions: await this.buildPermissionTree(r.permissions),
+        };
+      });
+      const items = await Promise.all(itemPromises);
+      return Response(200, 'get all roles successfully', {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd('GET_ROLES');
+    }
+  }
+
+  async findAllByOrg(orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {
+    console.time('GET_ROLES_BY_ORG');
+    try {
+      const exOrg = await this.orgRepo.findOne({ where: { id: orgId } });
+      if (!exOrg) {
+        throw new BadRequestException('orgId not found');
+      }
+      const roleOrg = await this.roleRepo.find({
+        where: {
+          organization: {
+            id: orgId,
+          },
+          deletedAt: IsNull(),
+        },
+        relations: ['organization'],
+      });
+      const result: RoleOrgDto[] = roleOrg.map((r) => ({
+        id: r.id,
+        role_name: r.role_name,
+      }));
+
+      return Response(200, 'Get All Role Of Org Successfully', result);
+    } finally {
+      console.timeEnd('GET_ROLES_BY_ORG');
+    }
+  }
+
+  async findAllByOrgSlug(
+    slug: string,
+    userId: string,
+    query: PaginateQuery,
+  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
+    console.time('GET_ROLES_BY_ORG_SLUG');
+    try {
+      const organization = await this.assertUserInOrganization(slug, userId);
+
+      const result = await paginate(query, this.roleRepo, {
+        sortableColumns: ['role_name', 'role_code', 'organization.name'],
+        searchableColumns: ['role_name', 'role_code', 'organization.name'],
+        where: {
+          organization: { id: organization.id },
+          deletedAt: IsNull(),
+        },
+        relations: ['permissions', 'permissions.parent', 'organization'],
+        defaultSortBy: [['createdAt', 'DESC']],
+      });
+
+      const itemPromises = result.data.map(async (r) => ({
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
@@ -109,78 +183,19 @@ export class RoleService {
           name: r.organization.name,
         },
         permissions: await this.buildPermissionTree(r.permissions),
-      };
-    });
-    const items = await Promise.all(itemPromises);
-    return Response(200, 'get all roles successfully', {
-      items: items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
-  }
+      }));
+      const items = await Promise.all(itemPromises);
 
-  async findAllByOrg(orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {
-    const exOrg = await this.orgRepo.findOne({ where: { id: orgId } });
-    if (!exOrg) {
-      throw new BadRequestException('orgId not found');
+      return Response(200, 'Get Roles Of Organization Successfully', {
+        items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd('GET_ROLES_BY_ORG_SLUG');
     }
-    const roleOrg = await this.roleRepo.find({
-      where: {
-        organization: {
-          id: orgId,
-        },
-        deletedAt: IsNull(),
-      },
-      relations: ['organization'],
-    });
-    const result: RoleOrgDto[] = roleOrg.map((r) => ({
-      id: r.id,
-      role_name: r.role_name,
-    }));
-
-    return Response(200, 'Get All Role Of Org Successfully', result);
-  }
-
-  async findAllByOrgSlug(
-    slug: string,
-    userId: string,
-    query: PaginateQuery,
-  ): Promise<ApiResponse<PaginationResult<RoleDto>>> {
-    const organization = await this.assertUserInOrganization(slug, userId);
-
-    const result = await paginate(query, this.roleRepo, {
-      sortableColumns: ['role_name', 'role_code', 'organization.name'],
-      searchableColumns: ['role_name', 'role_code', 'organization.name'],
-      where: {
-        organization: { id: organization.id },
-        deletedAt: IsNull(),
-      },
-      relations: ['permissions', 'permissions.parent', 'organization'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
-
-    const itemPromises = result.data.map(async (r) => ({
-      id: r.id,
-      role_name: r.role_name,
-      role_code: r.role_code,
-      colorKey: r.colorKey,
-      org: {
-        id: r.organization.id,
-        name: r.organization.name,
-      },
-      permissions: await this.buildPermissionTree(r.permissions),
-    }));
-    const items = await Promise.all(itemPromises);
-
-    return Response(200, 'Get Roles Of Organization Successfully', {
-      items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
   }
 
   private async assertUserInOrganization(
@@ -261,25 +276,30 @@ export class RoleService {
     return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);
   }
   async GetRoleById(id: string): Promise<ApiResponse<RoleDto>> {
-    const role = await this.roleRepo.findOne({
-      where: { id },
-      relations: ['organization', 'permissions', 'permissions.parent'],
-    });
-    if (!role) {
-      throw new NotFoundException('Role not found');
-    }
+    console.time('GET_ROLE_BY_ID');
+    try {
+      const role = await this.roleRepo.findOne({
+        where: { id },
+        relations: ['organization', 'permissions', 'permissions.parent'],
+      });
+      if (!role) {
+        throw new NotFoundException('Role not found');
+      }
 
-    return Response(200, 'Get Role By Id Successfully', {
-      id: role.id,
-      role_name: role.role_name,
-      role_code: role.role_code,
-      permissions: await this.buildPermissionTree(role.permissions),
-      colorKey: role.colorKey,
-      org: {
-        id: role.organization.id,
-        name: role.organization.name,
-      },
-    });
+      return Response(200, 'Get Role By Id Successfully', {
+        id: role.id,
+        role_name: role.role_name,
+        role_code: role.role_code,
+        permissions: await this.buildPermissionTree(role.permissions),
+        colorKey: role.colorKey,
+        org: {
+          id: role.organization.id,
+          name: role.organization.name,
+        },
+      });
+    } finally {
+      console.timeEnd('GET_ROLE_BY_ID');
+    }
   }
 
   findOne(id: number) {
