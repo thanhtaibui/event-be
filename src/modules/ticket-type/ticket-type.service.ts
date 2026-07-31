@@ -57,23 +57,34 @@ export class TicketTypeService {
   }
 
   findAll() {
-    return `This action returns all ticketType`;
+    console.time('GET_TICKET_TYPES');
+    try {
+      return `This action returns all ticketType`;
+    } finally {
+      console.timeEnd('GET_TICKET_TYPES');
+    }
   }
 
   async findOne(id: string): Promise<ApiResponse<TicketTypeDto>> {
-    const ticketType = await this.ticketTypeRepo.findOne({
-      where: { id },
-      relations: ['event'],
-    });
-    if (!ticketType) throw new BadRequestException('Ticket Type not found');
-    return Response(
-      200,
-      'Ticket Type found',
-      plainToInstance(TicketTypeDto, ticketType, {
-        excludeExtraneousValues: true,
-        enableImplicitConversion: true,
-      }),
-    );
+    const timer = `GET_TICKET_TYPE_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const ticketType = await this.ticketTypeRepo.findOne({
+        where: { id },
+        relations: ['event'],
+      });
+      if (!ticketType) throw new BadRequestException('Ticket Type not found');
+      return Response(
+        200,
+        'Ticket Type found',
+        plainToInstance(TicketTypeDto, ticketType, {
+          excludeExtraneousValues: true,
+          enableImplicitConversion: true,
+        }),
+      );
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async update(

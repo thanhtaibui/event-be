@@ -58,25 +58,30 @@ export class ReportService {
   async findAll(
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    const result = await paginate(query, this.reportRepo, {
-      sortableColumns: ['user.fullName', 'organization.name', 'status'],
-      searchableColumns: ['user.fullName', 'organization.name', 'status'],
-      where: {
-        status: Not(ReportStatus.SPAM),
-      },
-      relations: ['user', 'organization'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
+    console.time('GET_REPORTS');
+    try {
+      const result = await paginate(query, this.reportRepo, {
+        sortableColumns: ['user.fullName', 'organization.name', 'status'],
+        searchableColumns: ['user.fullName', 'organization.name', 'status'],
+        where: {
+          status: Not(ReportStatus.SPAM),
+        },
+        relations: ['user', 'organization'],
+        defaultSortBy: [['createdAt', 'DESC']],
+      });
 
-    const items = result.data.map((report) => this.toReportDto(report));
+      const items = result.data.map((report) => this.toReportDto(report));
 
-    return Response(200, 'Get all reports successfully', {
-      items: items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
+      return Response(200, 'Get all reports successfully', {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd('GET_REPORTS');
+    }
   }
 
   async findAllByOrgSlug(
@@ -84,28 +89,34 @@ export class ReportService {
     userId: string,
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    const organization = await this.assertUserInOrganization(slug, userId);
+    const timer = `GET_REPORTS_BY_ORG_SLUG:${slug}`;
+    console.time(timer);
+    try {
+      const organization = await this.assertUserInOrganization(slug, userId);
 
-    const result = await paginate(query, this.reportRepo, {
-      sortableColumns: ['user.fullName', 'organization.name', 'status'],
-      searchableColumns: ['user.fullName', 'organization.name', 'status'],
-      where: {
-        status: Not(ReportStatus.SPAM),
-        organization: { id: organization.id },
-      },
-      relations: ['user', 'organization'],
-      defaultSortBy: [['createdAt', 'DESC']],
-    });
+      const result = await paginate(query, this.reportRepo, {
+        sortableColumns: ['user.fullName', 'organization.name', 'status'],
+        searchableColumns: ['user.fullName', 'organization.name', 'status'],
+        where: {
+          status: Not(ReportStatus.SPAM),
+          organization: { id: organization.id },
+        },
+        relations: ['user', 'organization'],
+        defaultSortBy: [['createdAt', 'DESC']],
+      });
 
-    const items = result.data.map((report) => this.toReportDto(report));
+      const items = result.data.map((report) => this.toReportDto(report));
 
-    return Response(200, 'Get reports of organization successfully', {
-      items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
+      return Response(200, 'Get reports of organization successfully', {
+        items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   private async assertUserInOrganization(
@@ -136,9 +147,15 @@ export class ReportService {
   }
 
   async findOne(id: string): Promise<ApiResponse<ReportDto>> {
-    const report = await this.findReportById(id);
+    const timer = `GET_REPORT_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const report = await this.findReportById(id);
 
-    return Response(200, 'Get report successfully', this.toReportDto(report));
+      return Response(200, 'Get report successfully', this.toReportDto(report));
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async update(

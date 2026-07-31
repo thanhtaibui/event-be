@@ -98,41 +98,46 @@ export class UserService {
   async findAll(
     query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
-    const result = await paginate(query, this.userRepo, {
-      sortableColumns: ['email', 'fullName'],
-      searchableColumns: ['email', 'fullName'],
-      filterableColumns: { isActive: [FilterOperator.EQ] },
-      where: { isDelete: false },
-      relations: [
-        'memberships',
-        'memberships.role',
-        'memberships.role.organization',
-      ],
-    });
+    console.time('GET_USERS');
+    try {
+      const result = await paginate(query, this.userRepo, {
+        sortableColumns: ['email', 'fullName'],
+        searchableColumns: ['email', 'fullName'],
+        filterableColumns: { isActive: [FilterOperator.EQ] },
+        where: { isDelete: false },
+        relations: [
+          'memberships',
+          'memberships.role',
+          'memberships.role.organization',
+        ],
+      });
 
-    // Logger.warn("sortedData", sortedData)
-    const items = result.data.map((user) => ({
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      phoneNumber: user.phoneNumber,
-      isActive: user.isActive,
-      role: (user.memberships || [])
-        .filter((m) => m.role !== null && m.role !== undefined)
-        .map((m) => ({
-          role_name: m.role.role_name,
-          orgName: m.role.organization?.name || 'No Organization',
-          colorKey: m.role.colorKey || 'gray',
-        })),
-    }));
+      // Logger.warn("sortedData", sortedData)
+      const items = result.data.map((user) => ({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        isActive: user.isActive,
+        role: (user.memberships || [])
+          .filter((m) => m.role !== null && m.role !== undefined)
+          .map((m) => ({
+            role_name: m.role.role_name,
+            orgName: m.role.organization?.name || 'No Organization',
+            colorKey: m.role.colorKey || 'gray',
+          })),
+      }));
 
-    return Response(200, 'Get all users successfully', {
-      items: items,
-      page: result.meta.currentPage ?? 1,
-      limit: result.meta.itemsPerPage,
-      total: result.meta.totalItems ?? 0,
-      totalPages: result.meta.totalPages ?? 1,
-    });
+      return Response(200, 'Get all users successfully', {
+        items: items,
+        page: result.meta.currentPage ?? 1,
+        limit: result.meta.itemsPerPage,
+        total: result.meta.totalItems ?? 0,
+        totalPages: result.meta.totalPages ?? 1,
+      });
+    } finally {
+      console.timeEnd('GET_USERS');
+    }
   }
 
   async update(
@@ -229,113 +234,137 @@ export class UserService {
   }
 
   async GetUserById(id: string): Promise<ApiResponse<UserResponseDto>> {
-    const user = await this.userRepo.findOne({
-      where: { id },
-      relations: [
-        'memberships',
-        'memberships.role',
-        'memberships.role.organization',
-      ],
-    });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    const timer = `GET_USER_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const user = await this.userRepo.findOne({
+        where: { id },
+        relations: [
+          'memberships',
+          'memberships.role',
+          'memberships.role.organization',
+        ],
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
 
-    return Response(200, 'User found successfully', {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      phoneNumber: user.phoneNumber,
-      isActive: user.isActive,
-      role: (user.memberships || [])
-        .filter((m) => m.role !== null && m.role !== undefined)
-        .map((m) => ({
-          role_name: m.role.role_name,
-          orgName: m.role.organization?.name || 'No Organization',
-          colorKey: m.role.colorKey || 'gray',
-        })),
-    });
+      return Response(200, 'User found successfully', {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        isActive: user.isActive,
+        role: (user.memberships || [])
+          .filter((m) => m.role !== null && m.role !== undefined)
+          .map((m) => ({
+            role_name: m.role.role_name,
+            orgName: m.role.organization?.name || 'No Organization',
+            colorKey: m.role.colorKey || 'gray',
+          })),
+      });
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async findMemberOfUser(userId: string): Promise<ApiResponse<MemberOfUserDto>> {
-    const user = await this.userRepo.findOne({
-      where: { id: userId },
-    });
+    const timer = `GET_MEMBER_OF_USER:${userId}`;
+    console.time(timer);
+    try {
+      const user = await this.userRepo.findOne({
+        where: { id: userId },
+      });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const memberships = await this.membershipRepo.find({
+        where: { user: { id: userId } },
+        relations: ['organization', 'role'],
+        order: { createdAt: 'DESC' },
+      });
+
+      const membership = memberships
+        .filter((m) => m.role !== null && m.organization !== null)
+        .map((m) => ({
+          role_name: m.role.role_name,
+          orgName: m.organization.name,
+          slug: m.organization.slug || '',
+        }));
+
+      return Response(200, 'Get Member Of User Successfully', {
+        fullName: user.fullName,
+        membership,
+      });
+    } finally {
+      console.timeEnd(timer);
     }
-
-    const memberships = await this.membershipRepo.find({
-      where: { user: { id: userId } },
-      relations: ['organization', 'role'],
-      order: { createdAt: 'DESC' },
-    });
-
-    const membership = memberships
-      .filter((m) => m.role !== null && m.organization !== null)
-      .map((m) => ({
-        role_name: m.role.role_name,
-        orgName: m.organization.name,
-        slug: m.organization.slug || '',
-      }));
-
-    return Response(200, 'Get Member Of User Successfully', {
-      fullName: user.fullName,
-      membership,
-    });
   }
 
   async findTicketsByUser(userId: string): Promise<ApiResponse<any[]>> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const timer = `GET_USER_TICKETS:${userId}`;
+    console.time(timer);
+    try {
+      const user = await this.userRepo.findOne({ where: { id: userId } });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const tickets = await this.ticketRepo.find({
+        where: { user: { id: userId } },
+        relations: ['ticketType', 'ticketType.event', 'order'],
+        order: { createdAt: 'DESC' },
+      });
+
+      return Response(
+        200,
+        'Get tickets of user successfully',
+        tickets.map((ticket) => ({
+          id: ticket.id,
+          createdAt: ticket.createdAt,
+          ticketType: {
+            id: ticket.ticketType?.id,
+            name: ticket.ticketType?.name,
+            price: ticket.ticketType?.price,
+          },
+          event: ticket.ticketType?.event
+            ? {
+                id: ticket.ticketType.event.id,
+                title: ticket.ticketType.event.title,
+                startDateTime: ticket.ticketType.event.startDateTime,
+                endDateTime: ticket.ticketType.event.endDateTime,
+                place: ticket.ticketType.event.place,
+              }
+            : null,
+          order: ticket.order
+            ? {
+                id: ticket.order.id,
+                totalPrice: ticket.order.totalPrice,
+              }
+            : null,
+        })),
+      );
+    } finally {
+      console.timeEnd(timer);
     }
-
-    const tickets = await this.ticketRepo.find({
-      where: { user: { id: userId } },
-      relations: ['ticketType', 'ticketType.event', 'order'],
-      order: { createdAt: 'DESC' },
-    });
-
-    return Response(
-      200,
-      'Get tickets of user successfully',
-      tickets.map((ticket) => ({
-        id: ticket.id,
-        createdAt: ticket.createdAt,
-        ticketType: {
-          id: ticket.ticketType?.id,
-          name: ticket.ticketType?.name,
-          price: ticket.ticketType?.price,
-        },
-        event: ticket.ticketType?.event
-          ? {
-              id: ticket.ticketType.event.id,
-              title: ticket.ticketType.event.title,
-              startDateTime: ticket.ticketType.event.startDateTime,
-              endDateTime: ticket.ticketType.event.endDateTime,
-              place: ticket.ticketType.event.place,
-            }
-          : null,
-        order: ticket.order
-          ? {
-              id: ticket.order.id,
-              totalPrice: ticket.order.totalPrice,
-            }
-          : null,
-      })),
-    );
   }
 
   async findOne(id: string) {
-    const user = await this.userRepo.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    const timer = `GET_USER_ENTITY_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const user = await this.userRepo.findOne({ where: { id } });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
 
-    return user;
+      return user;
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {

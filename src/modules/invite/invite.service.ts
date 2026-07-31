@@ -191,11 +191,22 @@ export class InviteService {
   }
 
   findAll() {
-    return `This action returns all invite`;
+    console.time('GET_INVITES');
+    try {
+      return `This action returns all invite`;
+    } finally {
+      console.timeEnd('GET_INVITES');
+    }
   }
 
   findOne(id: number) {
-    return `This action returns a #${id} invite`;
+    const timer = `GET_INVITE_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      return `This action returns a #${id} invite`;
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   update(id: number, updateInviteDto: UpdateInviteDto) {

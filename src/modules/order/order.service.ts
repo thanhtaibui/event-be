@@ -79,21 +79,37 @@ export class OrderService {
   }
 
   async findAll(): Promise<ApiResponse<any[]>> {
-    const orders = await this.orderRepo.find({
-      relations: ['user', 'tickets', 'tickets.ticketType', 'tickets.ticketType.event'],
-      order: { createdAt: 'DESC' },
-    });
+    console.time('GET_ORDERS');
+    try {
+      const orders = await this.orderRepo.find({
+        relations: [
+          'user',
+          'tickets',
+          'tickets.ticketType',
+          'tickets.ticketType.event',
+        ],
+        order: { createdAt: 'DESC' },
+      });
 
-    return Response(
-      200,
-      'Get all orders successfully',
-      orders.map((order) => this.toOrderDto(order)),
-    );
+      return Response(
+        200,
+        'Get all orders successfully',
+        orders.map((order) => this.toOrderDto(order)),
+      );
+    } finally {
+      console.timeEnd('GET_ORDERS');
+    }
   }
 
   async findOne(id: string): Promise<ApiResponse<any>> {
-    const order = await this.findOrderEntityById(id);
-    return Response(200, 'Get order successfully', this.toOrderDto(order));
+    const timer = `GET_ORDER_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const order = await this.findOrderEntityById(id);
+      return Response(200, 'Get order successfully', this.toOrderDto(order));
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   update(id: number, updateOrderDto: UpdateOrderDto) {

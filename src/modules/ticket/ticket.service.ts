@@ -49,21 +49,32 @@ export class TicketService {
   }
 
   async findAll(): Promise<ApiResponse<any[]>> {
-    const tickets = await this.ticketRepo.find({
-      relations: ['user', 'ticketType', 'ticketType.event'],
-      order: { createdAt: 'DESC' },
-    });
+    console.time('GET_TICKETS');
+    try {
+      const tickets = await this.ticketRepo.find({
+        relations: ['user', 'ticketType', 'ticketType.event'],
+        order: { createdAt: 'DESC' },
+      });
 
-    return Response(
-      200,
-      'Get all tickets successfully',
-      tickets.map((ticket) => this.toTicketDto(ticket)),
-    );
+      return Response(
+        200,
+        'Get all tickets successfully',
+        tickets.map((ticket) => this.toTicketDto(ticket)),
+      );
+    } finally {
+      console.timeEnd('GET_TICKETS');
+    }
   }
 
   async findOne(id: string): Promise<ApiResponse<any>> {
-    const ticket = await this.findTicketEntityById(id);
-    return Response(200, 'Get ticket successfully', this.toTicketDto(ticket));
+    const timer = `GET_TICKET_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const ticket = await this.findTicketEntityById(id);
+      return Response(200, 'Get ticket successfully', this.toTicketDto(ticket));
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   update(id: number, updateTicketDto: UpdateTicketDto) {

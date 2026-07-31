@@ -40,90 +40,122 @@ export class MembershipService {
   async findUserOrganizations(
     userId: string,
   ): Promise<ApiResponse<MembershipDto[]>> {
-    const memberships = await this.membershipRepo.find({
-      where: { user: { id: userId } },
-      relations: ['organization', 'role'],
-    });
+    const timer = `GET_USER_ORGANIZATIONS:${userId}`;
+    console.time(timer);
+    try {
+      const memberships = await this.membershipRepo.find({
+        where: { user: { id: userId } },
+        relations: ['organization', 'role'],
+      });
 
-    const result = memberships
-      .filter((m) => m.role !== null && m.organization !== null)
-      .map((m) => ({
-        userId: userId,
-        organizationId: m.organization?.id,
-        roleId: m.role?.id,
-        isActive: m.isActive,
-      }));
-    return Response(200, 'Get Orgs of User Successfully', result);
+      const result = memberships
+        .filter((m) => m.role !== null && m.organization !== null)
+        .map((m) => ({
+          userId: userId,
+          organizationId: m.organization?.id,
+          roleId: m.role?.id,
+          isActive: m.isActive,
+        }));
+      return Response(200, 'Get Orgs of User Successfully', result);
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async findByOrganization(
     orgId: string,
   ): Promise<ApiResponse<OrganizationMembershipDto[]>> {
-    const memberships = await this.membershipRepo.find({
-      where: { organization: { id: orgId } },
-      relations: ['user', 'role'],
-      order: { createdAt: 'DESC' },
-    });
+    const timer = `GET_MEMBERSHIPS_BY_ORG:${orgId}`;
+    console.time(timer);
+    try {
+      const memberships = await this.membershipRepo.find({
+        where: { organization: { id: orgId } },
+        relations: ['user', 'role'],
+        order: { createdAt: 'DESC' },
+      });
 
-    const result = memberships
-      .filter((m) => m.user !== null)
-      .map((m) => ({
-        createdAt: m.createdAt,
-        userName: m.user.fullName,
-        isActive: m.isActive,
-        role: m.role?.role_name ?? null,
-      }));
+      const result = memberships
+        .filter((m) => m.user !== null)
+        .map((m) => ({
+          id: m.id,
+          userId: m.user.id,
+          createdAt: m.createdAt,
+          userName: m.user.fullName,
+          email: m.user.email,
+          isActive: m.isActive,
+          role: m.role?.role_name ?? null,
+        }));
 
-    return Response(
-      200,
-      'Get Memberships Of Organization Successfully',
-      result,
-    );
+      return Response(
+        200,
+        'Get Memberships Of Organization Successfully',
+        result,
+      );
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async findByOrganizationSlug(
     slug: string,
     userId: string,
   ): Promise<ApiResponse<OrganizationMembershipDto[]>> {
-    const organization = await this.organizationRepo.findOne({
-      where: { slug },
-    });
+    const timer = `GET_MEMBERSHIPS_BY_ORG_SLUG:${slug}`;
+    console.time(timer);
+    try {
+      const organization = await this.organizationRepo.findOne({
+        where: { slug },
+      });
 
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
+
+      const membership = await this.membershipRepo.findOne({
+        where: {
+          user: { id: userId },
+          organization: { id: organization.id },
+          isActive: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException(
+          'User does not belong to this organization',
+        );
+      }
+
+      return this.findByOrganization(organization.id);
+    } finally {
+      console.timeEnd(timer);
     }
-
-    const membership = await this.membershipRepo.findOne({
-      where: {
-        user: { id: userId },
-        organization: { id: organization.id },
-        isActive: true,
-      },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException('User does not belong to this organization');
-    }
-
-    return this.findByOrganization(organization.id);
   }
 
   async findOne(id: string): Promise<ApiResponse<OrganizationMembershipDto>> {
-    const membership = await this.membershipRepo.findOne({
-      where: { id },
-      relations: ['user', 'role'],
-    });
+    const timer = `GET_MEMBERSHIP_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const membership = await this.membershipRepo.findOne({
+        where: { id },
+        relations: ['user', 'role'],
+      });
 
-    if (!membership) {
-      throw new NotFoundException('Membership not found');
+      if (!membership) {
+        throw new NotFoundException('Membership not found');
+      }
+
+      return Response(200, 'Get Membership Successfully', {
+        id: membership.id,
+        userId: membership.user.id,
+        createdAt: membership.createdAt,
+        userName: membership.user.fullName,
+        email: membership.user.email,
+        isActive: membership.isActive,
+        role: membership.role?.role_name ?? null,
+      });
+    } finally {
+      console.timeEnd(timer);
     }
-
-    return Response(200, 'Get Membership Successfully', {
-      createdAt: membership.createdAt,
-      userName: membership.user.fullName,
-      isActive: membership.isActive,
-      role: membership.role?.role_name ?? null,
-    });
   }
 
   update(id: string, updateMembershipDto: UpdateMembershipDto) {
@@ -147,8 +179,11 @@ export class MembershipService {
     const savedMembership = await this.membershipRepo.save(membership);
 
     return Response(200, 'Update Membership Status Successfully', {
+      id: savedMembership.id,
+      userId: savedMembership.user.id,
       createdAt: savedMembership.createdAt,
       userName: savedMembership.user.fullName,
+      email: savedMembership.user.email,
       isActive: savedMembership.isActive,
       role: savedMembership.role?.role_name ?? null,
     });
@@ -189,8 +224,11 @@ export class MembershipService {
     const savedMembership = await this.membershipRepo.save(membership);
 
     return Response(200, 'Update Membership Role Successfully', {
+      id: savedMembership.id,
+      userId: savedMembership.user.id,
       createdAt: savedMembership.createdAt,
       userName: savedMembership.user.fullName,
+      email: savedMembership.user.email,
       isActive: savedMembership.isActive,
       role: savedMembership.role?.role_name ?? null,
     });

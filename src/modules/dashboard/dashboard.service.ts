@@ -25,7 +25,9 @@ export class DashboardService {
   ) {}
 
   async GetAllDashboard(): Promise<ApiResponse<DashboardDto>> {
-    const now = new Date();
+    console.time('GET_DASHBOARD');
+    try {
+      const now = new Date();
 
     // Ngày 1 của tháng này — VD: 2024-05-01
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -239,50 +241,62 @@ export class DashboardService {
         { label: 'Cancelled', value: cancelled },
       ],
     };
-    return {
-      statusCode: 200,
-      message: 'Get dashboard successfully',
-      data: dashboardData,
-    };
+      return {
+        statusCode: 200,
+        message: 'Get dashboard successfully',
+        data: dashboardData,
+      };
+    } finally {
+      console.timeEnd('GET_DASHBOARD');
+    }
   }
   async GetDashboardById(idUser: string): Promise<ApiResponse<DashboardDto>> {
-    const totalUser = await this.userRepo.count({
-      where: { isActive: true },
-    });
-    const totalEvents = await this.eventRepo.count();
-    const [upcoming, ongoing, ended, cancelled] = await Promise.all([
-      this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
-      this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
-      this.eventRepo.count({ where: { status: EventStatus.ENDED } }),
-      this.eventRepo.count({ where: { status: EventStatus.CANCELLED } }),
-    ]);
-    const dashboardData: DashboardDto = {
-      cards: [
-        { key: 'users', title: 'Users', value: totalUser },
-        { key: 'events', title: 'Events', value: totalEvents },
-        { key: 'revenue', title: 'Revenue', value: 1200 },
-        { key: 'tickets', title: 'Tickets', value: 300 },
-      ],
-      lineChart: [],
-      pieChart: [
-        { label: 'Upcoming', value: upcoming },
-        { label: 'Ongoing', value: ongoing },
-        { label: 'Ended', value: ended },
-        { label: 'Cancelled', value: cancelled },
-      ],
-    };
-    return {
-      statusCode: 200,
-      message: 'Get dashboard by id successfully',
-      data: dashboardData,
-    };
+    const timer = `GET_DASHBOARD_BY_ID:${idUser}`;
+    console.time(timer);
+    try {
+      const totalUser = await this.userRepo.count({
+        where: { isActive: true },
+      });
+      const totalEvents = await this.eventRepo.count();
+      const [upcoming, ongoing, ended, cancelled] = await Promise.all([
+        this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
+        this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
+        this.eventRepo.count({ where: { status: EventStatus.ENDED } }),
+        this.eventRepo.count({ where: { status: EventStatus.CANCELLED } }),
+      ]);
+      const dashboardData: DashboardDto = {
+        cards: [
+          { key: 'users', title: 'Users', value: totalUser },
+          { key: 'events', title: 'Events', value: totalEvents },
+          { key: 'revenue', title: 'Revenue', value: 1200 },
+          { key: 'tickets', title: 'Tickets', value: 300 },
+        ],
+        lineChart: [],
+        pieChart: [
+          { label: 'Upcoming', value: upcoming },
+          { label: 'Ongoing', value: ongoing },
+          { label: 'Ended', value: ended },
+          { label: 'Cancelled', value: cancelled },
+        ],
+      };
+      return {
+        statusCode: 200,
+        message: 'Get dashboard by id successfully',
+        data: dashboardData,
+      };
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async GetDashboardByOrgSlug(
     slug: string,
     userId: string,
   ): Promise<ApiResponse<DashboardDto>> {
-    const organization = await this.assertUserInOrganization(slug, userId);
+    const timer = `GET_DASHBOARD_BY_ORG_SLUG:${slug}`;
+    console.time(timer);
+    try {
+      const organization = await this.assertUserInOrganization(slug, userId);
 
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -522,11 +536,14 @@ export class DashboardService {
       ],
     };
 
-    return {
-      statusCode: 200,
-      message: 'Get organization dashboard successfully',
-      data: dashboardData,
-    };
+      return {
+        statusCode: 200,
+        message: 'Get organization dashboard successfully',
+        data: dashboardData,
+      };
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   private async assertUserInOrganization(

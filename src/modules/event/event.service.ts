@@ -278,38 +278,54 @@ export class EventService {
   }
 
   async getTicketTypes(id: string): Promise<ApiResponse<TicketTypeDto[]>> {
-    const event = await this.eventRepo.findOne({
-      where: { id },
-      relations: ['ticketTypes'],
-    });
-    if (!event) throw new BadRequestException('Event not found');
-    return Response(
-      200,
-      'Get Ticket Types of Event Successfully',
-      plainToInstance(TicketTypeDto, event.ticketTypes, {
-        excludeExtraneousValues: true,
-      }),
-    );
+    const timer = `GET_EVENT_TICKET_TYPES:${id}`;
+    console.time(timer);
+    try {
+      const event = await this.eventRepo.findOne({
+        where: { id },
+        relations: ['ticketTypes'],
+      });
+      if (!event) throw new BadRequestException('Event not found');
+      return Response(
+        200,
+        'Get Ticket Types of Event Successfully',
+        plainToInstance(TicketTypeDto, event.ticketTypes, {
+          excludeExtraneousValues: true,
+        }),
+      );
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async getInvites(id: string): Promise<ApiResponse<InviteDashboardDto>> {
-    const event = await this.eventRepo.findOne({
-      where: { id },
-      relations: ['invites'],
-    });
-    if (!event) throw new BadRequestException('Event not found');
-    const inviteDashboard = new InviteDashboardDto();
-    inviteDashboard.totalInvites = event.invites.length;
-    inviteDashboard.acceptedInvites = event.invites.filter(
-      (invite) => invite.status === InvitationStatus.ACCEPTED,
-    ).length;
-    inviteDashboard.pendingInvites = event.invites.filter(
-      (invite) => invite.status === InvitationStatus.PENDING,
-    ).length;
-    inviteDashboard.rejectedInvites = event.invites.filter(
-      (invite) => invite.status === InvitationStatus.REJECTED,
-    ).length;
-    return Response(200, 'Get Invites of Event Successfully', inviteDashboard);
+    const timer = `GET_EVENT_INVITES:${id}`;
+    console.time(timer);
+    try {
+      const event = await this.eventRepo.findOne({
+        where: { id },
+        relations: ['invites'],
+      });
+      if (!event) throw new BadRequestException('Event not found');
+      const inviteDashboard = new InviteDashboardDto();
+      inviteDashboard.totalInvites = event.invites.length;
+      inviteDashboard.acceptedInvites = event.invites.filter(
+        (invite) => invite.status === InvitationStatus.ACCEPTED,
+      ).length;
+      inviteDashboard.pendingInvites = event.invites.filter(
+        (invite) => invite.status === InvitationStatus.PENDING,
+      ).length;
+      inviteDashboard.rejectedInvites = event.invites.filter(
+        (invite) => invite.status === InvitationStatus.REJECTED,
+      ).length;
+      return Response(
+        200,
+        'Get Invites of Event Successfully',
+        inviteDashboard,
+      );
+    } finally {
+      console.timeEnd(timer);
+    }
   }
 
   async update(

@@ -38,23 +38,34 @@ export class CategoryService {
   }
 
   async findAll(): Promise<ApiResponse<Category[]>> {
-    const categories = await this.categoryRepo.find({
-      where: { deletedAt: IsNull() },
-      order: { createdAt: 'DESC' },
-    });
-    return Response(200, 'Categories retrieved successfully', categories);
+    console.time('GET_CATEGORIES');
+    try {
+      const categories = await this.categoryRepo.find({
+        where: { deletedAt: IsNull() },
+        order: { createdAt: 'DESC' },
+      });
+      return Response(200, 'Categories retrieved successfully', categories);
+    } finally {
+      console.timeEnd('GET_CATEGORIES');
+    }
   }
 
   async findOne(id: string): Promise<ApiResponse<Category>> {
-    const category = await this.categoryRepo.findOne({
-      where: { id, deletedAt: IsNull() },
-    });
+    const timer = `GET_CATEGORY_BY_ID:${id}`;
+    console.time(timer);
+    try {
+      const category = await this.categoryRepo.findOne({
+        where: { id, deletedAt: IsNull() },
+      });
 
-    if (!category) {
-      throw new NotFoundException('Category not found');
+      if (!category) {
+        throw new NotFoundException('Category not found');
+      }
+
+      return Response(200, 'Category retrieved successfully', category);
+    } finally {
+      console.timeEnd(timer);
     }
-
-    return Response(200, 'Category retrieved successfully', category);
   }
 
   async update(

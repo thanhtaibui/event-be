@@ -10,9 +10,15 @@ export class MembershipDto {
 }
 
 export class OrganizationMembershipDto {
+  id: string;
+
+  userId: string;
+
   createdAt: Date;
 
   userName: string;
+
+  email: string;
 
   isActive: boolean;
 
