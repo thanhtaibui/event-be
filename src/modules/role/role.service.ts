@@ -93,11 +93,22 @@ export class RoleService {
   ): Promise<ApiResponse<PaginationResult<any>>> {
     console.time('GET_ROLES');
     try {
-      const result = await paginate(query, this.roleRepo, {
+      const roleQuery = this.roleRepo
+        .createQueryBuilder('role')
+        .leftJoin('role.organization', 'organization')
+        .select([
+          'role.id',
+          'role.role_name',
+          'role.role_code',
+          'role.colorKey',
+          'organization.id',
+          'organization.name',
+        ])
+        .where('role.deletedAt IS NULL');
+
+      const result = await paginate(query, roleQuery, {
         sortableColumns: ['role_name', 'role_code', 'organization.name'],
         searchableColumns: ['role_name', 'role_code', 'organization.name'],
-        where: { deletedAt: IsNull() },
-        relations: ['organization'],
       });
 
       const items = result.data.map((r) => ({
@@ -243,12 +254,22 @@ export class RoleService {
       }
     });
 
+    const parentIds = tree.map((tr) => tr.id);
+    const childCountRows = parentIds.length
+      ? await this.permissionRepo
+          .createQueryBuilder('permission')
+          .select('permission.parentId', 'parentId')
+          .addSelect('COUNT(permission.id)', 'total')
+          .where('permission.parentId IN (:...parentIds)', { parentIds })
+          .groupBy('permission.parentId')
+          .getRawMany<{ parentId: string; total: string }>()
+      : [];
+    const childCountMap = new Map(
+      childCountRows.map((row) => [row.parentId, Number(row.total)]),
+    );
+
     for (const tr of tree) {
-      const totalChildren = await this.permissionRepo.count({
-        where: {
-          parent: { id: tr.id },
-        },
-      });
+      const totalChildren = childCountMap.get(tr.id) ?? 0;
       tr.isAll = tr.children.length === totalChildren;
     }
     return tree.filter((tr) => tr.children && tr.children.length > 0);

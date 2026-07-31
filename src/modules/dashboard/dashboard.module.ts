@@ -7,9 +7,17 @@ import { Event } from '../event/entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { Membership } from '../membership/entities/membership.entity';
+import { Report } from '../report/entities/report.entity';
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Event, Organization, Ticket, Membership]),
+    TypeOrmModule.forFeature([
+      User,
+      Event,
+      Organization,
+      Ticket,
+      Membership,
+      Report,
+    ]),
   ],
   controllers: [DashboardController],
   providers: [DashboardService],

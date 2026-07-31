@@ -1,14 +1,15 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
-import { Between, MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { DashboardDto } from './dto/dashboard.dto';
-import { EventStatus } from 'src/shared/enum/enum';
+import { EventStatus, ReportStatus } from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { Membership } from '../membership/entities/membership.entity';
+import { Report } from '../report/entities/report.entity';
 
 @Injectable()
 export class DashboardService {
@@ -20,6 +21,7 @@ export class DashboardService {
     @InjectRepository(Ticket) private ticketRepo: Repository<Ticket>,
     @InjectRepository(Membership)
     private membershipRepo: Repository<Membership>,
+    @InjectRepository(Report) private reportRepo: Repository<Report>,
   ) {}
 
   async GetAllDashboard(): Promise<ApiResponse<DashboardDto>> {
@@ -81,6 +83,51 @@ export class DashboardService {
             ).toFixed(1),
           );
 
+    const ReportThisMonth = await this.reportRepo.count({
+      where: {
+        status: Not(ReportStatus.SPAM),
+        createdAt: MoreThanOrEqual(startOfThisMonth),
+      },
+    });
+    const ReportLastMonth = await this.reportRepo.count({
+      where: {
+        status: Not(ReportStatus.SPAM),
+        createdAt: Between(startOfLastMonth, endOfLastMonth),
+      },
+    });
+    const trendReport =
+      ReportLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((ReportThisMonth - ReportLastMonth) / ReportLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
+    const MembershipThisMonth = await this.membershipRepo.count({
+      where: {
+        isActive: true,
+        createdAt: MoreThanOrEqual(startOfThisMonth),
+      },
+    });
+    const MembershipLastMonth = await this.membershipRepo.count({
+      where: {
+        isActive: true,
+        createdAt: Between(startOfLastMonth, endOfLastMonth),
+      },
+    });
+    const trendMembership =
+      MembershipLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((MembershipThisMonth - MembershipLastMonth) /
+                MembershipLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
     // Ticket trend
     const TicketThisMonth = await this.ticketRepo.count({
       where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
@@ -133,6 +180,12 @@ export class DashboardService {
       .getRawOne();
 
     const totalEvents = await this.eventRepo.count();
+    const totalReports = await this.reportRepo.count({
+      where: { status: Not(ReportStatus.SPAM) },
+    });
+    const totalMemberships = await this.membershipRepo.count({
+      where: { isActive: true },
+    });
     const [upcoming, ongoing, ended, cancelled] = await Promise.all([
       this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
       this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
@@ -152,6 +205,18 @@ export class DashboardService {
           title: 'Events',
           value: totalEvents,
           trend: trendEvent,
+        },
+        {
+          key: 'reports',
+          title: 'Reports',
+          value: totalReports,
+          trend: trendReport,
+        },
+        {
+          key: 'memberships',
+          title: 'Memberships',
+          value: totalMemberships,
+          trend: trendMembership,
         },
         {
           key: 'revenue',
@@ -253,6 +318,55 @@ export class DashboardService {
             ).toFixed(1),
           );
 
+    const ReportThisMonth = await this.reportRepo.count({
+      where: {
+        organization: { id: organization.id },
+        status: Not(ReportStatus.SPAM),
+        createdAt: MoreThanOrEqual(startOfThisMonth),
+      },
+    });
+    const ReportLastMonth = await this.reportRepo.count({
+      where: {
+        organization: { id: organization.id },
+        status: Not(ReportStatus.SPAM),
+        createdAt: Between(startOfLastMonth, endOfLastMonth),
+      },
+    });
+    const trendReport =
+      ReportLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((ReportThisMonth - ReportLastMonth) / ReportLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
+    const MembershipThisMonth = await this.membershipRepo.count({
+      where: {
+        organization: { id: organization.id },
+        isActive: true,
+        createdAt: MoreThanOrEqual(startOfThisMonth),
+      },
+    });
+    const MembershipLastMonth = await this.membershipRepo.count({
+      where: {
+        organization: { id: organization.id },
+        isActive: true,
+        createdAt: Between(startOfLastMonth, endOfLastMonth),
+      },
+    });
+    const trendMembership =
+      MembershipLastMonth === 0
+        ? 0
+        : Number(
+            (
+              ((MembershipThisMonth - MembershipLastMonth) /
+                MembershipLastMonth) *
+              100
+            ).toFixed(1),
+          );
+
     const ticketQuery = this.ticketRepo
       .createQueryBuilder('ticket')
       .leftJoin('ticket.ticketType', 'ticketType')
@@ -327,6 +441,18 @@ export class DashboardService {
     const totalEvents = await this.eventRepo.count({
       where: { organization: { id: organization.id } },
     });
+    const totalReports = await this.reportRepo.count({
+      where: {
+        organization: { id: organization.id },
+        status: Not(ReportStatus.SPAM),
+      },
+    });
+    const totalMemberships = await this.membershipRepo.count({
+      where: {
+        organization: { id: organization.id },
+        isActive: true,
+      },
+    });
     const [upcoming, ongoing, ended, cancelled] = await Promise.all([
       this.eventRepo.count({
         where: {
@@ -361,6 +487,18 @@ export class DashboardService {
           title: 'Events',
           value: totalEvents,
           trend: trendEvent,
+        },
+        {
+          key: 'reports',
+          title: 'Reports',
+          value: totalReports,
+          trend: trendReport,
+        },
+        {
+          key: 'memberships',
+          title: 'Memberships',
+          value: totalMemberships,
+          trend: trendMembership,
         },
         {
           key: 'revenue',
