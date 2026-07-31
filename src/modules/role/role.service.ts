@@ -258,10 +258,10 @@ export class RoleService {
     const childCountRows = parentIds.length
       ? await this.permissionRepo
           .createQueryBuilder('permission')
-          .select('permission.parentId', 'parentId')
+          .select('permission.parent_id', 'parentId')
           .addSelect('COUNT(permission.id)', 'total')
-          .where('permission.parentId IN (:...parentIds)', { parentIds })
-          .groupBy('permission.parentId')
+          .where('permission.parent_id IN (:...parentIds)', { parentIds })
+          .groupBy('permission.parent_id')
           .getRawMany<{ parentId: string; total: string }>()
       : [];
     const childCountMap = new Map(

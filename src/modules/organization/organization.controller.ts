@@ -10,6 +10,8 @@ import {
   ParseUUIDPipe,
   UseInterceptors,
   UploadedFile,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { OrganizationService } from './organization.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
@@ -43,6 +45,12 @@ export class OrganizationController {
     private readonly organizationService: OrganizationService,
     private readonly roleService: RoleService,
   ) {}
+
+  private assertSuperAdmin(req: any) {
+    if (!req.user?.role?.isSuperAdmin) {
+      throw new ForbiddenException();
+    }
+  }
 
   @Post()
   @UseInterceptors(FileInterceptor('logo'))
@@ -105,8 +113,14 @@ export class OrganizationController {
     return this.roleService.findAllByOrg(orgId);
   }
   @Patch('/delete')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard)
   @ApiOperation({ operationId: 'deleteSort' })
-  deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
+  deleteSort(
+    @Req() req: any,
+    @Body() deleteSort: DeleteSort,
+  ): Promise<ApiResponse<DeleteSort>> {
+    this.assertSuperAdmin(req);
     return this.organizationService.deleteSort(deleteSort);
   }
   @Patch(':id')
@@ -118,11 +132,15 @@ export class OrganizationController {
   }
 
   @Patch(':id/active')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard)
   @ApiOperation({ operationId: 'updateActive' })
   updateActive(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() updateActiveDto: UpdateActiveDto,
   ): Promise<ApiResponse<OrganizationResDto>> {
+    this.assertSuperAdmin(req);
     return this.organizationService.updateActive(id, updateActiveDto.active);
   }
 

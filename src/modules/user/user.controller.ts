@@ -9,6 +9,8 @@ import {
   Query,
   Logger,
   ParseUUIDPipe,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -25,18 +27,26 @@ import { UpdateActiveDto } from './dto/updateActiveDto.dto';
 import { MemberOfUserDto } from './dto/users.dto';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
-// @ApiBearerAuth('access-token')
-// @UseGuards(JwtGuard)
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  private assertSuperAdmin(req: any) {
+    if (!req.user?.role?.isSuperAdmin) {
+      throw new ForbiddenException();
+    }
+  }
 
   @Post()
   @ApiProperty({ type: CreateUserDto })
   @ApiOperation({ operationId: 'createUser' })
   create(
+    @Req() req: any,
     @Body() createUserDto: CreateUserDto,
   ): Promise<ApiResponse<UserResponseDto>> {
+    this.assertSuperAdmin(req);
     return this.userService.create(createUserDto);
   }
 
@@ -48,8 +58,10 @@ export class UserController {
   })
   @ApiOperation({ operationId: 'getUsers' })
   findAll(
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
+    this.assertSuperAdmin(req);
     return this.userService.findAll(query);
   }
 
@@ -73,24 +85,32 @@ export class UserController {
   @Patch(':id/active')
   @ApiOperation({ operationId: 'updateActive' })
   updateActive(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() updateActiveDto: UpdateActiveDto,
   ): Promise<ApiResponse<UserResponseDto>> {
+    this.assertSuperAdmin(req);
     return this.userService.updateActive(id, updateActiveDto.active);
   }
 
   @Patch('/delete')
   @ApiOperation({ operationId: 'deleteSort' })
-  deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
+  deleteSort(
+    @Req() req: any,
+    @Body() deleteSort: DeleteSort,
+  ): Promise<ApiResponse<DeleteSort>> {
+    this.assertSuperAdmin(req);
     return this.userService.deleteSort(deleteSort);
   }
 
   @Patch(':id')
   @ApiOperation({ operationId: 'updateUser' })
   update(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
   ): Promise<ApiResponse<UpdateUserResDto>> {
+    this.assertSuperAdmin(req);
     return this.userService.update(id, updateUserDto);
   }
 

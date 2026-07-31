@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -29,6 +30,12 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 export class RoleController {
   constructor(private readonly roleService: RoleService) { }
 
+  private assertSuperAdmin(req: any) {
+    if (!req.user?.role?.isSuperAdmin) {
+      throw new ForbiddenException();
+    }
+  }
+
   @Post()
   async create(
     @Body() createRoleDto: CreateRoleDto,
@@ -43,8 +50,10 @@ export class RoleController {
   })
   @ApiOperation({ operationId: 'GetRoles' })
   async findAll(
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<any>>> {
+    this.assertSuperAdmin(req);
     return this.roleService.findAll(query);
   }
 

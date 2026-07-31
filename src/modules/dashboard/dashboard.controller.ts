@@ -8,6 +8,7 @@ import {
   Delete,
   Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
@@ -21,8 +22,15 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) { }
 
+  private assertSuperAdmin(req: any) {
+    if (!req.user?.role?.isSuperAdmin) {
+      throw new ForbiddenException();
+    }
+  }
+
   @Get()
-  findAll(): Promise<ApiResponse<DashboardDto>> {
+  findAll(@Req() req: any): Promise<ApiResponse<DashboardDto>> {
+    this.assertSuperAdmin(req);
     return this.dashboardService.GetAllDashboard();
   }
 
@@ -36,8 +44,10 @@ export class DashboardController {
 
   @Get(':id')
   getDashboardById(
+    @Req() req: any,
     @Param('id') id: string,
   ): Promise<ApiResponse<DashboardDto>> {
+    this.assertSuperAdmin(req);
     return this.dashboardService.GetAllDashboard();
   }
 }

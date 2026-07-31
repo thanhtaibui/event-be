@@ -9,6 +9,7 @@ import {
   UseGuards,
   ParseUUIDPipe,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -27,6 +28,12 @@ import type { PaginateQuery } from 'nestjs-paginate';
 export class ReportController {
   constructor(private readonly reportService: ReportService) { }
 
+  private assertSuperAdmin(req: any) {
+    if (!req.user?.role?.isSuperAdmin) {
+      throw new ForbiddenException();
+    }
+  }
+
   @Post()
   @ApiOperation({ operationId: 'CreateReport' })
   create(
@@ -38,8 +45,10 @@ export class ReportController {
   @Get()
   @ApiOperation({ operationId: 'GetReports' })
   async findAll(
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
+    this.assertSuperAdmin(req);
     return await this.reportService.findAll(query);
   }
 
@@ -81,14 +90,17 @@ export class ReportController {
     },
   })
   update(
+    @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateReportDto: UpdateReportDto,
   ) {
+    this.assertSuperAdmin(req);
     return this.reportService.update(id, updateReportDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Req() req: any, @Param('id') id: string) {
+    this.assertSuperAdmin(req);
     return this.reportService.remove(+id);
   }
 }
