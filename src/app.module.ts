@@ -25,6 +25,7 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { UploadModule } from './modules/upload/upload.module';
 import { UploadService } from './modules/upload/upload.service';
 import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
+import { ChatModule } from './modules/chat/chat.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -66,6 +67,7 @@ import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-ite
     CloudinaryModule,
     UploadModule,
     TicketTypeItemModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService, UploadService],

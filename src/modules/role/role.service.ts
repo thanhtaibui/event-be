@@ -69,6 +69,7 @@ export class RoleService {
       id: savedRole.id,
       role_name: savedRole.role_name,
       role_code: savedRole.role_code,
+      isSuperAdmin: savedRole.isSuperAdmin,
       colorKey: savedRole.colorKey,
       org: {
         id: savedRole.organization.id,
@@ -100,6 +101,7 @@ export class RoleService {
           'role.id',
           'role.role_name',
           'role.role_code',
+          'role.isSuperAdmin',
           'role.colorKey',
           'organization.id',
           'organization.name',
@@ -115,6 +117,7 @@ export class RoleService {
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
+        isSuperAdmin: r.isSuperAdmin,
         colorKey: r.colorKey,
         org: {
           id: r.organization.id,
@@ -184,6 +187,7 @@ export class RoleService {
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
+        isSuperAdmin: r.isSuperAdmin,
         colorKey: r.colorKey,
         org: {
           id: r.organization.id,
@@ -302,6 +306,12 @@ export class RoleService {
     if (roles.length !== deleteSort.ids.length) {
       throw new BadRequestException('Invalid ids');
     }
+    const hasSuperAdminRole = roles.some(
+      (role) => role.isSuperAdmin === true,
+    );
+    if (hasSuperAdminRole) {
+      throw new BadRequestException('SUPER_ADMIN role cannot be deleted');
+    }
     const names = roles.map((i) => i.role_name);
     await this.roleRepo.update(
       { id: In(deleteSort.ids) },
@@ -325,6 +335,7 @@ export class RoleService {
         id: role.id,
         role_name: role.role_name,
         role_code: role.role_code,
+        isSuperAdmin: role.isSuperAdmin,
         permissions: await this.buildPermissionTree(role.permissions),
         colorKey: role.colorKey,
         org: {
@@ -384,6 +395,7 @@ export class RoleService {
       id: updatedRole!.id,
       role_name: updatedRole!.role_name,
       role_code: updatedRole!.role_code,
+      isSuperAdmin: updatedRole!.isSuperAdmin,
       colorKey: updatedRole!.colorKey,
       permissions: await this.buildPermissionTree(
         updatedRole!.permissions || [],

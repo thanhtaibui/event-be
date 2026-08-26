@@ -12,6 +12,8 @@ export class RoleDto {
 
   role_code: string;
 
+  isSuperAdmin: boolean;
+
   permissions: PermissionDto[];
 
   colorKey?: string;
@@ -24,6 +26,8 @@ export class RoleResDto {
   role_name: string;
 
   role_code: string;
+
+  isSuperAdmin: boolean;
 
   permissions: PermissionTreeDto[];
 

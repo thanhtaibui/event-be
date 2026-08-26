@@ -27,6 +27,9 @@ export class Role extends BaseEntity {
   @Column()
   role_code: string;
 
+  @Column({ default: false })
+  isSuperAdmin: boolean;
+
   @OneToMany(() => Membership, (m) => m.role)
   memberships: Membership[];
 

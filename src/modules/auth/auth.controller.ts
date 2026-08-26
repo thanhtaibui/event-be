@@ -47,6 +47,7 @@ export class AuthController {
       message: 'Login successful',
       data: {
         accessToken: tokens.data.accessToken,
+        role: tokens.data.role,
       },
     };
   }
@@ -70,6 +71,7 @@ export class AuthController {
       message: 'Register successful',
       data: {
         accessToken: tokens.data.accessToken,
+        role: tokens.data.role,
       },
     };
   }
@@ -93,6 +95,7 @@ export class AuthController {
       message: 'Google login successful',
       data: {
         accessToken: tokens.data.accessToken,
+        role: tokens.data.role,
       },
     };
   }
@@ -118,6 +121,7 @@ export class AuthController {
       message: 'Token refreshed successfully',
       data: {
         accessToken: tokens.data.accessToken,
+        role: tokens.data.role,
       },
     };
   }

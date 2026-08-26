@@ -167,7 +167,7 @@ export class OrgVerificationService {
     }
 
     const isSuperAdmin = (verifiedBy.memberships || []).some(
-      (membership) => membership.role?.role_code === 'SUPER_ADMIN',
+      (membership) => membership.role?.isSuperAdmin === true,
     );
 
     if (!isSuperAdmin) {
@@ -237,7 +237,7 @@ export class OrgVerificationService {
 
   private isSuperAdmin(user: User): boolean {
     return (user.memberships || []).some(
-      (membership) => membership.role?.role_code === 'SUPER_ADMIN',
+      (membership) => membership.role?.isSuperAdmin === true,
     );
   }
 
