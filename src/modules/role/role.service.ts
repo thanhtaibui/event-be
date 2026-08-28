@@ -22,6 +22,8 @@ import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { paginate, PaginateQuery } from 'nestjs-paginate';
 import { Membership } from '../membership/entities/membership.entity';
 
+const SUPER_ADMIN_ROLE_CODE = 'SUPER_ADMIN';
+
 @Injectable()
 export class RoleService {
   constructor(
@@ -33,6 +35,11 @@ export class RoleService {
     private permissionRepo: Repository<Permission>,
   ) {}
   async create(createRoleDto: CreateRoleDto): Promise<ApiResponse<RoleDto>> {
+    const normalizedRoleCode = createRoleDto.role_code.trim().toUpperCase();
+    if (this.isSuperAdminRoleCode(normalizedRoleCode)) {
+      throw new BadRequestException('SUPER_ADMIN role cannot be created here');
+    }
+
     // const existRoleName = await this.roleRepo.findOne({
     //   where: { role_name: createRoleDto.role_name.toUpperCase() },
     // });
@@ -57,7 +64,7 @@ export class RoleService {
 
     const role = this.roleRepo.create({
       role_name: createRoleDto.role_name,
-      role_code: createRoleDto.role_code.toUpperCase(),
+      role_code: normalizedRoleCode,
       permissions,
       organization: { id: createRoleDto.orgId },
       colorKey: createRoleDto.colorKey,
@@ -69,7 +76,6 @@ export class RoleService {
       id: savedRole.id,
       role_name: savedRole.role_name,
       role_code: savedRole.role_code,
-      isSuperAdmin: savedRole.isSuperAdmin,
       colorKey: savedRole.colorKey,
       org: {
         id: savedRole.organization.id,
@@ -101,12 +107,15 @@ export class RoleService {
           'role.id',
           'role.role_name',
           'role.role_code',
-          'role.isSuperAdmin',
           'role.colorKey',
           'organization.id',
           'organization.name',
         ])
-        .where('role.deletedAt IS NULL');
+        .where('role.deletedAt IS NULL')
+        .andWhere('role.organizationId IS NOT NULL')
+        .andWhere('role.role_code != :superAdminRoleCode', {
+          superAdminRoleCode: SUPER_ADMIN_ROLE_CODE,
+        });
 
       const result = await paginate(query, roleQuery, {
         sortableColumns: ['role_name', 'role_code', 'organization.name'],
@@ -117,7 +126,6 @@ export class RoleService {
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
-        isSuperAdmin: r.isSuperAdmin,
         colorKey: r.colorKey,
         org: {
           id: r.organization.id,
@@ -187,7 +195,6 @@ export class RoleService {
         id: r.id,
         role_name: r.role_name,
         role_code: r.role_code,
-        isSuperAdmin: r.isSuperAdmin,
         colorKey: r.colorKey,
         org: {
           id: r.organization.id,
@@ -290,6 +297,7 @@ export class RoleService {
       if (!role) {
         throw new NotFoundException('Role not found');
       }
+      this.assertRoleIsEditable(role);
 
       return Response(200, 'get role permissions successfully', {
         permissions: await this.buildPermissionTree(role.permissions || []),
@@ -307,7 +315,7 @@ export class RoleService {
       throw new BadRequestException('Invalid ids');
     }
     const hasSuperAdminRole = roles.some(
-      (role) => role.isSuperAdmin === true,
+      (role) => this.isSuperAdminRole(role),
     );
     if (hasSuperAdminRole) {
       throw new BadRequestException('SUPER_ADMIN role cannot be deleted');
@@ -330,12 +338,12 @@ export class RoleService {
       if (!role) {
         throw new NotFoundException('Role not found');
       }
+      this.assertRoleIsEditable(role);
 
       return Response(200, 'Get Role By Id Successfully', {
         id: role.id,
         role_name: role.role_name,
         role_code: role.role_code,
-        isSuperAdmin: role.isSuperAdmin,
         permissions: await this.buildPermissionTree(role.permissions),
         colorKey: role.colorKey,
         org: {
@@ -364,6 +372,13 @@ export class RoleService {
 
     if (!role) {
       throw new NotFoundException(`Role ${id} not found `);
+    }
+    this.assertRoleIsEditable(role);
+    if (
+      updateRoleDto.role_code &&
+      this.isSuperAdminRoleCode(updateRoleDto.role_code)
+    ) {
+      throw new BadRequestException('Role code SUPER_ADMIN is reserved');
     }
 
     const [newPermissions, newOrg] = await Promise.all([
@@ -395,7 +410,6 @@ export class RoleService {
       id: updatedRole!.id,
       role_name: updatedRole!.role_name,
       role_code: updatedRole!.role_code,
-      isSuperAdmin: updatedRole!.isSuperAdmin,
       colorKey: updatedRole!.colorKey,
       permissions: await this.buildPermissionTree(
         updatedRole!.permissions || [],
@@ -406,7 +420,26 @@ export class RoleService {
       },
     });
   }
-  remove(id: number) {
+  async remove(id: string) {
+    const role = await this.roleRepo.findOne({ where: { id } });
+    if (!role) {
+      throw new NotFoundException('Role not found');
+    }
+    this.assertRoleIsEditable(role);
     return `This action removes a #${id} role`;
+  }
+
+  private isSuperAdminRole(role: Role): boolean {
+    return this.isSuperAdminRoleCode(role.role_code);
+  }
+
+  private isSuperAdminRoleCode(roleCode?: string): boolean {
+    return roleCode?.trim().toUpperCase() === SUPER_ADMIN_ROLE_CODE;
+  }
+
+  private assertRoleIsEditable(role: Role): void {
+    if (this.isSuperAdminRole(role)) {
+      throw new BadRequestException('SUPER_ADMIN role cannot be modified');
+    }
   }
 }

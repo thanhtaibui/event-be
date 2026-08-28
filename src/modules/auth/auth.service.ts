@@ -261,7 +261,7 @@ export class AuthService {
       (membership) => membership.isActive && membership.role,
     );
     const isSuperAdmin = memberships.some(
-      (membership) => membership.role.isSuperAdmin === true,
+      (membership) => membership.role.role_code === 'SUPER_ADMIN',
     );
 
     return {
