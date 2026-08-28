@@ -28,7 +28,7 @@ export class Notification extends BaseEntity {
   @Column({ default: false })
   isRead: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   readAt?: Date | null;
 
   @Column({ type: 'jsonb', nullable: true })
