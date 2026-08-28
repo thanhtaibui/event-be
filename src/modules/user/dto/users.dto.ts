@@ -33,6 +33,8 @@ export class MemberOfUserMembershipDto {
   orgName: string;
 
   slug: string;
+
+  isVerified: boolean;
 }
 
 export class MemberOfUserDto {

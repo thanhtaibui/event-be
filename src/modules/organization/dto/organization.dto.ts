@@ -29,6 +29,9 @@ export class OrganizationDto {
   isActive: boolean;
 
   @Expose()
+  isVerified: boolean;
+
+  @Expose()
   status: OrgRequestStatus;
 
   @Expose()

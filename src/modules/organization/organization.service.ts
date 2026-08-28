@@ -123,6 +123,7 @@ export class OrganizationService {
       const result = orgs.map((org) => ({
         id: org.id,
         name: org.name,
+        isVerified: org.isVerified,
       }));
       return Response(200, 'Get Switch Orgs Successfully', result);
     } finally {
@@ -199,6 +200,7 @@ export class OrganizationService {
       const result = {
         id: org.id,
         name: org.name,
+        isVerified: org.isVerified,
         status: org.status,
         totalMembers: members.length,
         members: members, // Đây là mảng đã được phẳng hóa
@@ -227,6 +229,7 @@ export class OrganizationService {
         bio: org.bio,
         owner: org.owner,
         slug: org.slug,
+        isVerified: org.isVerified,
         legalName: org.legalName,
         industry: org.industry,
         email: org.email,
@@ -260,6 +263,7 @@ export class OrganizationService {
         bio: org.bio,
         owner: org.owner,
         slug: org.slug,
+        isVerified: org.isVerified,
         legalName: org.legalName,
         industry: org.industry,
         email: org.email,

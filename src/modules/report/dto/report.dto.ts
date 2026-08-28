@@ -12,6 +12,8 @@ class OrganizationMinInfo {
   id: string;
 
   name: string;
+
+  isVerified: boolean;
 }
 
 export class ReportDto {

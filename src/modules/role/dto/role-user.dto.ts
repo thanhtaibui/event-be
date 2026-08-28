@@ -6,4 +6,6 @@ export class RoleUserDto {
   colorKey?: string;
 
   orgName?: string;
+
+  isVerified?: boolean;
 }

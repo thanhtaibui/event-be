@@ -5,4 +5,6 @@ export class OrgRoleDto {
   id: string;
   @Expose()
   name: string;
+  @Expose()
+  isVerified?: boolean;
 }

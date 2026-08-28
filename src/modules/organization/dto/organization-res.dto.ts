@@ -11,6 +11,8 @@ export class OrganizationResDto {
 
   slug: string;
 
+  isVerified: boolean;
+
   legalName?: string;
 
   industry?: string;

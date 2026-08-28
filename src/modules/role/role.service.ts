@@ -80,6 +80,7 @@ export class RoleService {
       org: {
         id: savedRole.organization.id,
         name: savedRole.organization.name,
+        isVerified: savedRole.organization.isVerified,
       },
       permissions:
         savedRole.permissions?.map((p) => ({
@@ -110,6 +111,7 @@ export class RoleService {
           'role.colorKey',
           'organization.id',
           'organization.name',
+          'organization.isVerified',
         ])
         .where('role.deletedAt IS NULL')
         .andWhere('role.organizationId IS NOT NULL')
@@ -130,6 +132,7 @@ export class RoleService {
         org: {
           id: r.organization.id,
           name: r.organization.name,
+          isVerified: r.organization.isVerified,
         },
       }));
       return Response(200, 'get all roles successfully', {
@@ -199,6 +202,7 @@ export class RoleService {
         org: {
           id: r.organization.id,
           name: r.organization.name,
+          isVerified: r.organization.isVerified,
         },
       }));
 
@@ -349,6 +353,7 @@ export class RoleService {
         org: {
           id: role.organization.id,
           name: role.organization.name,
+          isVerified: role.organization.isVerified,
         },
       });
     } finally {
@@ -417,6 +422,7 @@ export class RoleService {
       org: {
         id: updatedRole!.organization.id,
         name: updatedRole!.organization.name,
+        isVerified: updatedRole!.organization.isVerified,
       },
     });
   }

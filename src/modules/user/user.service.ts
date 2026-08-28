@@ -87,6 +87,7 @@ export class UserService {
               role_name: guestRole.role_name,
               colorKey: guestRole.colorKey,
               orgName: guestOrg?.name || '',
+              isVerified: guestOrg?.isVerified || false,
             },
           ]
         : [],
@@ -125,6 +126,7 @@ export class UserService {
             role_name: m.role.role_name,
             orgName: m.role.organization?.name || 'No Organization',
             colorKey: m.role.colorKey || 'gray',
+            isVerified: m.role.organization?.isVerified || false,
           })),
       }));
 
@@ -261,6 +263,7 @@ export class UserService {
             role_name: m.role.role_name,
             orgName: m.role.organization?.name || 'No Organization',
             colorKey: m.role.colorKey || 'gray',
+            isVerified: m.role.organization?.isVerified || false,
           })),
       });
     } finally {
@@ -293,6 +296,7 @@ export class UserService {
           role_name: m.role.role_name,
           orgName: m.organization.name,
           slug: m.organization.slug || '',
+          isVerified: m.organization.isVerified,
         }));
 
       return Response(200, 'Get Member Of User Successfully', {

@@ -210,6 +210,7 @@ export class ReportService {
       organization: {
         id: report.organization.id,
         name: report.organization.name,
+        isVerified: report.organization.isVerified,
       },
       reason: report.reason,
       status: report.status,

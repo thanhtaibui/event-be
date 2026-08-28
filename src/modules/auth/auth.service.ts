@@ -307,6 +307,9 @@ export class AuthService {
             ? null
             : (membership.organization?.name ?? null),
           slug: isSuperAdminRole ? null : (membership.organization?.slug ?? null),
+          isVerified: isSuperAdminRole
+            ? null
+            : (membership.organization?.isVerified ?? false),
         };
       });
   }
