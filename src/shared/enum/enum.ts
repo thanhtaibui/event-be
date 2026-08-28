@@ -38,3 +38,14 @@ export enum VerificationStatus {
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
 }
+
+export enum NotificationType {
+  SYSTEM = 'SYSTEM',
+  ORGANIZATION = 'ORGANIZATION',
+  EVENT = 'EVENT',
+  ORDER = 'ORDER',
+  TICKET = 'TICKET',
+  MEMBERSHIP = 'MEMBERSHIP',
+  REPORT = 'REPORT',
+  VERIFICATION = 'VERIFICATION',
+}
