@@ -191,6 +191,7 @@ export class AuthService {
       accessToken,
       refreshToken,
       role: payload.role,
+      memberships: this.buildMembershipPayload(user),
     };
   }
 
@@ -284,6 +285,34 @@ export class AuthService {
     return [
       ...new Set(permissions.map((permission) => permission.permission_code)),
     ];
+  }
+
+  private buildMembershipPayload(user: User) {
+    return (user.memberships || [])
+      .filter((membership) => membership.isActive && membership.role)
+      .map((membership) => {
+        const isSuperAdminRole = this.isSuperAdminRoleCode(
+          membership.role.role_code,
+        );
+
+        return {
+          membershipId: membership.id,
+          roleId: membership.role.id,
+          role_name: membership.role.role_name,
+          role_code: membership.role.role_code,
+          organizationId: isSuperAdminRole
+            ? null
+            : (membership.organization?.id ?? null),
+          orgName: isSuperAdminRole
+            ? null
+            : (membership.organization?.name ?? null),
+          slug: isSuperAdminRole ? null : (membership.organization?.slug ?? null),
+        };
+      });
+  }
+
+  private isSuperAdminRoleCode(roleCode?: string): boolean {
+    return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
   }
 
   private async verifyGoogleIdToken(

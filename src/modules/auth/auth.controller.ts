@@ -48,6 +48,7 @@ export class AuthController {
       data: {
         accessToken: tokens.data.accessToken,
         role: tokens.data.role,
+        memberships: tokens.data.memberships,
       },
     };
   }
@@ -72,6 +73,7 @@ export class AuthController {
       data: {
         accessToken: tokens.data.accessToken,
         role: tokens.data.role,
+        memberships: tokens.data.memberships,
       },
     };
   }
@@ -96,6 +98,7 @@ export class AuthController {
       data: {
         accessToken: tokens.data.accessToken,
         role: tokens.data.role,
+        memberships: tokens.data.memberships,
       },
     };
   }
@@ -122,6 +125,7 @@ export class AuthController {
       data: {
         accessToken: tokens.data.accessToken,
         role: tokens.data.role,
+        memberships: tokens.data.memberships,
       },
     };
   }

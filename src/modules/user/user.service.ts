@@ -288,6 +288,7 @@ export class UserService {
 
       const membership = memberships
         .filter((m) => m.role !== null && m.organization !== null)
+        .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
         .map((m) => ({
           role_name: m.role.role_name,
           orgName: m.organization.name,
@@ -365,6 +366,10 @@ export class UserService {
     } finally {
       console.timeEnd(timer);
     }
+  }
+
+  private isSuperAdminRoleCode(roleCode?: string): boolean {
+    return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {

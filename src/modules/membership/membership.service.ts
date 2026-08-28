@@ -50,6 +50,7 @@ export class MembershipService {
 
       const result = memberships
         .filter((m) => m.role !== null && m.organization !== null)
+        .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
         .map((m) => ({
           userId: userId,
           organizationId: m.organization?.id,
@@ -236,5 +237,9 @@ export class MembershipService {
 
   remove(id: number) {
     return `This action removes a #${id} membership`;
+  }
+
+  private isSuperAdminRoleCode(roleCode?: string): boolean {
+    return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
   }
 }
