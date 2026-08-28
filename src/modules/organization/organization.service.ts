@@ -9,12 +9,13 @@ import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Organization } from './entities/organization.entity';
 import { OrganizationDto } from './dto/organization.dto';
 import { Membership } from '../membership/entities/membership.entity';
 import { OrganizationStatus } from 'src/shared/enum/enum';
 import { User } from '../user/entities/user.entity';
+import { Role } from '../role/entities/role.entity';
 import { SwitchOrgDto } from './dto/switch-org.dto';
 import { OrganizationResDto } from './dto/organization-res.dto';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
@@ -31,6 +32,7 @@ export class OrganizationService {
     private readonly cloudinaryService: CloudinaryService,
     @InjectRepository(Membership) private memberRepo: Repository<Membership>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(Role) private roleRepo: Repository<Role>,
   ) {}
 
   async create(
@@ -54,6 +56,7 @@ export class OrganizationService {
         `User with ID ${createOrganizationDto.ownerId} not found`,
       );
     }
+    const ownerRole = await this.findOwnerRole();
     let logoUrl;
     let logoPublicId;
 
@@ -90,6 +93,7 @@ export class OrganizationService {
       isVerified: false,
     });
     const saveOrg = await this.organizationRepo.save(newOrg);
+    await this.createOwnerMembershipIfMissing(user, saveOrg, ownerRole);
     // 4. Lưu vào Database
     const result: CreateOrganizationDto = {
       name: saveOrg.name,
@@ -360,4 +364,46 @@ export class OrganizationService {
   // remove(id: number) {
   //   return `This action removes a #${id} organization`;
   // }
+
+  private async createOwnerMembershipIfMissing(
+    owner: User,
+    organization: Organization,
+    ownerRole: Role,
+  ): Promise<void> {
+    const existingMembership = await this.memberRepo.findOne({
+      where: {
+        user: { id: owner.id },
+        organization: { id: organization.id },
+      },
+    });
+
+    if (existingMembership) {
+      return;
+    }
+
+    const membership = this.memberRepo.create({
+      user: owner,
+      organization,
+      role: ownerRole,
+      isActive: true,
+    });
+
+    await this.memberRepo.save(membership);
+  }
+
+  private async findOwnerRole(): Promise<Role> {
+    const ownerRole = await this.roleRepo.findOne({
+      where: {
+        role_code: 'OWNER',
+        organization: IsNull(),
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (!ownerRole) {
+      throw new BadRequestException('OWNER role not found');
+    }
+
+    return ownerRole;
+  }
 }

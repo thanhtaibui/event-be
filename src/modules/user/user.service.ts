@@ -108,8 +108,8 @@ export class UserService {
         where: { isDelete: false },
         relations: [
           'memberships',
+          'memberships.organization',
           'memberships.role',
-          'memberships.role.organization',
         ],
       });
 
@@ -122,11 +122,12 @@ export class UserService {
         isActive: user.isActive,
         role: (user.memberships || [])
           .filter((m) => m.role !== null && m.role !== undefined)
+          .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
           .map((m) => ({
             role_name: m.role.role_name,
-            orgName: m.role.organization?.name || 'No Organization',
+            orgName: m.organization?.name || 'No Organization',
             colorKey: m.role.colorKey || 'gray',
-            isVerified: m.role.organization?.isVerified || false,
+            isVerified: m.organization?.isVerified || false,
           })),
       }));
 
@@ -243,8 +244,8 @@ export class UserService {
         where: { id },
         relations: [
           'memberships',
+          'memberships.organization',
           'memberships.role',
-          'memberships.role.organization',
         ],
       });
       if (!user) {
@@ -259,11 +260,12 @@ export class UserService {
         isActive: user.isActive,
         role: (user.memberships || [])
           .filter((m) => m.role !== null && m.role !== undefined)
+          .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
           .map((m) => ({
             role_name: m.role.role_name,
-            orgName: m.role.organization?.name || 'No Organization',
+            orgName: m.organization?.name || 'No Organization',
             colorKey: m.role.colorKey || 'gray',
-            isVerified: m.role.organization?.isVerified || false,
+            isVerified: m.organization?.isVerified || false,
           })),
       });
     } finally {
