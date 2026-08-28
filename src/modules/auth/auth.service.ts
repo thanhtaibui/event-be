@@ -6,7 +6,7 @@ import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { UnauthorizedException } from '@nestjs/common';
 import { Organization } from '../organization/entities/organization.entity';
 import { Role } from '../role/entities/role.entity';
@@ -19,6 +19,8 @@ type GoogleTokenInfo = {
   email_verified?: string | boolean;
   name?: string;
 };
+
+const OWNER_ROLE_CODE = 'OWNER';
 
 @Injectable()
 export class AuthService {
@@ -94,7 +96,12 @@ export class AuthService {
       throw new BadRequestException('Wrong password');
     }
 
-    const tokens = await this.getTokens(user.id, user, loginDto.rememberMe);
+    const userWithRelations = await this.findUserWithAuthRelations(user.id);
+    const tokens = await this.getTokens(
+      user.id,
+      userWithRelations,
+      loginDto.rememberMe,
+    );
 
     await this.userRepo.update(user.id, {
       refreshToken: await bcrypt.hash(tokens.refreshToken, 10),
@@ -222,7 +229,8 @@ export class AuthService {
       if (!isMatch) {
         throw new UnauthorizedException('Invalid refresh token');
       }
-      const tokens = await this.getTokens(user.id, user, false);
+      const userWithRelations = await this.findUserWithAuthRelations(user.id);
+      const tokens = await this.getTokens(user.id, userWithRelations, false);
 
       // 4. Tạo token mới
       // const newAccessToken = this.jwtService.sign(
@@ -381,6 +389,8 @@ export class AuthService {
   }
 
   private async findUserWithAuthRelations(userId: string): Promise<User> {
+    await this.syncOwnerMemberships(userId);
+
     const user = await this.userRepo.findOne({
       where: { id: userId },
       relations: [
@@ -396,5 +406,56 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  private async syncOwnerMemberships(userId: string): Promise<void> {
+    const ownedOrganizations = await this.orgRepo.find({
+      where: { owner: { id: userId } },
+    });
+
+    if (!ownedOrganizations.length) {
+      return;
+    }
+
+    const ownerRole = await this.roleRepo.findOne({
+      where: {
+        role_code: OWNER_ROLE_CODE,
+        organization: IsNull(),
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (!ownerRole) {
+      throw new BadRequestException('OWNER role not found');
+    }
+
+    const existingMemberships = await this.membershipRepo.find({
+      where: { user: { id: userId } },
+      relations: ['organization', 'role'],
+    });
+    const existingOwnerOrgIds = new Set(
+      existingMemberships
+        .filter(
+          (membership) =>
+            membership.organization &&
+            membership.role?.role_code === OWNER_ROLE_CODE,
+        )
+        .map((membership) => membership.organization.id),
+    );
+
+    const missingMemberships = ownedOrganizations
+      .filter((organization) => !existingOwnerOrgIds.has(organization.id))
+      .map((organization) =>
+        this.membershipRepo.create({
+          user: { id: userId } as User,
+          organization,
+          role: ownerRole,
+          isActive: true,
+        }),
+      );
+
+    if (missingMemberships.length) {
+      await this.membershipRepo.save(missingMemberships);
+    }
   }
 }
