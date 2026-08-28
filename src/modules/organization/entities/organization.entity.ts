@@ -4,7 +4,7 @@ import { Event } from '../../event/entities/event.entity';
 import { Membership } from '../../membership/entities/membership.entity';
 import { User } from '../../user/entities/user.entity';
 import { Role } from '../../role/entities/role.entity';
-import { OrgRequestStatus } from 'src/shared/enum/enum';
+import { OrganizationStatus } from 'src/shared/enum/enum';
 // ... các import cũ giữ nguyên
 import { OrgVerification } from '../../org-verification/entities/org-verification.entity';
 
@@ -73,8 +73,8 @@ export class Organization extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: OrgRequestStatus,
-    default: OrgRequestStatus.PENDING,
+    enum: OrganizationStatus,
+    default: OrganizationStatus.PENDING,
   })
-  status: OrgRequestStatus;
+  status: OrganizationStatus;
 }

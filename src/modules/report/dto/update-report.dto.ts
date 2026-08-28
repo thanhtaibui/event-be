@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsOptional } from 'class-validator';
-import { OrgRequestStatus, ReportStatus } from 'src/shared/enum/enum';
+import { OrganizationStatus, ReportStatus } from 'src/shared/enum/enum';
 
 export class UpdateReportDto {
   @ApiProperty({
@@ -13,12 +13,12 @@ export class UpdateReportDto {
   status?: ReportStatus;
 
   @ApiProperty({
-    enum: OrgRequestStatus,
-    example: OrgRequestStatus.SUSPENDED,
+    enum: OrganizationStatus,
+    example: OrganizationStatus.SUSPENDED,
     required: false,
     description: 'Không gửi field này nếu muốn giữ nguyên trạng thái organization',
   })
-  @IsEnum(OrgRequestStatus)
+  @IsEnum(OrganizationStatus)
   @IsOptional()
-  organizationStatus?: OrgRequestStatus;
+  organizationStatus?: OrganizationStatus;
 }

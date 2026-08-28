@@ -13,7 +13,7 @@ import { In, Repository } from 'typeorm';
 import { Organization } from './entities/organization.entity';
 import { OrganizationDto } from './dto/organization.dto';
 import { Membership } from '../membership/entities/membership.entity';
-import { OrgRequestStatus } from 'src/shared/enum/enum';
+import { OrganizationStatus } from 'src/shared/enum/enum';
 import { User } from '../user/entities/user.entity';
 import { SwitchOrgDto } from './dto/switch-org.dto';
 import { OrganizationResDto } from './dto/organization-res.dto';
@@ -76,7 +76,7 @@ export class OrganizationService {
       name: createOrganizationDto.name,
       bio: createOrganizationDto.bio,
       slug: createOrganizationDto.slug,
-      status: OrgRequestStatus.PENDING,
+      status: OrganizationStatus.PENDING,
       owner: { id: createOrganizationDto.ownerId } as User,
       logoUrl: logoUrl,
       legalName: createOrganizationDto.legalName,
@@ -352,7 +352,7 @@ export class OrganizationService {
     const names = org.map((i) => i.name);
     await this.organizationRepo.update(
       { id: In(deleteSort.ids) },
-      { status: OrgRequestStatus.ARCHIVED },
+      { status: OrganizationStatus.ARCHIVED },
     );
 
     return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);

@@ -12,7 +12,7 @@ import { Repository } from 'typeorm';
 import { Organization } from '../organization/entities/organization.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
-import { VerificationStatus } from 'src/shared/enum/enum';
+import { OrganizationStatus, VerificationStatus } from 'src/shared/enum/enum';
 
 @Injectable()
 export class OrgVerificationService {
@@ -181,6 +181,7 @@ export class OrgVerificationService {
 
     if (status === VerificationStatus.APPROVED) {
       request.organization.isVerified = true;
+      request.organization.status = OrganizationStatus.ACTIVE;
       request.organization.verifiedAt = request.verifiedAt;
       await this.organizationRepo.save(request.organization);
     }
@@ -273,6 +274,7 @@ export class OrgVerificationService {
             id: request.organization.id,
             name: request.organization.name,
             legalName: request.organization.legalName,
+            status: request.organization.status,
             isVerified: request.organization.isVerified,
             verifiedAt: request.organization.verifiedAt,
           }

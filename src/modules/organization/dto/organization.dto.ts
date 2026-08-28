@@ -1,5 +1,5 @@
 import { Expose, Type } from 'class-transformer';
-import { OrgRequestStatus } from 'src/shared/enum/enum';
+import { OrganizationStatus } from 'src/shared/enum/enum';
 
 export class OwnerResponseDto {
   @Expose()
@@ -32,7 +32,7 @@ export class OrganizationDto {
   isVerified: boolean;
 
   @Expose()
-  status: OrgRequestStatus;
+  status: OrganizationStatus;
 
   @Expose()
   createdAt: Date;

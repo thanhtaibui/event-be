@@ -26,7 +26,7 @@ export enum RoleUser {
   ADMIN = 'admin',
   ORGANIZATION = 'organization',
 }
-export enum OrgRequestStatus {
+export enum OrganizationStatus {
   PENDING = 'PENDING',
   REJECTED = 'REJECTED',
   ACTIVE = 'ACTIVE',
