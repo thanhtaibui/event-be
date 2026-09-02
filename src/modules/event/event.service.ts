@@ -9,7 +9,7 @@ import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { EventDto } from './dto/event.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Event } from './entities/event.entity';
-import { In, Repository } from 'typeorm';
+import { In, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
@@ -74,7 +74,22 @@ export class EventService {
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     console.time('GET_EVENTS');
     try {
-      const result = await paginate(query, this.eventRepo, {
+      await this.syncEventStatuses();
+      const now = new Date();
+      const eventQuery = this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoinAndSelect('event.organization', 'organization')
+        .leftJoinAndSelect('event.categories', 'categories')
+        .where('event.status IN (:...statuses)', {
+          statuses: [
+            EventStatus.PUBLISHED,
+            EventStatus.UPCOMING,
+            EventStatus.ONGOING,
+          ],
+        })
+        .andWhere('event.registrationEndDate >= :now', { now });
+
+      const result = await paginate(query, eventQuery, {
         sortableColumns: ['title', 'capacity', 'categories.name'],
         searchableColumns: ['title', 'organization.name', 'categories.name'],
         filterableColumns: {
@@ -83,7 +98,6 @@ export class EventService {
           'categories.id': [FilterOperator.EQ],
           'categories.name': [FilterOperator.EQ],
         },
-        relations: ['organization', 'categories'],
         defaultSortBy: [['createdAt', 'DESC']],
       });
 
@@ -136,6 +150,7 @@ export class EventService {
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     console.time('GET_EVENTS_BY_ORG_SLUG');
     try {
+      await this.syncEventStatuses();
       const organization = await this.assertUserInOrganization(slug, userId);
 
       const result = await paginate(query, this.eventRepo, {
@@ -247,6 +262,7 @@ export class EventService {
   async findOne(id: string): Promise<ApiResponse<EventDto>> {
     console.time('GET_EVENT_BY_ID');
     try {
+      await this.syncEventStatuses([id]);
       const event = await this.eventRepo.findOne({
         where: { id },
         relations: ['organization', 'categories'],
@@ -281,6 +297,7 @@ export class EventService {
     const timer = `GET_EVENT_TICKET_TYPES:${id}`;
     console.time(timer);
     try {
+      await this.syncEventStatuses([id]);
       const event = await this.eventRepo.findOne({
         where: { id },
         relations: ['ticketTypes'],
@@ -399,5 +416,43 @@ export class EventService {
     }
 
     return categories;
+  }
+
+  private async syncEventStatuses(eventIds?: string[]): Promise<void> {
+    const now = new Date();
+    const lockedStatuses = [
+      EventStatus.CANCELLED,
+      EventStatus.POSTPONED,
+      EventStatus.DRAFT,
+    ];
+    const baseWhere = {
+      ...(eventIds?.length ? { id: In(eventIds) } : {}),
+      status: Not(In(lockedStatuses)),
+    };
+
+    await this.eventRepo.update(
+      {
+        ...baseWhere,
+        endDateTime: LessThanOrEqual(now),
+      },
+      { status: EventStatus.ENDED },
+    );
+
+    await this.eventRepo.update(
+      {
+        ...baseWhere,
+        startDateTime: LessThanOrEqual(now),
+        endDateTime: MoreThan(now),
+      },
+      { status: EventStatus.ONGOING },
+    );
+
+    await this.eventRepo.update(
+      {
+        ...baseWhere,
+        startDateTime: MoreThan(now),
+      },
+      { status: EventStatus.UPCOMING },
+    );
   }
 }
