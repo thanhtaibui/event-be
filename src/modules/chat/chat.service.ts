@@ -9,7 +9,7 @@ import {
   ChatImageResultDto,
   ProcessChatImageDto,
 } from './dto/process-chat-image.dto';
-import { GeminiService } from './gemini.service';
+import { HuggingFaceService } from './hugging-face.service';
 
 type ImagePreset = {
   label: string;
@@ -81,7 +81,7 @@ export class ChatService {
 
   constructor(
     private readonly uploadService: UploadService,
-    private readonly geminiService: GeminiService,
+    private readonly huggingFaceService: HuggingFaceService,
   ) {}
 
   getImagePresets(): ApiResponse<ImagePreset[]> {
@@ -117,21 +117,22 @@ export class ChatService {
 
       const imageResult =
         dto.action === ChatImageAction.CREATE_IMAGE_FROM_PROMPT
-          ? await this.geminiService.generateImage(this.buildPrompt(dto, preset))
-          : await this.geminiService.editImage(
+          ? await this.huggingFaceService.generateImage(
+              this.buildPrompt(dto, preset),
+            )
+          : await this.huggingFaceService.editImage(
               this.buildPrompt(dto, preset),
               file!,
             );
 
-      const buffer = Buffer.from(imageResult.b64Json, 'base64');
       const uploaded = await this.uploadService.uploadFile(
         {
           fieldname: 'file',
           originalname: `${this.getFileNamePrefix(dto, preset)}.png`,
           encoding: '7bit',
-          mimetype: 'image/png',
-          buffer,
-          size: buffer.length,
+          mimetype: imageResult.mimeType,
+          buffer: imageResult.buffer,
+          size: imageResult.buffer.length,
         } as Express.Multer.File,
         'chat/images',
       );
