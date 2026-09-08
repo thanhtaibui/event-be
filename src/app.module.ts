@@ -25,7 +25,6 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { UploadModule } from './modules/upload/upload.module';
 import { UploadService } from './modules/upload/upload.service';
 import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
-import { ChatModule } from './modules/chat/chat.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AiModule } from './ai/ai.module';
 import { AiImageModule } from './ai-image/ai-image.module';
@@ -70,7 +69,6 @@ import { AiImageModule } from './ai-image/ai-image.module';
     CloudinaryModule,
     UploadModule,
     TicketTypeItemModule,
-    ChatModule,
     NotificationModule,
     AiModule,
     AiImageModule,

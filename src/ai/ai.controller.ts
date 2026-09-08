@@ -1,6 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AiService } from './ai.service';
+import { AiChatDto, AiChatResponseDto } from './dto/ai-chat.dto';
 
 @ApiTags('AI')
 @Controller('ai')
@@ -8,24 +9,17 @@ export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Post('chat')
-  @ApiOperation({ operationId: 'aiChat' })
+  @ApiOperation({
+    operationId: 'aiChat',
+    summary: 'Chat with Event AI Assistant',
+  })
   @ApiBody({
-    description: 'Send a text message to Hugging Face chat model.',
-    schema: {
-      type: 'object',
-      required: ['message'],
-      properties: {
-        message: {
-          type: 'string',
-          example: 'Tạo ý tưởng poster trung thu cho sự kiện âm nhạc',
-        },
-      },
-    },
+    type: AiChatDto,
     examples: {
-      posterIdea: {
-        summary: 'Ask for poster idea',
+      eventIdea: {
+        summary: 'Ask for event idea',
         value: {
-          message: 'Gợi ý nội dung poster trung thu cho sự kiện âm nhạc',
+          message: 'Tạo ý tưởng khai trương cửa hàng điện thoại',
         },
       },
       eventCopy: {
@@ -37,17 +31,16 @@ export class AiController {
     },
   })
   @ApiOkResponse({
-    description: 'Chat reply from Hugging Face.',
+    description: 'Chat reply from AI provider.',
     schema: {
       example: {
-        reply:
-          'Bạn có thể dùng concept đêm trăng, lồng đèn và sân khấu âm nhạc...',
+        type: 'text',
+        message:
+          'Bạn có thể tổ chức concept khai trương công nghệ với khu trải nghiệm sản phẩm...',
       },
     },
   })
-  async chat(@Body('message') message: string): Promise<{ reply: string }> {
-    return {
-      reply: await this.aiService.chat(message),
-    };
+  async chat(@Body() dto: AiChatDto): Promise<AiChatResponseDto> {
+    return this.aiService.chat(dto.message);
   }
 }

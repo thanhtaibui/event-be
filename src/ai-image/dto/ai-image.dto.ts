@@ -1,95 +1,70 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 
-export enum AiImageAction {
-  ANALYZE = 'analyze',
+export enum ImageEnhanceAction {
   REMOVE_BACKGROUND = 'remove_background',
   UPSCALE = 'upscale',
-  GENERATE = 'generate',
-  EDIT_IMAGE = 'edit_image',
-  CREATE_BANNER = 'create_banner',
-  CREATE_POSTER = 'create_poster',
-  FIT_EVENT_BANNER = 'fit_event_banner',
-  FIT_EVENT_POSTER = 'fit_event_poster',
-  FIT_ORGANIZATION_LOGO = 'fit_organization_logo',
-  UPSCALE_IMAGE = 'upscale_image',
-  CREATE_IMAGE_FROM_PROMPT = 'create_image_from_prompt',
 }
 
-export const AI_IMAGE_ACTIONS = Object.values(AiImageAction);
+export const IMAGE_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16'] as const;
 
-export class AnalyzeImageDto {
+export class GenerateImageDto {
   @ApiProperty({
-    example:
-      'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/chat/images/product.png',
-  })
-  @IsUrl({ require_tld: false })
-  imageUrl: string;
-
-  @ApiPropertyOptional({
-    example: 'Phân tích ảnh này để tạo banner sự kiện.',
+    example: 'Tạo poster khai trương cửa hàng điện thoại phong cách điện máy Việt Nam',
   })
   @IsString()
-  @MaxLength(1500)
-  @IsOptional()
-  message?: string;
-}
-
-export class ImageUrlDto {
-  @ApiProperty({
-    example:
-      'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/chat/images/product.png',
-  })
-  @IsUrl({ require_tld: false })
-  imageUrl: string;
-}
-
-export class ProcessAiImageDto {
-  @ApiProperty({
-    enum: AI_IMAGE_ACTIONS,
-    example: AiImageAction.REMOVE_BACKGROUND,
-  })
-  @IsString()
-  @IsIn(AI_IMAGE_ACTIONS)
-  action: AiImageAction;
-
-  @ApiPropertyOptional({
-    example:
-      'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/chat/images/product.png',
-  })
-  @IsUrl({ require_tld: false })
-  @IsOptional()
-  imageUrl?: string;
-
-  @ApiPropertyOptional({
-    example: 'Tạo banner ngang phong cách hiện đại cho sự kiện âm nhạc.',
-  })
-  @IsString()
-  @MaxLength(1500)
-  @IsOptional()
-  prompt?: string;
-
-  @ApiPropertyOptional({
-    example: 'event-banner',
-    description: 'Optional custom file name prefix for S3.',
-  })
-  @IsString()
-  @MaxLength(80)
-  @IsOptional()
-  fileNamePrefix?: string;
-}
-
-export class AnalyzeImageResponseDto {
-  description: string;
-  product: string;
-  style: string;
+  @MaxLength(3000)
   prompt: string;
-  suggestedAction: string;
+
+  @ApiPropertyOptional({
+    enum: IMAGE_RATIOS,
+    example: '16:9',
+  })
+  @IsIn(IMAGE_RATIOS)
+  @IsOptional()
+  ratio?: string;
 }
 
-export class AiImageResultDto {
-  resultImageUrl: string;
-  public_id?: string;
-  action?: string;
-  mimeType?: string;
+export class EditImageDto {
+  @ApiProperty({
+    example:
+      'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/iphone.jpg',
+  })
+  @IsUrl({ require_tld: false })
+  imageUrl: string;
+
+  @ApiProperty({
+    example: 'Đổi nền thành showroom, thêm chữ SALE 9.9, giữ nguyên sản phẩm',
+  })
+  @IsString()
+  @MaxLength(3000)
+  instruction: string;
+
+  @ApiPropertyOptional({
+    enum: IMAGE_RATIOS,
+    example: '16:9',
+  })
+  @IsIn(IMAGE_RATIOS)
+  @IsOptional()
+  ratio?: string;
+}
+
+export class EnhanceImageDto {
+  @ApiProperty({
+    example:
+      'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/product.png',
+  })
+  @IsUrl({ require_tld: false })
+  imageUrl: string;
+
+  @ApiProperty({
+    enum: ImageEnhanceAction,
+    example: ImageEnhanceAction.REMOVE_BACKGROUND,
+  })
+  @IsIn(Object.values(ImageEnhanceAction))
+  action: ImageEnhanceAction;
+}
+
+export class ImageResponseDto {
+  imageUrl: string;
 }
