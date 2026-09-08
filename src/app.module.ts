@@ -28,6 +28,7 @@ import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-ite
 import { ChatModule } from './modules/chat/chat.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AiModule } from './ai/ai.module';
+import { AiImageModule } from './ai-image/ai-image.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -72,6 +73,7 @@ import { AiModule } from './ai/ai.module';
     ChatModule,
     NotificationModule,
     AiModule,
+    AiImageModule,
   ],
   controllers: [AppController],
   providers: [AppService, UploadService],
