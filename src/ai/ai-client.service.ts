@@ -4,9 +4,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { InferenceClient } from '@huggingface/inference';
 
-const DEFAULT_HF_CHAT_MODEL = 'Qwen/Qwen2.5-7B-Instruct';
+const DEFAULT_GEMINI_CHAT_MODEL = 'gemini-2.0-flash';
 
 @Injectable()
 export class AiClientService {
@@ -14,37 +13,53 @@ export class AiClientService {
 
   async chat(message: string): Promise<string> {
     const prompt = this.buildEventAssistantPrompt(message);
-    const client = this.createHfClient();
-    const model = DEFAULT_HF_CHAT_MODEL;
-    this.logger.log(`AI_CHAT:huggingface:${model}`);
+    const apiKey = this.getGeminiApiKey();
+    const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_CHAT_MODEL;
+    this.logger.log(`AI_CHAT:gemini:${model}`);
 
     try {
-      const output = await client.chatCompletion({
-        model,
-        provider: 'auto',
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        ],
-        max_tokens: 700,
-        temperature: 0.3,
-      });
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 700,
+            },
+          }),
+        },
+      );
 
-      const reply = output.choices?.[0]?.message?.content;
-      if (!reply) {
+      if (!response.ok) {
         throw new InternalServerErrorException(
-          'Hugging Face did not return a reply',
+          `Gemini API error: ${await response.text()}`,
         );
       }
 
-      return Array.isArray(reply)
-        ? reply.map((part: any) => part.text || '').join('')
-        : reply;
+      const output = await response.json();
+      const reply = output.candidates?.[0]?.content?.parts
+        ?.map((part: { text?: string }) => part.text || '')
+        .join('')
+        .trim();
+
+      if (!reply) {
+        throw new InternalServerErrorException('Gemini did not return a reply');
+      }
+
+      return reply;
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Hugging Face request failed';
+        error instanceof Error ? error.message : 'Gemini request failed';
       this.logger.error(`AI_CHAT_FAILED:${model}:${errorMessage}`);
 
       if (
@@ -60,13 +75,13 @@ export class AiClientService {
     }
   }
 
-  private createHfClient(): InferenceClient {
-    const token = process.env.HF_TOKEN;
-    if (!token) {
-      throw new BadRequestException('HF_TOKEN is missing');
+  private getGeminiApiKey(): string {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new BadRequestException('GEMINI_API_KEY is missing');
     }
 
-    return new InferenceClient(token);
+    return apiKey;
   }
 
   private buildEventAssistantPrompt(message: string): string {
