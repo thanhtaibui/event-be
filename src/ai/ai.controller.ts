@@ -1,5 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AiService } from './ai.service';
 
 @ApiTags('AI')
@@ -10,6 +10,7 @@ export class AiController {
   @Post('chat')
   @ApiOperation({ operationId: 'aiChat' })
   @ApiBody({
+    description: 'Send a text message to Hugging Face chat model.',
     schema: {
       type: 'object',
       required: ['message'],
@@ -18,6 +19,29 @@ export class AiController {
           type: 'string',
           example: 'Tạo ý tưởng poster trung thu cho sự kiện âm nhạc',
         },
+      },
+    },
+    examples: {
+      posterIdea: {
+        summary: 'Ask for poster idea',
+        value: {
+          message: 'Gợi ý nội dung poster trung thu cho sự kiện âm nhạc',
+        },
+      },
+      eventCopy: {
+        summary: 'Ask for event description',
+        value: {
+          message: 'Viết mô tả ngắn cho sự kiện workshop AI cuối tuần',
+        },
+      },
+    },
+  })
+  @ApiOkResponse({
+    description: 'Chat reply from Hugging Face.',
+    schema: {
+      example: {
+        reply:
+          'Bạn có thể dùng concept đêm trăng, lồng đèn và sân khấu âm nhạc...',
       },
     },
   })
