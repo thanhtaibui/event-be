@@ -1,8 +1,6 @@
 import {
   BadRequestException,
-  HttpException,
   Injectable,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { UploadService } from '../upload/upload.service';
@@ -11,6 +9,7 @@ import {
   ChatImageResultDto,
   ProcessChatImageDto,
 } from './dto/process-chat-image.dto';
+import { GeminiService } from './gemini.service';
 
 type ImagePreset = {
   label: string;
@@ -20,12 +19,6 @@ type ImagePreset = {
   requiresImage: boolean;
   background?: 'transparent' | 'opaque' | 'auto';
 };
-
-const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1';
-const SUPPORTED_OPENAI_IMAGE_MODELS = [
-  DEFAULT_OPENAI_IMAGE_MODEL,
-  'gpt-image-1-mini',
-];
 
 @Injectable()
 export class ChatService {
@@ -86,7 +79,10 @@ export class ChatService {
     },
   };
 
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(
+    private readonly uploadService: UploadService,
+    private readonly geminiService: GeminiService,
+  ) {}
 
   getImagePresets(): ApiResponse<ImagePreset[]> {
     return Response(200, 'Get chat image presets successfully', [
@@ -119,12 +115,15 @@ export class ChatService {
         throw new BadRequestException('Only image files are allowed');
       }
 
-      const b64Json =
+      const imageResult =
         dto.action === ChatImageAction.CREATE_IMAGE_FROM_PROMPT
-          ? await this.generateImage(dto, preset)
-          : await this.editImage(dto, preset, file!);
+          ? await this.geminiService.generateImage(this.buildPrompt(dto, preset))
+          : await this.geminiService.editImage(
+              this.buildPrompt(dto, preset),
+              file!,
+            );
 
-      const buffer = Buffer.from(b64Json, 'base64');
+      const buffer = Buffer.from(imageResult.b64Json, 'base64');
       const uploaded = await this.uploadService.uploadFile(
         {
           fieldname: 'file',
@@ -142,86 +141,11 @@ export class ChatService {
         public_id: uploaded.data!.public_id,
         action: dto.action,
         size: preset.size,
-        mimeType: 'image/png',
+        mimeType: imageResult.mimeType,
       });
     } finally {
       console.timeEnd(timer);
     }
-  }
-
-  private async generateImage(
-    dto: ProcessChatImageDto,
-    preset: ImagePreset,
-  ): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.getOpenAiApiKey()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: this.getOpenAiImageModel(),
-        prompt: this.buildPrompt(dto, preset),
-        size: preset.size,
-        quality: 'auto',
-        background: preset.background || 'auto',
-        output_format: 'png',
-      }),
-    });
-
-    return this.extractImage(response);
-  }
-
-  private async editImage(
-    dto: ProcessChatImageDto,
-    preset: ImagePreset,
-    file: Express.Multer.File,
-  ): Promise<string> {
-    const formData = new FormData();
-    formData.append('model', this.getOpenAiImageModel());
-    formData.append('prompt', this.buildPrompt(dto, preset));
-    formData.append('size', preset.size);
-    formData.append('quality', 'auto');
-    formData.append('background', preset.background || 'auto');
-    formData.append('output_format', 'png');
-    formData.append(
-      'image',
-      new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }),
-      file.originalname || 'image.png',
-    );
-
-    const response = await fetch('https://api.openai.com/v1/images/edits', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.getOpenAiApiKey()}`,
-      },
-      body: formData,
-    });
-
-    return this.extractImage(response);
-  }
-
-  private async extractImage(response: globalThis.Response): Promise<string> {
-    const data = await response.json();
-    if (!response.ok) {
-      throw new HttpException(
-        {
-          statusCode: response.status,
-          message: data?.error?.message || 'Failed to process image with OpenAI',
-          data: null,
-        },
-        response.status,
-      );
-    }
-
-    const b64Json = data?.data?.[0]?.b64_json;
-    if (!b64Json) {
-      throw new InternalServerErrorException(
-        'OpenAI did not return an image result',
-      );
-    }
-
-    return b64Json;
   }
 
   private buildPrompt(dto: ProcessChatImageDto, preset: ImagePreset): string {
@@ -242,31 +166,5 @@ export class ChatService {
       .replace(/[^a-z0-9-_]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
-  }
-
-  private getOpenAiApiKey(): string {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new BadRequestException('OPENAI_API_KEY is missing');
-    }
-    return apiKey;
-  }
-
-  private getOpenAiImageModel(): string {
-    const model = process.env.OPENAI_IMAGE_MODEL?.trim();
-
-    if (!model) {
-      return DEFAULT_OPENAI_IMAGE_MODEL;
-    }
-
-    if (!SUPPORTED_OPENAI_IMAGE_MODELS.includes(model)) {
-      throw new BadRequestException(
-        `OPENAI_IMAGE_MODEL is invalid. Use ${SUPPORTED_OPENAI_IMAGE_MODELS.join(
-          ' or ',
-        )}`,
-      );
-    }
-
-    return model;
   }
 }
