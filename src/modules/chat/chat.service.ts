@@ -21,6 +21,12 @@ type ImagePreset = {
   background?: 'transparent' | 'opaque' | 'auto';
 };
 
+const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1';
+const SUPPORTED_OPENAI_IMAGE_MODELS = [
+  DEFAULT_OPENAI_IMAGE_MODEL,
+  'gpt-image-1-mini',
+];
+
 @Injectable()
 export class ChatService {
   private readonly presets: Record<ChatImageAction, ImagePreset> = {
@@ -154,7 +160,7 @@ export class ChatService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+        model: this.getOpenAiImageModel(),
         prompt: this.buildPrompt(dto, preset),
         size: preset.size,
         quality: 'auto',
@@ -172,7 +178,7 @@ export class ChatService {
     file: Express.Multer.File,
   ): Promise<string> {
     const formData = new FormData();
-    formData.append('model', process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1');
+    formData.append('model', this.getOpenAiImageModel());
     formData.append('prompt', this.buildPrompt(dto, preset));
     formData.append('size', preset.size);
     formData.append('quality', 'auto');
@@ -244,5 +250,23 @@ export class ChatService {
       throw new BadRequestException('OPENAI_API_KEY is missing');
     }
     return apiKey;
+  }
+
+  private getOpenAiImageModel(): string {
+    const model = process.env.OPENAI_IMAGE_MODEL?.trim();
+
+    if (!model) {
+      return DEFAULT_OPENAI_IMAGE_MODEL;
+    }
+
+    if (!SUPPORTED_OPENAI_IMAGE_MODELS.includes(model)) {
+      throw new BadRequestException(
+        `OPENAI_IMAGE_MODEL is invalid. Use ${SUPPORTED_OPENAI_IMAGE_MODELS.join(
+          ' or ',
+        )}`,
+      );
+    }
+
+    return model;
   }
 }
