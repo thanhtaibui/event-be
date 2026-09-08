@@ -27,6 +27,7 @@ import { UploadService } from './modules/upload/upload.service';
 import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { AiModule } from './ai/ai.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -70,6 +71,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     TicketTypeItemModule,
     ChatModule,
     NotificationModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService, UploadService],
