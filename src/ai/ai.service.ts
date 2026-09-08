@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InferenceClient } from '@huggingface/inference';
 
-const HF_CHAT_MODEL = 'Qwen/Qwen2.5-VL-7B-Instruct';
+const DEFAULT_HF_CHAT_MODEL = 'Qwen/Qwen2.5-7B-Instruct';
 
 @Injectable()
 export class AiService {
@@ -19,11 +19,13 @@ export class AiService {
     }
 
     const client = this.createClient();
-    this.logger.log(`HF_CHAT:${HF_CHAT_MODEL}`);
+    const model = process.env.HF_CHAT_MODEL || DEFAULT_HF_CHAT_MODEL;
+    this.logger.log(`HF_CHAT:${model}`);
 
     try {
       const output = await client.chatCompletion({
-        model: HF_CHAT_MODEL,
+        model,
+        provider: 'auto',
         messages: [
           {
             role: 'user',
@@ -45,9 +47,9 @@ export class AiService {
         ? reply.map((part: any) => part.text || '').join('')
         : reply;
     } catch (error) {
-      this.logger.error(
-        error instanceof Error ? error.message : 'Hugging Face request failed',
-      );
+      const message =
+        error instanceof Error ? error.message : 'Hugging Face request failed';
+      this.logger.error(`HF_CHAT_FAILED:${model}:${message}`);
 
       if (
         error instanceof BadRequestException ||
@@ -56,7 +58,9 @@ export class AiService {
         throw error;
       }
 
-      throw new InternalServerErrorException('Failed to call Hugging Face API');
+      throw new InternalServerErrorException(
+        `Failed to call Hugging Face API: ${message}`,
+      );
     }
   }
 
