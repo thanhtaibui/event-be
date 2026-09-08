@@ -23,14 +23,14 @@ export class AiImageController {
   constructor(private readonly aiImageService: AiImageService) {}
 
   @Post('generate')
-  @ApiOperation({ summary: 'Generate a new image from text prompt' })
+  @ApiOperation({ summary: 'Generate a new image from natural description' })
   @ApiBody({
     type: GenerateImageDto,
     examples: {
       grandOpeningPoster: {
         summary: 'Generate event image',
         value: {
-          prompt:
+          description:
             'Tạo poster khai trương cửa hàng điện thoại phong cách điện máy Việt Nam',
           ratio: '16:9',
         },
@@ -50,7 +50,7 @@ export class AiImageController {
   }
 
   @Post('edit')
-  @ApiOperation({ summary: 'Edit an image from imageUrl and instruction' })
+  @ApiOperation({ summary: 'Edit an image from imageUrl and natural description' })
   @ApiBody({
     type: EditImageDto,
     examples: {
@@ -59,7 +59,7 @@ export class AiImageController {
         value: {
           imageUrl:
             'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/iphone.jpg',
-          instruction:
+          description:
             'Đổi nền thành showroom, thêm chữ SALE 9.9, giữ nguyên sản phẩm',
           ratio: '16:9',
         },

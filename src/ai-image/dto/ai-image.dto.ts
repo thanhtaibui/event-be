@@ -14,7 +14,7 @@ export class GenerateImageDto {
   })
   @IsString()
   @MaxLength(3000)
-  prompt: string;
+  description: string;
 
   @ApiPropertyOptional({
     enum: IMAGE_RATIOS,
@@ -38,7 +38,7 @@ export class EditImageDto {
   })
   @IsString()
   @MaxLength(3000)
-  instruction: string;
+  description: string;
 
   @ApiPropertyOptional({
     enum: IMAGE_RATIOS,

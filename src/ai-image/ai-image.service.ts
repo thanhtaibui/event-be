@@ -12,6 +12,7 @@ import {
   GenerateImageDto,
   ImageEnhanceAction,
 } from './dto/ai-image.dto';
+import { AiPromptService } from './ai-prompt.service';
 import {
   AiImageBuffer,
   AiImageProvider,
@@ -29,15 +30,22 @@ type UploadedImageResult = {
 export class AiImageService {
   private readonly logger = new Logger(AiImageService.name);
 
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(
+    private readonly uploadService: UploadService,
+    private readonly aiPromptService: AiPromptService,
+  ) {}
 
   async generate(dto: GenerateImageDto) {
     const timer = 'POST_AI_IMAGE_GENERATE';
     console.time(timer);
     try {
       const provider = this.getGenerationProvider();
+      const prompt = await this.aiPromptService.generateImagePrompt(
+        dto.description,
+        dto.ratio,
+      );
       const image = await provider.generate({
-        prompt: dto.prompt.trim(),
+        prompt,
         ratio: dto.ratio,
       });
       const uploaded = await this.uploadResult(image, 'ai-generated-image');
@@ -54,10 +62,15 @@ export class AiImageService {
     try {
       const sourceImage = await this.fetchImageFromUrl(dto.imageUrl);
       const provider = this.getEditProvider();
+      const instruction =
+        await this.aiPromptService.generateImageEditInstruction(
+          dto.description,
+          dto.ratio,
+        );
       const image = await provider.edit({
         image: sourceImage,
         imageUrl: dto.imageUrl,
-        instruction: dto.instruction.trim(),
+        instruction,
         ratio: dto.ratio,
       });
       const uploaded = await this.uploadResult(image, 'ai-edited-image');
