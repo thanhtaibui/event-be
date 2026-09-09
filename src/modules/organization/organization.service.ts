@@ -147,7 +147,7 @@ export class OrganizationService {
           isActive: [FilterOperator.EQ],
           status: [FilterOperator.EQ],
         },
-        relations: ['memberships', 'events', 'owner'],
+        relations: ['owner'],
         defaultSortBy: [['createdAt', 'DESC']],
       });
 

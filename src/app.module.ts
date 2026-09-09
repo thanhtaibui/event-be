@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -28,6 +29,7 @@ import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-ite
 import { NotificationModule } from './modules/notification/notification.module';
 import { AiModule } from './ai/ai.module';
 import { AiImageModule } from './ai-image/ai-image.module';
+import { PerformanceLoggingInterceptor } from './common/interceptors/performance-logging.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -74,6 +76,13 @@ import { AiImageModule } from './ai-image/ai-image.module';
     AiImageModule,
   ],
   controllers: [AppController],
-  providers: [AppService, UploadService],
+  providers: [
+    AppService,
+    UploadService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PerformanceLoggingInterceptor,
+    },
+  ],
 })
 export class AppModule {}

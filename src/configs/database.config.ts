@@ -1,14 +1,29 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
+const getNumberEnv = (key: string, defaultValue: number): number => {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) && value > 0 ? value : defaultValue;
+};
+
 export const databaseConfig = (): TypeOrmModuleOptions => {
   const isProduction = process.env.NODE_ENV === 'production';
   const databaseUrl = process.env.DATABASE_URL;
+  const poolExtra = {
+    max: getNumberEnv('DB_POOL_MAX', 10),
+    idleTimeoutMillis: getNumberEnv('DB_IDLE_TIMEOUT_MS', 30000),
+    connectionTimeoutMillis: getNumberEnv('DB_CONNECTION_TIMEOUT_MS', 5000),
+  };
 
   const baseConfig: TypeOrmModuleOptions = {
     type: 'postgres',
     synchronize: process.env.DB_SYNC === 'true',
-    logging: process.env.DB_LOGGING === 'true',
+    logging:
+      process.env.DB_LOGGING === 'true'
+        ? ['error', 'warn', 'schema']
+        : ['error'],
+    maxQueryExecutionTime: getNumberEnv('DB_SLOW_QUERY_MS', 200),
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+    extra: poolExtra,
   };
 
   if (databaseUrl) {

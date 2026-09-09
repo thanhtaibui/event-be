@@ -4,6 +4,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AllExceptionFilter } from './common/filters/all-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
+import * as express from 'express';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -54,6 +56,7 @@ async function bootstrap() {
     }),
   );
   app.use(cookieParser.default());
+  app.use('/tmp/ai-images', express.static(join(process.cwd(), 'tmp', 'ai-images')));
 
   //bật CORS để cho phép các client từ các domain khác nhau có thể truy cập API của bạn. Điều này rất hữu ích khi bạn có frontend và backend được triển khai trên các domain khác nhau hoặc khi bạn muốn cho phép truy cập từ các công cụ như Postman hoặc Swagger UI.
   app.enableCors({

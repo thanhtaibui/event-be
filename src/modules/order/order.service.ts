@@ -65,9 +65,13 @@ export class OrderService {
       );
     }
 
+    const soldQuantityByTicketTypeId =
+      await this.getSoldQuantityByTicketTypeIds(uniqueTicketTypeIds);
+
     await this.validateTicketTypesCanBePurchased(
       ticketTypes,
       requestedQuantityByTicketTypeId,
+      soldQuantityByTicketTypeId,
     );
 
     const ticketTypeMap = new Map(
@@ -204,6 +208,7 @@ export class OrderService {
   private async validateTicketTypesCanBePurchased(
     ticketTypes: TicketType[],
     requestedQuantityByTicketTypeId: Map<string, number>,
+    soldQuantityByTicketTypeId: Map<string, number>,
   ): Promise<void> {
     const now = new Date();
 
@@ -230,9 +235,7 @@ export class OrderService {
 
       const requestedQuantity =
         requestedQuantityByTicketTypeId.get(ticketType.id) || 0;
-      const soldQuantity = await this.ticketRepo.count({
-        where: { ticketType: { id: ticketType.id } },
-      });
+      const soldQuantity = soldQuantityByTicketTypeId.get(ticketType.id) || 0;
       const availableQuantity = ticketType.quantity - soldQuantity;
 
       if (requestedQuantity > availableQuantity) {
@@ -241,6 +244,27 @@ export class OrderService {
         );
       }
     }
+  }
+
+  private async getSoldQuantityByTicketTypeIds(
+    ticketTypeIds: string[],
+  ): Promise<Map<string, number>> {
+    if (ticketTypeIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.ticketRepo
+      .createQueryBuilder('ticket')
+      .leftJoin('ticket.ticketType', 'ticketType')
+      .select('ticketType.id', 'ticketTypeId')
+      .addSelect('COUNT(ticket.id)', 'soldQuantity')
+      .where('ticketType.id IN (:...ticketTypeIds)', { ticketTypeIds })
+      .groupBy('ticketType.id')
+      .getRawMany<{ ticketTypeId: string; soldQuantity: string }>();
+
+    return new Map(
+      rows.map((row) => [row.ticketTypeId, Number(row.soldQuantity)]),
+    );
   }
 
   private async syncEventStatus(event: Event, now: Date): Promise<void> {

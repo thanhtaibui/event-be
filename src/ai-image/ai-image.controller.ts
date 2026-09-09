@@ -13,6 +13,7 @@ import {
   EnhanceImageDto,
   GenerateImageDto,
   ImageResponseDto,
+  SaveImageDto,
 } from './dto/ai-image.dto';
 
 @ApiTags('AI Image')
@@ -41,7 +42,8 @@ export class AiImageController {
     schema: {
       example: {
         imageUrl:
-          'https://bucket-name.s3.ap-southeast-1.amazonaws.com/ai/images/ai-generated-image.png',
+          'https://event-be.onrender.com/tmp/ai-images/ai-generated-image-1710000000000.png',
+        status: 'preview',
       },
     },
   })
@@ -70,7 +72,8 @@ export class AiImageController {
     schema: {
       example: {
         imageUrl:
-          'https://bucket-name.s3.ap-southeast-1.amazonaws.com/ai/images/ai-edited-image.png',
+          'https://event-be.onrender.com/tmp/ai-images/ai-edited-image-1710000000000.png',
+        status: 'preview',
       },
     },
   })
@@ -105,11 +108,39 @@ export class AiImageController {
     schema: {
       example: {
         imageUrl:
-          'https://bucket-name.s3.ap-southeast-1.amazonaws.com/ai/images/ai-remove-background.png',
+          'https://event-be.onrender.com/tmp/ai-images/ai-remove-background-1710000000000.png',
+        status: 'preview',
       },
     },
   })
   async enhance(@Body() dto: EnhanceImageDto): Promise<ImageResponseDto> {
     return this.aiImageService.enhance(dto);
+  }
+
+  @Post('save')
+  @ApiOperation({ summary: 'Save selected preview image to AWS S3' })
+  @ApiBody({
+    type: SaveImageDto,
+    examples: {
+      savePreview: {
+        summary: 'Save preview image',
+        value: {
+          imageUrl:
+            'https://event-be.onrender.com/tmp/ai-images/ai-generated-image-1710000000000.png',
+        },
+      },
+    },
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        imageUrl:
+          'https://bucket-name.s3.ap-southeast-1.amazonaws.com/ai/images/ai-saved-image.png',
+        status: 'saved',
+      },
+    },
+  })
+  async save(@Body() dto: SaveImageDto): Promise<ImageResponseDto> {
+    return this.aiImageService.save(dto);
   }
 }

@@ -5,14 +5,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InferenceClient } from '@huggingface/inference';
-import { UploadService } from 'src/modules/upload/upload.service';
 import {
   EditImageDto,
   EnhanceImageDto,
   GenerateImageDto,
   ImageEnhanceAction,
+  SaveImageDto,
 } from './dto/ai-image.dto';
 import { AiPromptService } from './ai-prompt.service';
+import { ImageStorageService } from './image-storage.service';
 import {
   AiImageBuffer,
   AiImageProvider,
@@ -21,18 +22,13 @@ import {
   GenerateImageInput,
 } from './interfaces/ai-image-provider.interface';
 
-type UploadedImageResult = {
-  secure_url: string;
-  public_id: string;
-};
-
 @Injectable()
 export class AiImageService {
   private readonly logger = new Logger(AiImageService.name);
 
   constructor(
-    private readonly uploadService: UploadService,
     private readonly aiPromptService: AiPromptService,
+    private readonly imageStorageService: ImageStorageService,
   ) {}
 
   async generate(dto: GenerateImageDto) {
@@ -48,9 +44,12 @@ export class AiImageService {
         prompt,
         ratio: dto.ratio,
       });
-      const uploaded = await this.uploadResult(image, 'ai-generated-image');
+      const previewUrl = await this.imageStorageService.createPreviewImage(
+        image,
+        'ai-generated-image',
+      );
 
-      return this.toImageResponse(uploaded);
+      return this.toPreviewResponse(previewUrl);
     } finally {
       console.timeEnd(timer);
     }
@@ -73,9 +72,12 @@ export class AiImageService {
         instruction,
         ratio: dto.ratio,
       });
-      const uploaded = await this.uploadResult(image, 'ai-edited-image');
+      const previewUrl = await this.imageStorageService.createPreviewImage(
+        image,
+        'ai-edited-image',
+      );
 
-      return this.toImageResponse(uploaded);
+      return this.toPreviewResponse(previewUrl);
     } finally {
       console.timeEnd(timer);
     }
@@ -91,9 +93,29 @@ export class AiImageService {
         image: sourceImage,
         action: dto.action,
       });
-      const uploaded = await this.uploadResult(image, `ai-${dto.action}`);
+      const previewUrl = await this.imageStorageService.createPreviewImage(
+        image,
+        `ai-${dto.action}`,
+      );
 
-      return this.toImageResponse(uploaded);
+      return this.toPreviewResponse(previewUrl);
+    } finally {
+      console.timeEnd(timer);
+    }
+  }
+
+  async save(dto: SaveImageDto) {
+    const timer = 'POST_AI_IMAGE_SAVE';
+    console.time(timer);
+    try {
+      const imageUrl = await this.imageStorageService.saveImageToS3(
+        dto.imageUrl,
+      );
+
+      return {
+        imageUrl,
+        status: 'saved' as const,
+      };
     } finally {
       console.timeEnd(timer);
     }
@@ -177,40 +199,11 @@ export class AiImageService {
     };
   }
 
-  private async uploadResult(
-    image: AiImageBuffer,
-    fileNamePrefix: string,
-  ): Promise<UploadedImageResult> {
-    const extension = this.getExtensionFromMimeType(image.mimeType);
-    const uploaded = await this.uploadService.uploadFile(
-      {
-        fieldname: 'file',
-        originalname: `${fileNamePrefix}.${extension}`,
-        encoding: '7bit',
-        mimetype: image.mimeType,
-        buffer: image.buffer,
-        size: image.buffer.length,
-      } as Express.Multer.File,
-      'ai/images',
-    );
-
-    return uploaded.data!;
-  }
-
-  private toImageResponse(uploaded: UploadedImageResult) {
+  private toPreviewResponse(imageUrl: string) {
     return {
-      imageUrl: uploaded.secure_url,
+      imageUrl,
+      status: 'preview' as const,
     };
-  }
-
-  private getExtensionFromMimeType(mimeType: string): string {
-    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
-      return 'jpg';
-    }
-    if (mimeType.includes('webp')) {
-      return 'webp';
-    }
-    return 'png';
   }
 }
 

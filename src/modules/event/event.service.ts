@@ -9,7 +9,7 @@ import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { EventDto } from './dto/event.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Event } from './entities/event.entity';
-import { In, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
@@ -425,34 +425,41 @@ export class EventService {
       EventStatus.POSTPONED,
       EventStatus.DRAFT,
     ];
-    const baseWhere = {
-      ...(eventIds?.length ? { id: In(eventIds) } : {}),
-      status: Not(In(lockedStatuses)),
-    };
+    const params: any[] = [
+      now,
+      EventStatus.ENDED,
+      EventStatus.ONGOING,
+      EventStatus.UPCOMING,
+      ...lockedStatuses,
+    ];
+    const idFilter = eventIds?.length
+      ? `AND id = ANY($${params.length + 1}::uuid[])`
+      : '';
 
-    await this.eventRepo.update(
-      {
-        ...baseWhere,
-        endDateTime: LessThanOrEqual(now),
-      },
-      { status: EventStatus.ENDED },
-    );
+    if (eventIds?.length) {
+      params.push(eventIds);
+    }
 
-    await this.eventRepo.update(
-      {
-        ...baseWhere,
-        startDateTime: LessThanOrEqual(now),
-        endDateTime: MoreThan(now),
-      },
-      { status: EventStatus.ONGOING },
-    );
-
-    await this.eventRepo.update(
-      {
-        ...baseWhere,
-        startDateTime: MoreThan(now),
-      },
-      { status: EventStatus.UPCOMING },
+    await this.eventRepo.query(
+      `
+        UPDATE events
+        SET
+          status = CASE
+            WHEN "endDateTime" <= $1 THEN $2
+            WHEN "startDateTime" <= $1 AND "endDateTime" > $1 THEN $3
+            WHEN "startDateTime" > $1 THEN $4
+            ELSE status
+          END,
+          "updatedAt" = NOW()
+        WHERE status NOT IN ($5, $6, $7)
+          ${idFilter}
+          AND (
+            (status != $2 AND "endDateTime" <= $1)
+            OR (status != $3 AND "startDateTime" <= $1 AND "endDateTime" > $1)
+            OR (status != $4 AND "startDateTime" > $1)
+          )
+      `,
+      params,
     );
   }
 }

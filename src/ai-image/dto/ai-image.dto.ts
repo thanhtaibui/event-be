@@ -65,6 +65,16 @@ export class EnhanceImageDto {
   action: ImageEnhanceAction;
 }
 
+export class SaveImageDto {
+  @ApiProperty({
+    example:
+      'https://event-be.onrender.com/tmp/ai-images/ai-generated-image-1710000000000.png',
+  })
+  @IsString()
+  imageUrl: string;
+}
+
 export class ImageResponseDto {
   imageUrl: string;
+  status: 'preview' | 'saved';
 }

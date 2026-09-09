@@ -28,219 +28,180 @@ export class DashboardService {
     console.time('GET_DASHBOARD');
     try {
       const now = new Date();
+      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() - 1,
+        1,
+      );
+      const endOfLastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        0,
+        23,
+        59,
+        59,
+      );
 
-    // Ngày 1 của tháng này — VD: 2024-05-01
-    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const [
+        orgThisMonth,
+        orgLastMonth,
+        totalOrganization,
+        eventThisMonth,
+        eventLastMonth,
+        reportThisMonth,
+        reportLastMonth,
+        membershipThisMonth,
+        membershipLastMonth,
+        ticketThisMonth,
+        ticketLastMonth,
+        totalTickets,
+        revenueThisMonth,
+        revenueLastMonth,
+        totalRevenue,
+        totalEvents,
+        totalReports,
+        totalMemberships,
+        upcoming,
+        ongoing,
+        ended,
+        cancelled,
+      ] = await Promise.all([
+        this.OrganizationRepo.count({
+          where: {
+            isActive: true,
+            createdAt: MoreThanOrEqual(startOfThisMonth),
+          },
+        }),
+        this.OrganizationRepo.count({
+          where: {
+            isActive: true,
+            createdAt: Between(startOfLastMonth, endOfLastMonth),
+          },
+        }),
+        this.OrganizationRepo.count({ where: { isActive: true } }),
+        this.eventRepo.count({
+          where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
+        }),
+        this.eventRepo.count({
+          where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
+        }),
+        this.reportRepo.count({
+          where: {
+            status: Not(ReportStatus.SPAM),
+            createdAt: MoreThanOrEqual(startOfThisMonth),
+          },
+        }),
+        this.reportRepo.count({
+          where: {
+            status: Not(ReportStatus.SPAM),
+            createdAt: Between(startOfLastMonth, endOfLastMonth),
+          },
+        }),
+        this.membershipRepo.count({
+          where: {
+            isActive: true,
+            createdAt: MoreThanOrEqual(startOfThisMonth),
+          },
+        }),
+        this.membershipRepo.count({
+          where: {
+            isActive: true,
+            createdAt: Between(startOfLastMonth, endOfLastMonth),
+          },
+        }),
+        this.ticketRepo.count({
+          where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
+        }),
+        this.ticketRepo.count({
+          where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
+        }),
+        this.ticketRepo.count(),
+        this.ticketRepo
+          .createQueryBuilder('ticket')
+          .leftJoin('ticket.ticketType', 'ticketType')
+          .select('SUM(ticketType.price)', 'total')
+          .where('ticket.createdAt >= :start', { start: startOfThisMonth })
+          .getRawOne(),
+        this.ticketRepo
+          .createQueryBuilder('ticket')
+          .leftJoin('ticket.ticketType', 'ticketType')
+          .select('SUM(ticketType.price)', 'total')
+          .where('ticket.createdAt BETWEEN :start AND :end', {
+            start: startOfLastMonth,
+            end: endOfLastMonth,
+          })
+          .getRawOne(),
+        this.ticketRepo
+          .createQueryBuilder('ticket')
+          .leftJoin('ticket.ticketType', 'ticketType')
+          .select('SUM(ticketType.price)', 'total')
+          .getRawOne(),
+        this.eventRepo.count(),
+        this.reportRepo.count({
+          where: { status: Not(ReportStatus.SPAM) },
+        }),
+        this.membershipRepo.count({
+          where: { isActive: true },
+        }),
+        this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
+        this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
+        this.eventRepo.count({ where: { status: EventStatus.ENDED } }),
+        this.eventRepo.count({ where: { status: EventStatus.CANCELLED } }),
+      ]);
 
-    // Ngày 1 của tháng trước — VD: 2024-04-01
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-
-    // Ngày cuối của tháng trước — VD: 2024-04-30 23:59:59
-    const endOfLastMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      0,
-      23,
-      59,
-      59,
-    );
-
-    const OrgThisMonth = await this.OrganizationRepo.count({
-      where: {
-        isActive: true,
-        createdAt: MoreThanOrEqual(startOfThisMonth),
-      },
-    });
-
-    const OrgLastMonth = await this.OrganizationRepo.count({
-      where: {
-        isActive: true,
-        createdAt: Between(startOfLastMonth, endOfLastMonth),
-      },
-    });
-
-    const trendOrg =
-      OrgLastMonth === 0
-        ? 0
-        : Number(
-            (((OrgThisMonth - OrgLastMonth) / OrgLastMonth) * 100).toFixed(1),
-          );
-
-    const totalOrganization = await this.OrganizationRepo.count({
-      where: { isActive: true },
-    });
-    const EventThisMonth = await this.eventRepo.count({
-      where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
-    });
-    const EventLastMonth = await this.eventRepo.count({
-      where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
-    });
-    const trendEvent =
-      EventLastMonth === 0
-        ? 0
-        : Number(
-            (
-              ((EventThisMonth - EventLastMonth) / EventLastMonth) *
-              100
-            ).toFixed(1),
-          );
-
-    const ReportThisMonth = await this.reportRepo.count({
-      where: {
-        status: Not(ReportStatus.SPAM),
-        createdAt: MoreThanOrEqual(startOfThisMonth),
-      },
-    });
-    const ReportLastMonth = await this.reportRepo.count({
-      where: {
-        status: Not(ReportStatus.SPAM),
-        createdAt: Between(startOfLastMonth, endOfLastMonth),
-      },
-    });
-    const trendReport =
-      ReportLastMonth === 0
-        ? 0
-        : Number(
-            (
-              ((ReportThisMonth - ReportLastMonth) / ReportLastMonth) *
-              100
-            ).toFixed(1),
-          );
-
-    const MembershipThisMonth = await this.membershipRepo.count({
-      where: {
-        isActive: true,
-        createdAt: MoreThanOrEqual(startOfThisMonth),
-      },
-    });
-    const MembershipLastMonth = await this.membershipRepo.count({
-      where: {
-        isActive: true,
-        createdAt: Between(startOfLastMonth, endOfLastMonth),
-      },
-    });
-    const trendMembership =
-      MembershipLastMonth === 0
-        ? 0
-        : Number(
-            (
-              ((MembershipThisMonth - MembershipLastMonth) /
-                MembershipLastMonth) *
-              100
-            ).toFixed(1),
-          );
-
-    // Ticket trend
-    const TicketThisMonth = await this.ticketRepo.count({
-      where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
-    });
-    const TicketLastMonth = await this.ticketRepo.count({
-      where: { createdAt: Between(startOfLastMonth, endOfLastMonth) },
-    });
-
-    const trendTicket =
-      TicketLastMonth === 0
-        ? 0
-        : Number(
-            (
-              ((TicketThisMonth - TicketLastMonth) / TicketLastMonth) *
-              100
-            ).toFixed(1),
-          );
-    const totalTickets = await this.ticketRepo.count();
-    // Revenue trend (tính theo giá vé * số vé bán)
-    const revenueThisMonth = await this.ticketRepo
-      .createQueryBuilder('ticket')
-      .leftJoin('ticket.ticketType', 'ticketType')
-      .select('SUM(ticketType.price)', 'total')
-      .where('ticket.createdAt >= :start', { start: startOfThisMonth })
-      .getRawOne();
-
-    const revenueLastMonth = await this.ticketRepo
-      .createQueryBuilder('ticket')
-      .leftJoin('ticket.ticketType', 'ticketType')
-      .select('SUM(ticketType.price)', 'total')
-      .where('ticket.createdAt BETWEEN :start AND :end', {
-        start: startOfLastMonth,
-        end: endOfLastMonth,
-      })
-      .getRawOne();
-
-    const thisRevenue = Number(revenueThisMonth?.total ?? 0);
-    const lastRevenue = Number(revenueLastMonth?.total ?? 0);
-    const trendRevenue =
-      lastRevenue === 0
-        ? 0
-        : Number(
-            (((thisRevenue - lastRevenue) / lastRevenue) * 100).toFixed(1),
-          );
-
-    const totalRevenue = await this.ticketRepo
-      .createQueryBuilder('ticket')
-      .leftJoin('ticket.ticketType', 'ticketType')
-      .select('SUM(ticketType.price)', 'total')
-      .getRawOne();
-
-    const totalEvents = await this.eventRepo.count();
-    const totalReports = await this.reportRepo.count({
-      where: { status: Not(ReportStatus.SPAM) },
-    });
-    const totalMemberships = await this.membershipRepo.count({
-      where: { isActive: true },
-    });
-    const [upcoming, ongoing, ended, cancelled] = await Promise.all([
-      this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
-      this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
-      this.eventRepo.count({ where: { status: EventStatus.ENDED } }),
-      this.eventRepo.count({ where: { status: EventStatus.CANCELLED } }),
-    ]);
-    const dashboardData: DashboardDto = {
-      cards: [
-        {
-          key: 'organizations',
-          title: 'Organizations',
-          value: totalOrganization,
-          trend: trendOrg,
-        },
-        {
-          key: 'events',
-          title: 'Events',
-          value: totalEvents,
-          trend: trendEvent,
-        },
-        {
-          key: 'reports',
-          title: 'Reports',
-          value: totalReports,
-          trend: trendReport,
-        },
-        {
-          key: 'memberships',
-          title: 'Memberships',
-          value: totalMemberships,
-          trend: trendMembership,
-        },
-        {
-          key: 'revenue',
-          title: 'Revenue',
-          value: Number(totalRevenue?.total ?? 0),
-          trend: trendRevenue,
-        },
-        {
-          key: 'tickets',
-          title: 'Tickets',
-          value: totalTickets,
-          trend: trendTicket,
-        },
-      ],
-      lineChart: [],
-      pieChart: [
-        { label: 'Upcoming', value: upcoming },
-        { label: 'Ongoing', value: ongoing },
-        { label: 'Ended', value: ended },
-        { label: 'Cancelled', value: cancelled },
-      ],
-    };
+      const thisRevenue = Number(revenueThisMonth?.total ?? 0);
+      const lastRevenue = Number(revenueLastMonth?.total ?? 0);
+      const dashboardData: DashboardDto = {
+        cards: [
+          {
+            key: 'organizations',
+            title: 'Organizations',
+            value: totalOrganization,
+            trend: this.calculateTrend(orgThisMonth, orgLastMonth),
+          },
+          {
+            key: 'events',
+            title: 'Events',
+            value: totalEvents,
+            trend: this.calculateTrend(eventThisMonth, eventLastMonth),
+          },
+          {
+            key: 'reports',
+            title: 'Reports',
+            value: totalReports,
+            trend: this.calculateTrend(reportThisMonth, reportLastMonth),
+          },
+          {
+            key: 'memberships',
+            title: 'Memberships',
+            value: totalMemberships,
+            trend: this.calculateTrend(
+              membershipThisMonth,
+              membershipLastMonth,
+            ),
+          },
+          {
+            key: 'revenue',
+            title: 'Revenue',
+            value: Number(totalRevenue?.total ?? 0),
+            trend: this.calculateTrend(thisRevenue, lastRevenue),
+          },
+          {
+            key: 'tickets',
+            title: 'Tickets',
+            value: totalTickets,
+            trend: this.calculateTrend(ticketThisMonth, ticketLastMonth),
+          },
+        ],
+        lineChart: [],
+        pieChart: [
+          { label: 'Upcoming', value: upcoming },
+          { label: 'Ongoing', value: ongoing },
+          { label: 'Ended', value: ended },
+          { label: 'Cancelled', value: cancelled },
+        ],
+      };
       return {
         statusCode: 200,
         message: 'Get dashboard successfully',
@@ -571,5 +532,15 @@ export class DashboardService {
     }
 
     return organization;
+  }
+
+  private calculateTrend(currentValue: number, previousValue: number): number {
+    if (previousValue === 0) {
+      return 0;
+    }
+
+    return Number(
+      (((currentValue - previousValue) / previousValue) * 100).toFixed(1),
+    );
   }
 }
