@@ -34,11 +34,15 @@ export class RoleService {
     @InjectRepository(Permission)
     private permissionRepo: Repository<Permission>,
   ) {}
-  async create(createRoleDto: CreateRoleDto): Promise<ApiResponse<RoleDto>> {
+  async create(
+    createRoleDto: CreateRoleDto,
+    currentUser?: any,
+  ): Promise<ApiResponse<RoleDto>> {
     const normalizedRoleCode = createRoleDto.role_code.trim().toUpperCase();
     if (this.isSuperAdminRoleCode(normalizedRoleCode)) {
       throw new BadRequestException('SUPER_ADMIN role cannot be created here');
     }
+    await this.assertCanAccessOrganization(createRoleDto.orgId, currentUser);
 
     // const existRoleName = await this.roleRepo.findOne({
     //   where: { role_name: createRoleDto.role_name.toUpperCase() },
@@ -98,9 +102,21 @@ export class RoleService {
 
   async findAll(
     query: PaginateQuery,
+    currentUser?: any,
   ): Promise<ApiResponse<PaginationResult<any>>> {
     console.time('GET_ROLES');
     try {
+      const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+      if (orgIds && orgIds.length === 0) {
+        return Response(200, 'get all roles successfully', {
+          items: [],
+          page: 1,
+          limit: query.limit ?? 10,
+          total: 0,
+          totalPages: 0,
+        });
+      }
+
       const roleQuery = this.roleRepo
         .createQueryBuilder('role')
         .leftJoin('role.organization', 'organization')
@@ -118,6 +134,9 @@ export class RoleService {
         .andWhere('role.role_code != :superAdminRoleCode', {
           superAdminRoleCode: SUPER_ADMIN_ROLE_CODE,
         });
+      if (orgIds) {
+        roleQuery.andWhere('organization.id IN (:...orgIds)', { orgIds });
+      }
 
       const result = await paginate(query, roleQuery, {
         sortableColumns: ['role_name', 'role_code', 'organization.name'],
@@ -147,12 +166,29 @@ export class RoleService {
     }
   }
 
-  async findAllByOrg(orgId: string): Promise<ApiResponse<RoleOrgDto[]>> {
+  async findAllByOrg(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<RoleOrgDto[]>> {
     console.time('GET_ROLES_BY_ORG');
     try {
       const exOrg = await this.orgRepo.findOne({ where: { id: orgId } });
       if (!exOrg) {
         throw new BadRequestException('orgId not found');
+      }
+      if (currentUser && !currentUser.role?.isSuperAdmin) {
+        const membership = await this.membershipRepo.findOne({
+          where: {
+            user: { id: currentUser.userId },
+            organization: { id: orgId },
+            isActive: true,
+          },
+        });
+        if (!membership) {
+          throw new ForbiddenException(
+            'User does not belong to this organization',
+          );
+        }
       }
       const roleOrg = await this.roleRepo.find({
         where: {
@@ -290,18 +326,23 @@ export class RoleService {
     return tree.filter((tr) => tr.children && tr.children.length > 0);
   }
 
-  async getRolePermissions(id: string): Promise<ApiResponse<any>> {
+  async getRolePermissions(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<any>> {
     console.time('GET_ROLE_PERMISSIONS');
     try {
       const role = await this.roleRepo.findOne({
         where: { id, deletedAt: IsNull() },
-        relations: ['permissions', 'permissions.parent'],
+        relations: ['organization', 'permissions', 'permissions.parent'],
       });
 
       if (!role) {
         throw new NotFoundException('Role not found');
       }
       this.assertRoleIsEditable(role);
+      this.assertCompanyRole(role);
+      await this.assertCanAccessOrganization(role.organization.id, currentUser);
 
       return Response(200, 'get role permissions successfully', {
         permissions: await this.buildPermissionTree(role.permissions || []),
@@ -311,9 +352,13 @@ export class RoleService {
     }
   }
 
-  async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
+  async deleteSort(
+    deleteSort: DeleteSort,
+    currentUser?: any,
+  ): Promise<ApiResponse<DeleteSort>> {
     const roles = await this.roleRepo.find({
       where: { id: In(deleteSort.ids) },
+      relations: ['organization'],
     });
     if (roles.length !== deleteSort.ids.length) {
       throw new BadRequestException('Invalid ids');
@@ -324,6 +369,10 @@ export class RoleService {
     if (hasSuperAdminRole) {
       throw new BadRequestException('SUPER_ADMIN role cannot be deleted');
     }
+    for (const role of roles) {
+      this.assertCompanyRole(role);
+      await this.assertCanAccessOrganization(role.organization.id, currentUser);
+    }
     const names = roles.map((i) => i.role_name);
     await this.roleRepo.update(
       { id: In(deleteSort.ids) },
@@ -332,7 +381,10 @@ export class RoleService {
 
     return Response(200, `Delete:${names.join(', ')} successfully`, deleteSort);
   }
-  async GetRoleById(id: string): Promise<ApiResponse<RoleDto>> {
+  async GetRoleById(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<RoleDto>> {
     console.time('GET_ROLE_BY_ID');
     try {
       const role = await this.roleRepo.findOne({
@@ -343,6 +395,8 @@ export class RoleService {
         throw new NotFoundException('Role not found');
       }
       this.assertRoleIsEditable(role);
+      this.assertCompanyRole(role);
+      await this.assertCanAccessOrganization(role.organization.id, currentUser);
 
       return Response(200, 'Get Role By Id Successfully', {
         id: role.id,
@@ -368,6 +422,7 @@ export class RoleService {
   async update(
     id: string,
     updateRoleDto: UpdateRoleDto,
+    currentUser?: any,
   ): Promise<ApiResponse<RoleResDto>> {
     const { permissionIds, orgId, ...roleData } = updateRoleDto;
     const role = await this.roleRepo.findOne({
@@ -379,6 +434,8 @@ export class RoleService {
       throw new NotFoundException(`Role ${id} not found `);
     }
     this.assertRoleIsEditable(role);
+    this.assertCompanyRole(role);
+    await this.assertCanAccessOrganization(role.organization.id, currentUser);
     if (
       updateRoleDto.role_code &&
       this.isSuperAdminRoleCode(updateRoleDto.role_code)
@@ -394,6 +451,9 @@ export class RoleService {
         ? this.orgRepo.findOne({ where: { id: orgId } })
         : Promise.resolve(null),
     ]);
+    if (orgId) {
+      await this.assertCanAccessOrganization(orgId, currentUser);
+    }
     //  Gán dữ liệu mới
     Object.assign(role, roleData);
     // Gán quan hệ (Relations)
@@ -426,13 +486,20 @@ export class RoleService {
       },
     });
   }
-  async remove(id: string) {
-    const role = await this.roleRepo.findOne({ where: { id } });
+  async remove(id: string, currentUser?: any) {
+    const role = await this.roleRepo.findOne({
+      where: { id },
+      relations: ['organization'],
+    });
     if (!role) {
       throw new NotFoundException('Role not found');
     }
     this.assertRoleIsEditable(role);
-    return `This action removes a #${id} role`;
+    this.assertCompanyRole(role);
+    await this.assertCanAccessOrganization(role.organization.id, currentUser);
+    role.deletedAt = new Date();
+    await this.roleRepo.save(role);
+    return Response(200, 'Delete Role Successfully', { id });
   }
 
   private isSuperAdminRole(role: Role): boolean {
@@ -447,5 +514,58 @@ export class RoleService {
     if (this.isSuperAdminRole(role)) {
       throw new BadRequestException('SUPER_ADMIN role cannot be modified');
     }
+  }
+
+  private assertCompanyRole(role: Role): void {
+    if (!role.organization) {
+      throw new BadRequestException('Global role cannot be managed here');
+    }
+  }
+
+  private async assertCanAccessOrganization(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private async getAccessibleOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return null;
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: {
+        user: { id: currentUser.userId },
+        isActive: true,
+      },
+      relations: ['organization'],
+      select: {
+        id: true,
+        organization: {
+          id: true,
+        },
+      },
+    });
+
+    return memberships
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
   }
 }

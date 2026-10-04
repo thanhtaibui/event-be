@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { UpdateInviteDto } from './dto/update-invite.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
@@ -17,12 +22,15 @@ import {
 } from './dto/update-status.dto';
 import { checkEmailDto, checkEmailResDto } from './dto/chekc-email.dto';
 import { validate } from 'deep-email-validator';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class InviteService {
   constructor(
     @InjectRepository(Invite) private readonly inviteRepo: Repository<Invite>,
     @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
+    @InjectRepository(Membership)
+    private readonly membershipRepo: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly mailerService: MailerService,
   ) {}
@@ -37,7 +45,7 @@ export class InviteService {
       minute: '2-digit',
     });
 
-  async create(createInviteDto: CreateInviteDto): Promise<
+  async create(createInviteDto: CreateInviteDto, currentUser?: any): Promise<
     ApiResponse<
       {
         email: string;
@@ -47,10 +55,12 @@ export class InviteService {
   > {
     const event = await this.eventRepo.findOne({
       where: { id: createInviteDto.eventId },
+      relations: ['organization'],
     });
     if (!event) {
       throw new BadRequestException('Event not found');
     }
+    await this.assertCanManageEvent(event, currentUser);
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -110,7 +120,17 @@ export class InviteService {
 
   async checkEmails(
     dto: checkEmailDto,
+    currentUser?: any,
   ): Promise<ApiResponse<checkEmailResDto[]>> {
+    const event = await this.eventRepo.findOne({
+      where: { id: dto.eventId },
+      relations: ['organization'],
+    });
+    if (!event) {
+      throw new BadRequestException('Event not found');
+    }
+    await this.assertCanManageEvent(event, currentUser);
+
     const results = await Promise.allSettled(
       dto.emails.map(async (email): Promise<checkEmailResDto> => {
         const result = await validate({
@@ -190,33 +210,164 @@ export class InviteService {
     return Response(200, 'Invite status updated successfully', result);
   }
 
-  findAll() {
+  async findAll(currentUser?: any): Promise<ApiResponse<any[]>> {
     console.time('GET_INVITES');
     try {
-      return `This action returns all invite`;
+      const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+      const query = this.inviteRepo
+        .createQueryBuilder('invite')
+        .leftJoinAndSelect('invite.event', 'event')
+        .leftJoinAndSelect('event.organization', 'organization')
+        .orderBy('invite.createdAt', 'DESC');
+
+      if (orgIds) {
+        if (orgIds.length === 0) {
+          return Response(200, 'Get Invites Successfully', []);
+        }
+        query.where('organization.id IN (:...orgIds)', { orgIds });
+      }
+
+      const invites = await query.getMany();
+      return Response(
+        200,
+        'Get Invites Successfully',
+        invites.map((invite) => this.toInviteDto(invite)),
+      );
     } finally {
       console.timeEnd('GET_INVITES');
     }
   }
 
-  findOne(id: number) {
+  private async getAccessibleOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return null;
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: {
+        user: { id: currentUser.userId },
+        isActive: true,
+      },
+      relations: ['organization'],
+      select: {
+        id: true,
+        organization: {
+          id: true,
+        },
+      },
+    });
+
+    return memberships
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
+  }
+
+  async findOne(id: string, currentUser?: any): Promise<ApiResponse<any>> {
     const timer = `GET_INVITE_BY_ID:${id}`;
     console.time(timer);
     try {
-      return `This action returns a #${id} invite`;
+      const invite = await this.findInviteById(id);
+      await this.assertCanManageEvent(invite.event, currentUser);
+      return Response(200, 'Get Invite Successfully', this.toInviteDto(invite));
     } finally {
       console.timeEnd(timer);
     }
   }
 
-  update(id: number, updateInviteDto: UpdateInviteDto) {
-    return `This action updates a #${id} invite`;
+  async update(
+    id: string,
+    updateInviteDto: UpdateInviteDto,
+    currentUser?: any,
+  ): Promise<ApiResponse<any>> {
+    const invite = await this.findInviteById(id);
+    await this.assertCanManageEvent(invite.event, currentUser);
+
+    if (updateInviteDto.eventId && updateInviteDto.eventId !== invite.event.id) {
+      const event = await this.eventRepo.findOne({
+        where: { id: updateInviteDto.eventId },
+        relations: ['organization'],
+      });
+      if (!event) {
+        throw new BadRequestException('Event not found');
+      }
+      await this.assertCanManageEvent(event, currentUser);
+      invite.event = event;
+    }
+
+    if (updateInviteDto.emailInvite?.length) {
+      if (updateInviteDto.emailInvite.length > 1) {
+        throw new BadRequestException('Update invite accepts only one email');
+      }
+      invite.emailInvite = updateInviteDto.emailInvite[0];
+    }
+    if (updateInviteDto.message !== undefined) {
+      invite.message = updateInviteDto.message;
+    }
+
+    const saved = await this.inviteRepo.save(invite);
+    return Response(200, 'Update Invite Successfully', this.toInviteDto(saved));
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} invite`;
+  async remove(id: string, currentUser?: any): Promise<ApiResponse<{ id: string }>> {
+    const invite = await this.findInviteById(id);
+    await this.assertCanManageEvent(invite.event, currentUser);
+    await this.inviteRepo.remove(invite);
+    return Response(200, 'Delete Invite Successfully', { id });
   }
-}
-function uuid() {
-  throw new Error('Function not implemented.');
+
+  private async findInviteById(id: string): Promise<Invite> {
+    const invite = await this.inviteRepo.findOne({
+      where: { id },
+      relations: ['event', 'event.organization'],
+    });
+
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    return invite;
+  }
+
+  private async assertCanManageEvent(
+    event: Event,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: event.organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private toInviteDto(invite: Invite) {
+    return {
+      id: invite.id,
+      emailInvite: invite.emailInvite,
+      status: invite.status,
+      token: invite.token,
+      message: invite.message,
+      createdAt: invite.createdAt,
+      event: invite.event
+        ? {
+            id: invite.event.id,
+            title: invite.event.title,
+            startDateTime: invite.event.startDateTime,
+            endDateTime: invite.event.endDateTime,
+            place: invite.event.place,
+          }
+        : null,
+    };
+  }
 }

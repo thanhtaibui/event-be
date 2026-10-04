@@ -23,9 +23,12 @@ import { ApiPaginationQuery, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('roles')
 export class RoleController {
   constructor(private readonly roleService: RoleService) { }
@@ -37,10 +40,12 @@ export class RoleController {
   }
 
   @Post()
+  @Permissions(PermissionCode.ROLE_CREATE)
   async create(
     @Body() createRoleDto: CreateRoleDto,
+    @Req() req: any,
   ): Promise<ApiResponse<RoleDto>> {
-    return this.roleService.create(createRoleDto);
+    return this.roleService.create(createRoleDto, req.user);
   }
 
   @Get()
@@ -49,12 +54,12 @@ export class RoleController {
     // filterableColumns: { status: [FilterOperator.EQ] },
   })
   @ApiOperation({ operationId: 'GetRoles' })
+  @Permissions(PermissionCode.ROLE_VIEW)
   async findAll(
     @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<any>>> {
-    this.assertSuperAdmin(req);
-    return this.roleService.findAll(query);
+    return this.roleService.findAll(query, req.user);
   }
 
   @Get('org/:slug')
@@ -62,6 +67,7 @@ export class RoleController {
     sortableColumns: ['role_name', 'role_code', 'organization.name'],
   })
   @ApiOperation({ operationId: 'GetRolesByOrgSlug' })
+  @Permissions(PermissionCode.ROLE_VIEW)
   async findAllByOrgSlug(
     @Param('slug') slug: string,
     @Req() req: any,
@@ -72,31 +78,46 @@ export class RoleController {
 
   @Patch('/delete')
   @ApiOperation({ operationId: 'deleteSort' })
-  deleteSort(@Body() deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
-    return this.roleService.deleteSort(deleteSort);
+  @Permissions(PermissionCode.ROLE_DELETE)
+  deleteSort(
+    @Body() deleteSort: DeleteSort,
+    @Req() req: any,
+  ): Promise<ApiResponse<DeleteSort>> {
+    return this.roleService.deleteSort(deleteSort, req.user);
   }
 
   @Get(':id/permissions')
   @ApiOperation({ operationId: 'GetRolePermissions' })
-  getRolePermissions(@Param('id') id: string): Promise<ApiResponse<any>> {
-    return this.roleService.getRolePermissions(id);
+  @Permissions(PermissionCode.ROLE_VIEW)
+  getRolePermissions(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<any>> {
+    return this.roleService.getRolePermissions(id, req.user);
   }
 
   @Get(':id')
-  GetRoleById(@Param('id') id: string): Promise<ApiResponse<RoleDto>> {
-    return this.roleService.GetRoleById(id);
+  @Permissions(PermissionCode.ROLE_VIEW)
+  GetRoleById(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<RoleDto>> {
+    return this.roleService.GetRoleById(id, req.user);
   }
 
   @Patch(':id')
+  @Permissions(PermissionCode.ROLE_UPDATE)
   update(
     @Param('id') id: string,
     @Body() updateRoleDto: UpdateRoleDto,
+    @Req() req: any,
   ): Promise<ApiResponse<RoleResDto>> {
-    return this.roleService.update(id, updateRoleDto);
+    return this.roleService.update(id, updateRoleDto, req.user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.roleService.remove(id);
+  @Permissions(PermissionCode.ROLE_DELETE)
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.roleService.remove(id, req.user);
   }
 }

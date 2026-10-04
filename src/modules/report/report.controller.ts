@@ -22,8 +22,11 @@ import { Query } from '@nestjs/common';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('reports')
 export class ReportController {
   constructor(private readonly reportService: ReportService) { }
@@ -36,6 +39,7 @@ export class ReportController {
 
   @Post()
   @ApiOperation({ operationId: 'CreateReport' })
+  @Permissions(PermissionCode.REPORT_CREATE)
   create(
     @Body() createReportDto: CreateReportDto,
   ): Promise<ApiResponse<ReportDto>> {
@@ -44,16 +48,17 @@ export class ReportController {
 
   @Get()
   @ApiOperation({ operationId: 'GetReports' })
+  @Permissions(PermissionCode.REPORT_VIEW)
   async findAll(
     @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
-    this.assertSuperAdmin(req);
-    return await this.reportService.findAll(query);
+    return await this.reportService.findAll(query, req.user);
   }
 
   @Get('org/:slug')
   @ApiOperation({ operationId: 'GetReportsByOrgSlug' })
+  @Permissions(PermissionCode.REPORT_VIEW)
   async findAllByOrgSlug(
     @Param('slug') slug: string,
     @Req() req: any,
@@ -67,8 +72,9 @@ export class ReportController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.reportService.findOne(id);
+  @Permissions(PermissionCode.REPORT_VIEW)
+  findOne(@Param('id') id: string, @Req() req: any) {
+    return this.reportService.findOne(id, req.user);
   }
 
   @Patch(':id')
@@ -89,18 +95,18 @@ export class ReportController {
       },
     },
   })
+  @Permissions(PermissionCode.REPORT_UPDATE)
   update(
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateReportDto: UpdateReportDto,
   ) {
-    this.assertSuperAdmin(req);
-    return this.reportService.update(id, updateReportDto);
+    return this.reportService.update(id, updateReportDto, req.user);
   }
 
   @Delete(':id')
-  remove(@Req() req: any, @Param('id') id: string) {
-    this.assertSuperAdmin(req);
-    return this.reportService.remove(+id);
+  @Permissions(PermissionCode.REPORT_DELETE)
+  remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reportService.remove(id, req.user);
   }
 }

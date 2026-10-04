@@ -27,8 +27,11 @@ import { UpdateActiveDto } from './dto/updateActiveDto.dto';
 import { MemberOfUserDto } from './dto/users.dto';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -39,14 +42,22 @@ export class UserController {
     }
   }
 
+  private assertSelfOrSuperAdmin(req: any, userId: string) {
+    if (req.user?.role?.isSuperAdmin || req.user?.userId === userId) {
+      return;
+    }
+
+    throw new ForbiddenException();
+  }
+
   @Post()
   @ApiProperty({ type: CreateUserDto })
   @ApiOperation({ operationId: 'createUser' })
+  @Permissions(PermissionCode.USER_CREATE)
   create(
     @Req() req: any,
     @Body() createUserDto: CreateUserDto,
   ): Promise<ApiResponse<UserResponseDto>> {
-    this.assertSuperAdmin(req);
     return this.userService.create(createUserDto);
   }
 
@@ -57,17 +68,18 @@ export class UserController {
     filterableColumns: { isActive: [FilterOperator.EQ] },
   })
   @ApiOperation({ operationId: 'getUsers' })
+  @Permissions(PermissionCode.USER_VIEW)
   findAll(
     @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
-    this.assertSuperAdmin(req);
     return this.userService.findAll(query);
   }
 
   @Get(':id/ticket')
   @ApiOperation({ operationId: 'getUserTickets' })
-  getUserTickets(@Param('id', ParseUUIDPipe) id: string) {
+  getUserTickets(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    this.assertSelfOrSuperAdmin(req, id);
     return this.userService.findTicketsByUser(id);
   }
 
@@ -78,39 +90,41 @@ export class UserController {
   @Get(':userId/organizations')
   @ApiOperation({ operationId: 'getMemberOfUser' })
   getUserOrgs(
+    @Req() req: any,
     @Param('userId') userId: string,
   ): Promise<ApiResponse<MemberOfUserDto>> {
+    this.assertSelfOrSuperAdmin(req, userId);
     return this.userService.findMemberOfUser(userId);
   }
   @Patch(':id/active')
   @ApiOperation({ operationId: 'updateActive' })
+  @Permissions(PermissionCode.USER_UPDATE)
   updateActive(
     @Req() req: any,
     @Param('id') id: string,
     @Body() updateActiveDto: UpdateActiveDto,
   ): Promise<ApiResponse<UserResponseDto>> {
-    this.assertSuperAdmin(req);
     return this.userService.updateActive(id, updateActiveDto.active);
   }
 
   @Patch('/delete')
   @ApiOperation({ operationId: 'deleteSort' })
+  @Permissions(PermissionCode.USER_DELETE)
   deleteSort(
     @Req() req: any,
     @Body() deleteSort: DeleteSort,
   ): Promise<ApiResponse<DeleteSort>> {
-    this.assertSuperAdmin(req);
     return this.userService.deleteSort(deleteSort);
   }
 
   @Patch(':id')
   @ApiOperation({ operationId: 'updateUser' })
+  @Permissions(PermissionCode.USER_UPDATE)
   update(
     @Req() req: any,
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
   ): Promise<ApiResponse<UpdateUserResDto>> {
-    this.assertSuperAdmin(req);
     return this.userService.update(id, updateUserDto);
   }
 

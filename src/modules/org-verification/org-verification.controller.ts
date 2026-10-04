@@ -24,10 +24,13 @@ import {
 } from '@nestjs/swagger';
 import { VerificationStatus } from 'src/shared/enum/enum';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiTags('OrgVerification')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('org-verification')
 export class OrgVerificationController {
   constructor(
@@ -52,6 +55,7 @@ export class OrgVerificationController {
       },
     },
   })
+  @Permissions(PermissionCode.ORGANIZATION_VERIFY)
   create(
     @Body() createOrgVerificationDto: CreateOrgVerificationDto,
     @Req() req: any,
@@ -69,6 +73,7 @@ export class OrgVerificationController {
   @ApiQuery({ name: 'status', enum: VerificationStatus, required: false })
   @ApiQuery({ name: 'organizationId', required: false })
   @ApiQuery({ name: 'requesterId', required: false })
+  @Permissions(PermissionCode.VERIFICATION_VIEW)
   findAll(
     @Req() req: any,
     @Query('status') status?: VerificationStatus,
@@ -88,6 +93,7 @@ export class OrgVerificationController {
     operationId: 'getOrgVerificationDetail',
   })
   @ApiParam({ name: 'id', description: 'Org verification request id' })
+  @Permissions(PermissionCode.VERIFICATION_VIEW)
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.orgVerificationService.findOne(id, req.user.userId);
   }
@@ -116,6 +122,7 @@ export class OrgVerificationController {
       },
     },
   })
+  @Permissions(PermissionCode.VERIFICATION_APPROVE)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrgVerificationDto: UpdateOrgVerificationDto,
@@ -133,6 +140,7 @@ export class OrgVerificationController {
     operationId: 'cancelOrgVerification',
   })
   @ApiParam({ name: 'id', description: 'Org verification request id' })
+  @Permissions(PermissionCode.VERIFICATION_REJECT)
   remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.orgVerificationService.remove(id, req.user.userId);
   }

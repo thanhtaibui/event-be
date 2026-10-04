@@ -215,30 +215,28 @@ export class DashboardService {
     const timer = `GET_DASHBOARD_BY_ID:${idUser}`;
     console.time(timer);
     try {
-      const totalUser = await this.userRepo.count({
-        where: { isActive: true },
-      });
-      const totalEvents = await this.eventRepo.count();
-      const [upcoming, ongoing, ended, cancelled] = await Promise.all([
-        this.eventRepo.count({ where: { status: EventStatus.UPCOMING } }),
-        this.eventRepo.count({ where: { status: EventStatus.ONGOING } }),
-        this.eventRepo.count({ where: { status: EventStatus.ENDED } }),
-        this.eventRepo.count({ where: { status: EventStatus.CANCELLED } }),
+      const user = await this.userRepo.findOne({ where: { id: idUser } });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const [totalTickets, revenue] = await Promise.all([
+        this.ticketRepo.count({ where: { user: { id: idUser } } }),
+        this.ticketRepo
+          .createQueryBuilder('ticket')
+          .leftJoin('ticket.ticketType', 'ticketType')
+          .select('SUM(ticketType.price)', 'total')
+          .where('ticket.userId = :userId', { userId: idUser })
+          .getRawOne(),
       ]);
+
       const dashboardData: DashboardDto = {
         cards: [
-          { key: 'users', title: 'Users', value: totalUser },
-          { key: 'events', title: 'Events', value: totalEvents },
-          { key: 'revenue', title: 'Revenue', value: 1200 },
-          { key: 'tickets', title: 'Tickets', value: 300 },
+          { key: 'revenue', title: 'Revenue', value: Number(revenue?.total ?? 0) },
+          { key: 'tickets', title: 'Tickets', value: totalTickets },
         ],
         lineChart: [],
-        pieChart: [
-          { label: 'Upcoming', value: upcoming },
-          { label: 'Ongoing', value: ongoing },
-          { label: 'Ended', value: ended },
-          { label: 'Cancelled', value: cancelled },
-        ],
+        pieChart: [],
       };
       return {
         statusCode: 200,

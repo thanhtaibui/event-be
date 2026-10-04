@@ -19,29 +19,39 @@ import {
 } from './dto/update-membership.dto';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('membership')
 export class MembershipController {
   constructor(private readonly membershipService: MembershipService) { }
 
   @Post()
-  create(@Body() createMembershipDto: CreateMembershipDto) {
-    return this.membershipService.create(createMembershipDto);
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  create(@Body() createMembershipDto: CreateMembershipDto, @Req() req: any) {
+    return this.membershipService.create(createMembershipDto, req.user);
   }
 
   @Get()
-  findAll() {
-    return this.membershipService.findAll();
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  findAll(@Req() req: any) {
+    return this.membershipService.findAll(req.user);
   }
 
   @Get('organization/:orgId')
-  findByOrganization(@Param('orgId', ParseUUIDPipe) orgId: string) {
-    return this.membershipService.findByOrganization(orgId);
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  findByOrganization(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Req() req: any,
+  ) {
+    return this.membershipService.findByOrganization(orgId, req.user);
   }
 
   @Get('org/:slug')
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   findByOrganizationSlug(@Param('slug') slug: string, @Req() req: any) {
     return this.membershipService.findByOrganizationSlug(
       slug,
@@ -50,36 +60,52 @@ export class MembershipController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.membershipService.findOne(id);
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    return this.membershipService.findOne(id, req.user);
   }
 
   @Patch(':id')
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateMembershipDto: UpdateMembershipDto,
+    @Req() req: any,
   ) {
-    return this.membershipService.update(id, updateMembershipDto);
+    return this.membershipService.update(id, updateMembershipDto, req.user);
   }
 
   @Patch(':id/status')
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateMembershipStatusDto: UpdateMembershipStatusDto,
+    @Req() req: any,
   ) {
-    return this.membershipService.updateStatus(id, updateMembershipStatusDto);
+    return this.membershipService.updateStatus(
+      id,
+      updateMembershipStatusDto,
+      req.user,
+    );
   }
 
   @Patch(':id/role')
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   updateRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateMembershipRoleDto: UpdateMembershipRoleDto,
+    @Req() req: any,
   ) {
-    return this.membershipService.updateRole(id, updateMembershipRoleDto);
+    return this.membershipService.updateRole(
+      id,
+      updateMembershipRoleDto,
+      req.user,
+    );
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.membershipService.remove(+id);
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    return this.membershipService.remove(id, req.user);
   }
 }

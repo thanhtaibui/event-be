@@ -10,7 +10,7 @@ import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { ReportDto } from './dto/report.dto';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { Report } from './entities/report.entity';
 import { User } from '../user/entities/user.entity';
 import { Organization } from '../organization/entities/organization.entity';
@@ -57,14 +57,27 @@ export class ReportService {
 
   async findAll(
     query: PaginateQuery,
+    currentUser?: any,
   ): Promise<ApiResponse<PaginationResult<ReportDto>>> {
     console.time('GET_REPORTS');
     try {
+      const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+      if (orgIds && orgIds.length === 0) {
+        return Response(200, 'Get all reports successfully', {
+          items: [],
+          page: 1,
+          limit: query.limit ?? 10,
+          total: 0,
+          totalPages: 0,
+        });
+      }
+
       const result = await paginate(query, this.reportRepo, {
         sortableColumns: ['user.fullName', 'organization.name', 'status'],
         searchableColumns: ['user.fullName', 'organization.name', 'status'],
         where: {
           status: Not(ReportStatus.SPAM),
+          ...(orgIds ? { organization: { id: In(orgIds) } } : {}),
         },
         relations: ['user', 'organization'],
         defaultSortBy: [['createdAt', 'DESC']],
@@ -146,11 +159,18 @@ export class ReportService {
     return organization;
   }
 
-  async findOne(id: string): Promise<ApiResponse<ReportDto>> {
+  async findOne(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<ReportDto>> {
     const timer = `GET_REPORT_BY_ID:${id}`;
     console.time(timer);
     try {
       const report = await this.findReportById(id);
+      await this.assertCanAccessOrganization(
+        report.organization.id,
+        currentUser,
+      );
 
       return Response(200, 'Get report successfully', this.toReportDto(report));
     } finally {
@@ -161,8 +181,13 @@ export class ReportService {
   async update(
     id: string,
     updateReportDto: UpdateReportDto,
+    currentUser?: any,
   ): Promise<ApiResponse<ReportDto>> {
     const report = await this.findReportById(id);
+    await this.assertCanAccessOrganization(
+      report.organization.id,
+      currentUser,
+    );
 
     if (updateReportDto.status) {
       report.status = updateReportDto.status;
@@ -182,8 +207,17 @@ export class ReportService {
     );
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} report`;
+  async remove(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<{ id: string }>> {
+    const report = await this.findReportById(id);
+    await this.assertCanAccessOrganization(
+      report.organization.id,
+      currentUser,
+    );
+    await this.reportRepo.remove(report);
+    return Response(200, 'Delete report successfully', { id });
   }
 
   private async findReportById(id: string): Promise<Report> {
@@ -216,5 +250,52 @@ export class ReportService {
       status: report.status,
       createAt: report.createdAt,
     };
+  }
+
+  private async assertCanAccessOrganization(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private async getAccessibleOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return null;
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: {
+        user: { id: currentUser.userId },
+        isActive: true,
+      },
+      relations: ['organization'],
+      select: {
+        id: true,
+        organization: {
+          id: true,
+        },
+      },
+    });
+
+    return memberships
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
   }
 }

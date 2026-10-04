@@ -1,13 +1,14 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
-import { In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
@@ -34,79 +35,108 @@ export class OrderService {
     private readonly ticketRepo: Repository<Ticket>,
     @InjectRepository(Event)
     private readonly eventRepo: Repository<Event>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
-  async create(createOrderDto: CreateOrderDto): Promise<ApiResponse<any>> {
-    const user = await this.userRepo.findOne({
-      where: { id: createOrderDto.userId },
-    });
+  async create(
+    createOrderDto: CreateOrderDto,
+    currentUserId?: string,
+  ): Promise<ApiResponse<any>> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    let orderId = '';
+    try {
+      const manager = queryRunner.manager;
+      const user = await manager.findOne(User, {
+        where: { id: currentUserId || createOrderDto.userId },
+      });
 
-    const ticketTypeIds = createOrderDto.items.map((item) => item.ticketTypeId);
-    const uniqueTicketTypeIds = [...new Set(ticketTypeIds)];
-    const ticketTypes = await this.ticketTypeRepo.find({
-      where: { id: In(uniqueTicketTypeIds) },
-      relations: ['event'],
-    });
-
-    if (ticketTypes.length !== uniqueTicketTypeIds.length) {
-      throw new NotFoundException('Some ticket types not found');
-    }
-
-    const requestedQuantityByTicketTypeId = new Map<string, number>();
-    for (const item of createOrderDto.items) {
-      requestedQuantityByTicketTypeId.set(
-        item.ticketTypeId,
-        (requestedQuantityByTicketTypeId.get(item.ticketTypeId) || 0) +
-          item.quantity,
-      );
-    }
-
-    const soldQuantityByTicketTypeId =
-      await this.getSoldQuantityByTicketTypeIds(uniqueTicketTypeIds);
-
-    await this.validateTicketTypesCanBePurchased(
-      ticketTypes,
-      requestedQuantityByTicketTypeId,
-      soldQuantityByTicketTypeId,
-    );
-
-    const ticketTypeMap = new Map(
-      ticketTypes.map((ticketType) => [ticketType.id, ticketType]),
-    );
-
-    const totalPrice = createOrderDto.items.reduce((total, item) => {
-      const ticketType = ticketTypeMap.get(item.ticketTypeId);
-      if (!ticketType) {
-        throw new BadRequestException('Invalid ticket type');
+      if (!user) {
+        throw new NotFoundException('User not found');
       }
-      return total + ticketType.price * item.quantity;
-    }, 0);
 
-    const order = await this.orderRepo.save(
-      this.orderRepo.create({
+      const ticketTypeIds = createOrderDto.items.map(
+        (item) => item.ticketTypeId,
+      );
+      const uniqueTicketTypeIds = [...new Set(ticketTypeIds)];
+      const ticketTypes = await manager
+        .getRepository(TicketType)
+        .createQueryBuilder('ticketType')
+        .setLock('pessimistic_write')
+        .innerJoinAndSelect('ticketType.event', 'event')
+        .where('ticketType.id IN (:...ticketTypeIds)', {
+          ticketTypeIds: uniqueTicketTypeIds,
+        })
+        .getMany();
+
+      if (ticketTypes.length !== uniqueTicketTypeIds.length) {
+        throw new NotFoundException('Some ticket types not found');
+      }
+
+      const requestedQuantityByTicketTypeId = new Map<string, number>();
+      for (const item of createOrderDto.items) {
+        requestedQuantityByTicketTypeId.set(
+          item.ticketTypeId,
+          (requestedQuantityByTicketTypeId.get(item.ticketTypeId) || 0) +
+            item.quantity,
+        );
+      }
+
+      const soldQuantityByTicketTypeId =
+        await this.getSoldQuantityByTicketTypeIds(
+          uniqueTicketTypeIds,
+          manager,
+        );
+
+      await this.validateTicketTypesCanBePurchased(
+        ticketTypes,
+        requestedQuantityByTicketTypeId,
+        soldQuantityByTicketTypeId,
+      );
+
+      const ticketTypeMap = new Map(
+        ticketTypes.map((ticketType) => [ticketType.id, ticketType]),
+      );
+
+      const totalPrice = createOrderDto.items.reduce((total, item) => {
+        const ticketType = ticketTypeMap.get(item.ticketTypeId);
+        if (!ticketType) {
+          throw new BadRequestException('Invalid ticket type');
+        }
+        return total + ticketType.price * item.quantity;
+      }, 0);
+
+      const order = manager.create(Order, {
         user,
         totalPrice,
-      }),
-    );
+      });
+      const savedOrder = await manager.save(Order, order);
+      orderId = savedOrder.id;
 
-    const tickets = createOrderDto.items.flatMap((item) => {
-      const ticketType = ticketTypeMap.get(item.ticketTypeId)!;
-      return Array.from({ length: item.quantity }, () =>
-        this.ticketRepo.create({
-          user,
-          ticketType,
-          order,
-        }),
-      );
-    });
+      const tickets = createOrderDto.items.flatMap((item) => {
+        const ticketType = ticketTypeMap.get(item.ticketTypeId)!;
+        return Array.from({ length: item.quantity }, () =>
+          manager.create(Ticket, {
+            user,
+            ticketType,
+            order: savedOrder,
+          }),
+        );
+      });
 
-    await this.ticketRepo.save(tickets);
+      await manager.save(Ticket, tickets);
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
-    const savedOrder = await this.findOrderEntityById(order.id);
+    const savedOrder = await this.findOrderEntityById(orderId!);
     return Response(
       201,
       'Order created successfully',
@@ -137,11 +167,12 @@ export class OrderService {
     }
   }
 
-  async findOne(id: string): Promise<ApiResponse<any>> {
+  async findOne(id: string, currentUser?: any): Promise<ApiResponse<any>> {
     const timer = `GET_ORDER_BY_ID:${id}`;
     console.time(timer);
     try {
       const order = await this.findOrderEntityById(id);
+      this.assertCanAccessOrder(order, currentUser);
       return Response(200, 'Get order successfully', this.toOrderDto(order));
     } finally {
       console.timeEnd(timer);
@@ -205,6 +236,18 @@ export class OrderService {
     };
   }
 
+  private assertCanAccessOrder(order: Order, currentUser?: any): void {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (order.user?.id === currentUser.userId) {
+      return;
+    }
+
+    throw new ForbiddenException('You do not have permission to access order');
+  }
+
   private async validateTicketTypesCanBePurchased(
     ticketTypes: TicketType[],
     requestedQuantityByTicketTypeId: Map<string, number>,
@@ -248,12 +291,17 @@ export class OrderService {
 
   private async getSoldQuantityByTicketTypeIds(
     ticketTypeIds: string[],
+    manager?: EntityManager,
   ): Promise<Map<string, number>> {
     if (ticketTypeIds.length === 0) {
       return new Map();
     }
 
-    const rows = await this.ticketRepo
+    const ticketRepo = manager
+      ? manager.getRepository(Ticket)
+      : this.ticketRepo;
+
+    const rows = await ticketRepo
       .createQueryBuilder('ticket')
       .leftJoin('ticket.ticketType', 'ticketType')
       .select('ticketType.id', 'ticketTypeId')

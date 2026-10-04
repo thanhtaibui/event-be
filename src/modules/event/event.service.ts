@@ -39,9 +39,16 @@ export class EventService {
     private readonly uploadService: UploadService,
   ) {}
 
-  async create(createEventDto: CreateEventDto): Promise<ApiResponse<EventDto>> {
+  async create(
+    createEventDto: CreateEventDto,
+    currentUser?: any,
+  ): Promise<ApiResponse<EventDto>> {
     const status = EventStatus.DRAFT;
     const { categoryIds, ...eventData } = createEventDto;
+    await this.assertUserCanManageOrganization(
+      createEventDto.organizationId,
+      currentUser,
+    );
     const categories = await this.findCategoriesByIds(categoryIds);
 
     const event = this.eventRepo.create({
@@ -235,12 +242,22 @@ export class EventService {
     return organization;
   }
 
-  async cancelled(cancelled: CancelledDto): Promise<ApiResponse<CancelledDto>> {
+  async cancelled(
+    cancelled: CancelledDto,
+    currentUser?: any,
+  ): Promise<ApiResponse<CancelledDto>> {
     const events = await this.eventRepo.find({
       where: { id: In(cancelled.ids) },
+      relations: ['organization'],
     });
     if (events.length !== cancelled.ids.length) {
       throw new BadRequestException('Invalid ids');
+    }
+    for (const event of events) {
+      await this.assertUserCanManageOrganization(
+        event.organization.id,
+        currentUser,
+      );
     }
     const invalidEvents = events.filter(
       (e) =>
@@ -315,15 +332,22 @@ export class EventService {
     }
   }
 
-  async getInvites(id: string): Promise<ApiResponse<InviteDashboardDto>> {
+  async getInvites(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<InviteDashboardDto>> {
     const timer = `GET_EVENT_INVITES:${id}`;
     console.time(timer);
     try {
       const event = await this.eventRepo.findOne({
         where: { id },
-        relations: ['invites'],
+        relations: ['organization', 'invites'],
       });
       if (!event) throw new BadRequestException('Event not found');
+      await this.assertUserCanManageOrganization(
+        event.organization.id,
+        currentUser,
+      );
       const inviteDashboard = new InviteDashboardDto();
       inviteDashboard.totalInvites = event.invites.length;
       inviteDashboard.acceptedInvites = event.invites.filter(
@@ -348,6 +372,7 @@ export class EventService {
   async update(
     id: string,
     updateEventDto: UpdateEventDto,
+    currentUser?: any,
   ): Promise<ApiResponse<EventDto>> {
     const event = await this.eventRepo.findOne({
       where: { id },
@@ -357,12 +382,20 @@ export class EventService {
     const oldBannerUrl = event?.eventBanner;
 
     if (!event) throw new BadRequestException('Event not found');
+    await this.assertUserCanManageOrganization(
+      event.organization.id,
+      currentUser,
+    );
 
     // nếu đổi organization
     if (
       updateEventDto.organizationId &&
       updateEventDto.organizationId !== event.organization?.id
     ) {
+      await this.assertUserCanManageOrganization(
+        updateEventDto.organizationId,
+        currentUser,
+      );
       const org = await this.organizationRepo.findOne({
         where: { id: updateEventDto.organizationId },
       });
@@ -395,8 +428,31 @@ export class EventService {
     );
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} event`;
+  async remove(id: string, currentUser?: any): Promise<ApiResponse<{ id: string }>> {
+    const event = await this.eventRepo.findOne({
+      where: { id },
+      relations: ['organization'],
+    });
+
+    if (!event) {
+      throw new BadRequestException('Event not found');
+    }
+
+    await this.assertUserCanManageOrganization(
+      event.organization.id,
+      currentUser,
+    );
+
+    if ([EventStatus.ENDED, EventStatus.CANCELLED].includes(event.status)) {
+      throw new BadRequestException(
+        `Cannot cancel event that is already ${event.status}`,
+      );
+    }
+
+    event.status = EventStatus.CANCELLED;
+    await this.eventRepo.save(event);
+
+    return Response(200, 'Event cancelled successfully', { id });
   }
 
   private async findCategoriesByIds(
@@ -461,5 +517,26 @@ export class EventService {
       `,
       params,
     );
+  }
+
+  private async assertUserCanManageOrganization(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
   }
 }

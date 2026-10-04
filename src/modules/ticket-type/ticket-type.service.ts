@@ -1,6 +1,6 @@
 import {
-  BadGatewayException,
   BadRequestException,
+  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { CreateTicketTypeDto } from './dto/create-ticket-type.dto';
@@ -13,6 +13,7 @@ import { TicketTypeDto } from './dto/ticket-type.dto';
 import { plainToInstance } from 'class-transformer';
 import { Event } from '../event/entities/event.entity';
 import { EventStatus } from 'src/shared/enum/enum';
+import { Membership } from '../membership/entities/membership.entity';
 const LOCKED_STATUSES = [EventStatus.ENDED, EventStatus.CANCELLED];
 
 @Injectable()
@@ -22,16 +23,20 @@ export class TicketTypeService {
     private ticketTypeRepo: Repository<TicketType>,
     @InjectRepository(Event)
     private eventRepo: Repository<Event>,
+    @InjectRepository(Membership)
+    private membershipRepo: Repository<Membership>,
   ) {}
 
   async create(
     createTicketTypeDto: CreateTicketTypeDto,
+    currentUser?: any,
   ): Promise<ApiResponse<TicketTypeDto>> {
     const event = await this.eventRepo.findOne({
       where: { id: createTicketTypeDto.eventId },
-      relations: ['ticketTypes'],
+      relations: ['organization', 'ticketTypes'],
     });
     if (!event) throw new BadRequestException('Event not found');
+    await this.assertCanManageEvent(event, currentUser);
     const totalTickets =
       event.ticketTypes.reduce((sum, type) => sum + type.quantity, 0) +
       createTicketTypeDto.quantity;
@@ -56,10 +61,21 @@ export class TicketTypeService {
     );
   }
 
-  findAll() {
+  async findAll(): Promise<ApiResponse<TicketTypeDto[]>> {
     console.time('GET_TICKET_TYPES');
     try {
-      return `This action returns all ticketType`;
+      const ticketTypes = await this.ticketTypeRepo.find({
+        relations: ['event'],
+        order: { createdAt: 'DESC' },
+      });
+      return Response(
+        200,
+        'Get Ticket Types Successfully',
+        plainToInstance(TicketTypeDto, ticketTypes, {
+          excludeExtraneousValues: true,
+          enableImplicitConversion: true,
+        }),
+      );
     } finally {
       console.timeEnd('GET_TICKET_TYPES');
     }
@@ -90,19 +106,37 @@ export class TicketTypeService {
   async update(
     id: string,
     updateTicketTypeDto: UpdateTicketTypeDto,
+    currentUser?: any,
   ): Promise<ApiResponse<TicketTypeDto>> {
     const ticketType = await this.ticketTypeRepo.findOne({
       where: { id },
-      relations: ['event'],
+      relations: ['event', 'event.organization'],
     });
     if (!ticketType) throw new BadRequestException('Ticket Type not found');
+    await this.assertCanManageEvent(ticketType.event, currentUser);
     if (LOCKED_STATUSES.includes(ticketType.event.status)) {
       throw new BadRequestException(
         `Cannot update ticket type when status is ${ticketType.event.status}`,
       );
     }
 
-    Object.assign(ticketType, updateTicketTypeDto);
+    if (
+      updateTicketTypeDto.eventId &&
+      updateTicketTypeDto.eventId !== ticketType.event.id
+    ) {
+      const nextEvent = await this.eventRepo.findOne({
+        where: { id: updateTicketTypeDto.eventId },
+        relations: ['organization'],
+      });
+      if (!nextEvent) {
+        throw new BadRequestException('Event not found');
+      }
+      await this.assertCanManageEvent(nextEvent, currentUser);
+      ticketType.event = nextEvent;
+    }
+
+    const { eventId, ...ticketTypeData } = updateTicketTypeDto;
+    Object.assign(ticketType, ticketTypeData);
     const updated = await this.ticketTypeRepo.save(ticketType);
 
     return Response(
@@ -114,7 +148,45 @@ export class TicketTypeService {
     );
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} ticketType`;
+  async remove(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<{ id: string }>> {
+    const ticketType = await this.ticketTypeRepo.findOne({
+      where: { id },
+      relations: ['event', 'event.organization', 'tickets'],
+    });
+    if (!ticketType) {
+      throw new BadRequestException('Ticket Type not found');
+    }
+    await this.assertCanManageEvent(ticketType.event, currentUser);
+    if ((ticketType.tickets || []).length > 0) {
+      throw new BadRequestException(
+        'Cannot delete ticket type that already has tickets',
+      );
+    }
+    await this.ticketTypeRepo.remove(ticketType);
+    return Response(200, 'Ticket Type deleted successfully', { id });
+  }
+
+  private async assertCanManageEvent(
+    event: Event,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: event.organization.id },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
   }
 }

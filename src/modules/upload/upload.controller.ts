@@ -5,18 +5,32 @@ import {
   UploadedFile,
   BadRequestException,
   Body,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
-import { ApiTags, ApiConsumes, ApiBody, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiConsumes,
+  ApiBody,
+  ApiOperation,
+} from '@nestjs/swagger';
 import { ApiResponse } from '../../common/utils/ApiResponse';
+import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiTags('Upload')
+@ApiBearerAuth('access-token')
+@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   @Post('image')
+  @Permissions(PermissionCode.UPLOAD_CREATE)
   @ApiOperation({ summary: 'Upload file lên AWS S3' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')

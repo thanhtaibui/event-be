@@ -16,6 +16,9 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ApiResponse as ApiResponseType } from 'src/common/utils/ApiResponse';
 import { Category } from './entities/category.entity';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiTags('category')
 @Controller('category')
@@ -23,7 +26,8 @@ export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
   @Post()
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.CATEGORY_CREATE)
   @ApiOperation({ operationId: 'createCategory' })
   @ApiResponse({ status: 201, description: 'Category created successfully.' })
   @ApiResponse({ status: 409, description: 'Category name already exists.' })
@@ -54,7 +58,8 @@ export class CategoryController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.CATEGORY_UPDATE)
   @ApiOperation({ operationId: 'updateCategory' })
   @ApiResponse({ status: 200, description: 'Category updated successfully.' })
   @ApiResponse({ status: 404, description: 'Category not found.' })
@@ -67,7 +72,8 @@ export class CategoryController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.CATEGORY_DELETE)
   @ApiOperation({ operationId: 'deleteCategory' })
   @ApiResponse({ status: 200, description: 'Category deleted successfully.' })
   @ApiResponse({ status: 404, description: 'Category not found.' })

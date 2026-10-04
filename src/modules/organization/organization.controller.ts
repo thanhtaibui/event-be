@@ -37,6 +37,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateBannerDto } from './dto/update-banner.dto';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
+import { PermissionsGuard } from 'src/common/guards/permissions.guard';
+import { Permissions } from 'src/common/decorators/permissions.decorator';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 // @ApiBearerAuth('access-token')
 // @UseGuards(JwtGuard)
 @Controller('organizations')
@@ -53,6 +56,9 @@ export class OrganizationController {
   }
 
   @Post()
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_CREATE)
   @UseInterceptors(FileInterceptor('logo'))
   async createOrganization(
     @Body() createDto: CreateOrganizationDto,
@@ -61,6 +67,9 @@ export class OrganizationController {
     return await this.organizationService.create(createDto, file);
   }
   @Get()
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_VIEW)
   @ApiOperation({ operationId: 'getOrgs' })
   @ApiPaginationQuery({
     searchableColumns: ['name', 'email', 'owner.fullName'],
@@ -71,33 +80,51 @@ export class OrganizationController {
     },
   })
   async findAll(
+    @Req() req: any,
     @Paginate() query: PaginateQuery,
   ): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
-    return this.organizationService.findAll(query);
+    return this.organizationService.findAll(query, req.user);
   }
 
   @Get('/switch-org')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_VIEW)
   @ApiOperation({ operationId: 'SwitchOrg' })
-  async SwitchOrg(): Promise<ApiResponse<SwitchOrgDto[]>> {
-    return this.organizationService.SwitchOrg();
+  async SwitchOrg(@Req() req: any): Promise<ApiResponse<SwitchOrgDto[]>> {
+    return this.organizationService.SwitchOrg(req.user);
   }
 
   @Get(':id/members')
-  findMembers(@Param('id') id: string): Promise<ApiResponse<OrganizationDto>> {
-    return this.organizationService.GetMembersByOrgId(id);
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  findMembers(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<OrganizationDto>> {
+    return this.organizationService.GetMembersByOrgId(id, req.user);
   }
   @Get(':id')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_VIEW)
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
   ): Promise<ApiResponse<OrganizationResDto>> {
-    return this.organizationService.GetOrgById(id);
+    return this.organizationService.GetOrgById(id, req.user);
   }
   @Patch(':id/banner')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_UPDATE)
   changeBanner(
     @Param('id') id: string,
     @Body() updateBannerDto: UpdateBannerDto,
+    @Req() req: any,
   ): Promise<ApiResponse<UpdateBannerDto>> {
-    return this.organizationService.updateBanner(id, updateBannerDto);
+    return this.organizationService.updateBanner(id, updateBannerDto, req.user);
   }
   @Get('detail/:slug')
   findOrgBySlug(
@@ -106,42 +133,50 @@ export class OrganizationController {
     return this.organizationService.GetOrgBySlug(slug);
   }
   @Get(':orgId/roles')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ROLE_VIEW)
   @ApiOperation({ operationId: 'getRoleOrg' })
   async getRolesByOrg(
+    @Req() req: any,
     @Param('orgId') orgId: string,
   ): Promise<ApiResponse<RoleOrgDto[]>> {
-    return this.roleService.findAllByOrg(orgId);
+    return this.roleService.findAllByOrg(orgId, req.user);
   }
   @Patch('/delete')
   @ApiBearerAuth('access-token')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_DELETE)
   @ApiOperation({ operationId: 'deleteSort' })
   deleteSort(
     @Req() req: any,
     @Body() deleteSort: DeleteSort,
   ): Promise<ApiResponse<DeleteSort>> {
-    this.assertSuperAdmin(req);
-    return this.organizationService.deleteSort(deleteSort);
+    return this.organizationService.deleteSort(deleteSort, req.user);
   }
   @Patch(':id')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_UPDATE)
   update(
     @Param('id') id: string,
     @Body() updateOrganizationDto: UpdateOrganizationDto,
+    @Req() req: any,
   ): Promise<ApiResponse<UpdateOrganizationDto>> {
-    return this.organizationService.update(id, updateOrganizationDto);
+    return this.organizationService.update(id, updateOrganizationDto, req.user);
   }
 
   @Patch(':id/active')
   @ApiBearerAuth('access-token')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_UPDATE)
   @ApiOperation({ operationId: 'updateActive' })
   updateActive(
     @Req() req: any,
     @Param('id') id: string,
     @Body() updateActiveDto: UpdateActiveDto,
   ): Promise<ApiResponse<OrganizationResDto>> {
-    this.assertSuperAdmin(req);
-    return this.organizationService.updateActive(id, updateActiveDto.active);
+    return this.organizationService.updateActive(id, updateActiveDto.active, req.user);
   }
 
   // @Delete(':id')

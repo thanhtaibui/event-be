@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -120,10 +121,17 @@ export class OrganizationService {
     }
   }
 
-  async SwitchOrg(): Promise<ApiResponse<SwitchOrgDto[]>> {
+  async SwitchOrg(currentUser?: any): Promise<ApiResponse<SwitchOrgDto[]>> {
     console.time('GET_SWITCH_ORGS');
     try {
-      const orgs = await this.organizationRepo.find();
+      const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+      const orgs = await this.organizationRepo.find({
+        where: orgIds
+          ? {
+              id: In(orgIds),
+            }
+          : undefined,
+      });
       const result = orgs.map((org) => ({
         id: org.id,
         name: org.name,
@@ -137,9 +145,21 @@ export class OrganizationService {
 
   async findAll(
     query: PaginateQuery,
+    currentUser?: any,
   ): Promise<ApiResponse<PaginationResult<OrganizationDto>>> {
     console.time('GET_ORGS');
     try {
+      const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+      if (orgIds && orgIds.length === 0) {
+        return Response(200, 'Get all organizations successfully', {
+          items: [],
+          page: 1,
+          limit: query.limit ?? 10,
+          total: 0,
+          totalPages: 0,
+        });
+      }
+
       const result = await paginate(query, this.organizationRepo, {
         searchableColumns: ['name', 'email', 'owner.fullName'],
         sortableColumns: ['name', 'email', 'owner.fullName'],
@@ -147,6 +167,7 @@ export class OrganizationService {
           isActive: [FilterOperator.EQ],
           status: [FilterOperator.EQ],
         },
+        where: orgIds ? { id: In(orgIds) } : undefined,
         relations: ['owner'],
         defaultSortBy: [['createdAt', 'DESC']],
       });
@@ -168,9 +189,13 @@ export class OrganizationService {
     }
   }
 
-  async GetMembersByOrgId(orgId: string): Promise<ApiResponse<any>> {
+  async GetMembersByOrgId(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<any>> {
     console.time('GET_ORG_MEMBERS');
     try {
+      await this.assertCanAccessOrganization(orgId, currentUser);
       // 1. Tìm Org và join sâu xuống User và Role
       const org = await this.organizationRepo.findOne({
         where: { id: orgId },
@@ -216,9 +241,13 @@ export class OrganizationService {
     }
   }
 
-  async GetOrgById(id: string): Promise<ApiResponse<OrganizationResDto>> {
+  async GetOrgById(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     console.time('GET_ORG_BY_ID');
     try {
+      await this.assertCanAccessOrganization(id, currentUser);
       const org = await this.organizationRepo.findOne({
         where: { id: id },
         relations: ['owner'],
@@ -291,7 +320,9 @@ export class OrganizationService {
   async update(
     id: string,
     updateOrganizationDto: UpdateOrganizationDto,
+    currentUser?: any,
   ): Promise<ApiResponse<UpdateOrganizationDto>> {
+    await this.assertCanAccessOrganization(id, currentUser);
     const org = await this.organizationRepo.findOne({
       where: { id },
       relations: ['owner'],
@@ -317,7 +348,9 @@ export class OrganizationService {
   async updateActive(
     id: string,
     isActive: boolean,
+    currentUser?: any,
   ): Promise<ApiResponse<OrganizationResDto>> {
+    await this.assertCanAccessOrganization(id, currentUser);
     const org = await this.organizationRepo.findOne({ where: { id } });
     if (!org) {
       throw new NotFoundException('Organization not exist');
@@ -329,7 +362,9 @@ export class OrganizationService {
   async updateBanner(
     id: string,
     updateBannerDto: UpdateBannerDto,
+    currentUser?: any,
   ): Promise<ApiResponse<UpdateBannerDto>> {
+    await this.assertCanAccessOrganization(id, currentUser);
     const org = await this.organizationRepo.findOne({ where: { id } });
     if (!org) {
       throw new NotFoundException('Organization not exist');
@@ -345,13 +380,19 @@ export class OrganizationService {
     });
   }
 
-  async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
+  async deleteSort(
+    deleteSort: DeleteSort,
+    currentUser?: any,
+  ): Promise<ApiResponse<DeleteSort>> {
     Logger.warn('check1', deleteSort);
     const org = await this.organizationRepo.find({
       where: { id: In(deleteSort.ids) },
     });
     if (org.length !== deleteSort.ids.length) {
       throw new BadRequestException('Invalid ids');
+    }
+    for (const item of org) {
+      await this.assertCanAccessOrganization(item.id, currentUser);
     }
     const names = org.map((i) => i.name);
     await this.organizationRepo.update(
@@ -405,5 +446,52 @@ export class OrganizationService {
     }
 
     return ownerRole;
+  }
+
+  private async assertCanAccessOrganization(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    const membership = await this.memberRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private async getAccessibleOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return null;
+    }
+
+    const memberships = await this.memberRepo.find({
+      where: {
+        user: { id: currentUser.userId },
+        isActive: true,
+      },
+      relations: ['organization'],
+      select: {
+        id: true,
+        organization: {
+          id: true,
+        },
+      },
+    });
+
+    return memberships
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
   }
 }

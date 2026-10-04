@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Injectable()
 export class TicketService {
@@ -17,6 +18,8 @@ export class TicketService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(TicketType)
     private readonly ticketTypeRepo: Repository<TicketType>,
+    @InjectRepository(Membership)
+    private readonly membershipRepo: Repository<Membership>,
   ) {}
 
   async create(createTicketDto: CreateTicketDto): Promise<ApiResponse<any>> {
@@ -30,7 +33,7 @@ export class TicketService {
 
     const ticketType = await this.ticketTypeRepo.findOne({
       where: { id: createTicketDto.ticketTypeId },
-      relations: ['event'],
+      relations: ['event', 'event.organization'],
     });
 
     if (!ticketType) {
@@ -66,11 +69,12 @@ export class TicketService {
     }
   }
 
-  async findOne(id: string): Promise<ApiResponse<any>> {
+  async findOne(id: string, currentUser?: any): Promise<ApiResponse<any>> {
     const timer = `GET_TICKET_BY_ID:${id}`;
     console.time(timer);
     try {
       const ticket = await this.findTicketEntityById(id);
+      await this.assertCanAccessTicket(ticket, currentUser);
       return Response(200, 'Get ticket successfully', this.toTicketDto(ticket));
     } finally {
       console.timeEnd(timer);
@@ -88,7 +92,12 @@ export class TicketService {
   private async findTicketEntityById(id: string): Promise<Ticket> {
     const ticket = await this.ticketRepo.findOne({
       where: { id },
-      relations: ['user', 'ticketType', 'ticketType.event'],
+      relations: [
+        'user',
+        'ticketType',
+        'ticketType.event',
+        'ticketType.event.organization',
+      ],
     });
 
     if (!ticket) {
@@ -122,5 +131,35 @@ export class TicketService {
           }
         : null,
     };
+  }
+
+  private async assertCanAccessTicket(
+    ticket: Ticket,
+    currentUser?: any,
+  ): Promise<void> {
+    if (!currentUser || currentUser.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (ticket.user?.id === currentUser.userId) {
+      return;
+    }
+
+    const orgId = ticket.ticketType?.event?.organization?.id;
+    if (orgId) {
+      const membership = await this.membershipRepo.findOne({
+        where: {
+          user: { id: currentUser.userId },
+          organization: { id: orgId },
+          isActive: true,
+        },
+      });
+
+      if (membership) {
+        return;
+      }
+    }
+
+    throw new ForbiddenException('You do not have permission to access ticket');
   }
 }
