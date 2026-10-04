@@ -3,7 +3,6 @@ import { CreateUserDto } from './create-user.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsOptional,
-  IsEnum,
   IsArray,
   ValidateNested,
   IsNotEmpty,

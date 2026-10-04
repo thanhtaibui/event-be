@@ -30,6 +30,7 @@ import {
   PERMISSION_TREE,
   ROLE_PERMISSION_CODES,
 } from '../modules/permission/permission-seed.service';
+import { assertStrongPassword } from './validators/password-policy';
 
 type CountMap = Record<string, number>;
 type QaResetLogger = Pick<Console, 'log' | 'error' | 'table'>;
@@ -245,6 +246,11 @@ function assertResetAllowed(): void {
       'BOOTSTRAP_ADMIN_PASSWORD is required to bootstrap super admin',
     );
   }
+
+  assertStrongPassword(
+    process.env.BOOTSTRAP_ADMIN_PASSWORD,
+    'BOOTSTRAP_ADMIN_PASSWORD',
+  );
 }
 
 async function countEntities(

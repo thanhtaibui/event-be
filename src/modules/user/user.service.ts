@@ -198,9 +198,12 @@ export class UserService {
     }
 
     // 3. Update info user
-    const { memberships, ...basicInfo } = updateUserDto;
+    const { memberships, password, ...basicInfo } = updateUserDto;
 
     this.userRepo.merge(user, basicInfo);
+    if (password !== undefined) {
+      user.password = await bcrypt.hash(password, 10);
+    }
     await this.userRepo.save(user);
 
     // 4. Return full data

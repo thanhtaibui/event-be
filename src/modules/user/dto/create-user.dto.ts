@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional } from 'class-validator';
-import { IsEmail, IsString, IsEnum } from 'class-validator';
-import { Matches } from 'class-validator';
+import { IsEmail, IsString } from 'class-validator';
+import { IsStrongPassword } from '../../../common/validators/password-policy';
 
 export class CreateUserDto {
   @IsEmail({}, { message: 'Invalid email format' })
@@ -9,11 +9,8 @@ export class CreateUserDto {
   email: string;
 
   @IsString({ message: 'Password must be a string' })
-  @Matches(/^[a-zA-Z0-9]{6,}$/, {
-    message:
-      'Password must be at least 6 characters long and contain only letters and numbers',
-  })
-  @ApiProperty({ example: 'Password123' })
+  @IsStrongPassword()
+  @ApiProperty({ example: 'Buithanhtai9#' })
   password: string;
 
   @IsString({ message: 'Full name must be a string' })
