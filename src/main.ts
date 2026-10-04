@@ -6,6 +6,7 @@ import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import * as express from 'express';
 import { join } from 'path';
+import { runQaResetOnStartupIfRequested } from './common/qa-db-reset';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -65,6 +66,8 @@ async function bootstrap() {
   });
   app.useGlobalFilters(new AllExceptionFilter());
 
+  await app.init();
+  await runQaResetOnStartupIfRequested();
   await app.listen(port);
 }
 bootstrap();
