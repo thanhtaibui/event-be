@@ -16,7 +16,7 @@ type PermissionParentDefinition = {
   children: PermissionChildDefinition[];
 };
 
-const PERMISSION_TREE: PermissionParentDefinition[] = [
+export const PERMISSION_TREE: PermissionParentDefinition[] = [
   {
     code: 'USER',
     name: 'User',
@@ -142,7 +142,7 @@ const PERMISSION_TREE: PermissionParentDefinition[] = [
   },
 ];
 
-const ROLE_PERMISSION_CODES: Record<string, string[]> = {
+export const ROLE_PERMISSION_CODES: Record<string, string[]> = {
   SUPER_ADMIN: PERMISSION_TREE.flatMap((parent) => [
     parent.code,
     ...parent.children.map((child) => child.code),
