@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import {
   DataSource,
   DataSourceOptions,
+  EntityManager,
   EntityTarget,
   IsNull,
   Repository,
@@ -165,20 +166,36 @@ async function runQaDatabaseReset(options: {
       };
     }
 
-    await resetBusinessData(dataSource);
-    logger.log('[QA RESET] Permissions preserved');
+    let tree: Awaited<ReturnType<typeof verifyPermissionTree>> | undefined;
+    let superAdmin: Awaited<ReturnType<typeof verifySuperAdmin>> | undefined;
 
-    await ensureSystemRoles(roleRepo, permissionRepo);
-    logger.log('[QA RESET] Roles recreated');
+    await dataSource.transaction(async (manager) => {
+      const txPermissionRepo = manager.getRepository(Permission);
+      const txRoleRepo = manager.getRepository(Role);
+      const txUserRepo = manager.getRepository(User);
+      const txMembershipRepo = manager.getRepository(Membership);
 
-    await ensureBootstrapAdmin(userRepo, membershipRepo, roleRepo);
-    logger.log('[QA RESET] Bootstrap admin created/reused');
+      await resetBusinessData(manager);
+      logger.log('[QA RESET] Business data cleared');
+      logger.log('[QA RESET] Permissions preserved');
+
+      await ensureSystemRoles(txRoleRepo, txPermissionRepo);
+      logger.log('[QA RESET] Roles recreated');
+
+      await ensureBootstrapAdmin(txUserRepo, txMembershipRepo, txRoleRepo);
+      logger.log('[QA RESET] Bootstrap admin created/reused');
+
+      tree = await verifyPermissionTree(txPermissionRepo);
+      superAdmin = await verifySuperAdmin(txRoleRepo, txPermissionRepo);
+      assertVerificationPassed(tree, superAdmin);
+    });
+
+    if (!tree || !superAdmin) {
+      throw new Error('QA reset verification did not run');
+    }
 
     const afterCounts = await countEntities(dataSource, ALL_COUNT_ENTITIES);
     writeAuditSnapshot('after', identity, afterCounts);
-    const tree = await verifyPermissionTree(permissionRepo);
-    const superAdmin = await verifySuperAdmin(roleRepo, permissionRepo);
-
     logger.log('AFTER_RESET_COUNTS');
     logger.table(afterCounts);
     logger.log('PERMISSION_TREE');
@@ -186,7 +203,6 @@ async function runQaDatabaseReset(options: {
     logger.log('SUPER_ADMIN');
     logger.table(superAdmin);
 
-    assertVerificationPassed(tree, superAdmin);
     logger.log('[QA RESET] SUPER_ADMIN permissions assigned');
     logger.log('[QA RESET] Verification passed');
     logger.log('[QA RESET] COMPLETE');
@@ -321,19 +337,29 @@ function writeAuditSnapshot(
   );
 }
 
-async function resetBusinessData(dataSource: DataSource): Promise<void> {
-  await dataSource.transaction(async (manager) => {
-    await manager.query('DELETE FROM "role_permissions"');
-    await manager.query('DELETE FROM "event_categories"');
+async function resetBusinessData(manager: EntityManager): Promise<void> {
+  await manager.query('DELETE FROM "role_permissions"');
+  await manager.query('DELETE FROM "event_categories"');
 
-    for (const entity of BUSINESS_ENTITIES) {
-      await manager.getRepository(entity).createQueryBuilder().delete().execute();
-    }
+  for (const entity of BUSINESS_ENTITIES) {
+    await deleteAllRows(manager, entity);
+  }
 
-    await manager.getRepository(Role).delete({});
-    await manager.getRepository(Organization).delete({});
-    await manager.getRepository(User).delete({});
-  });
+  await deleteAllRows(manager, Role);
+  await deleteAllRows(manager, Organization);
+  await deleteAllRows(manager, User);
+}
+
+async function deleteAllRows(
+  manager: EntityManager,
+  entity: EntityTarget<any>,
+): Promise<void> {
+  await manager
+    .createQueryBuilder()
+    .delete()
+    .from(entity)
+    .where('1 = 1')
+    .execute();
 }
 
 async function ensureSystemRoles(
