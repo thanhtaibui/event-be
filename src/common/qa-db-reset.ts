@@ -30,6 +30,8 @@ import { Category } from '../modules/category/entities/category.entity';
 import {
   PERMISSION_TREE,
   ROLE_PERMISSION_CODES,
+  getMissingPermissionCodes,
+  selectPermissionsForRole,
 } from '../modules/permission/permission-seed.service';
 import { assertStrongPassword } from './validators/password-policy';
 
@@ -367,9 +369,6 @@ async function ensureSystemRoles(
   permissionRepo: Repository<Permission>,
 ): Promise<void> {
   const permissions = await permissionRepo.find();
-  const permissionByCode = new Map(
-    permissions.map((permission) => [permission.permission_code, permission]),
-  );
 
   for (const [roleCode, permissionCodes] of Object.entries(
     ROLE_PERMISSION_CODES,
@@ -379,9 +378,11 @@ async function ensureSystemRoles(
     role.role_name = toRoleName(roleCode);
     role.colorKey = roleCode === SUPER_ADMIN_ROLE_CODE ? 'red' : 'blue';
     role.organization = null as any;
-    role.permissions = permissionCodes
-      .map((code) => permissionByCode.get(code))
-      .filter((permission): permission is Permission => Boolean(permission));
+    role.permissions = selectPermissionsForRole(
+      roleCode,
+      permissionCodes,
+      permissions,
+    );
 
     await roleRepo.save(role);
   }
@@ -564,7 +565,7 @@ async function verifySuperAdmin(
   roleRepo: Repository<Role>,
   permissionRepo: Repository<Permission>,
 ) {
-  const permissionCount = await permissionRepo.count();
+  const permissions = await permissionRepo.find();
   const role = await roleRepo.findOne({
     where: {
       role_code: SUPER_ADMIN_ROLE_CODE,
@@ -577,7 +578,11 @@ async function verifySuperAdmin(
   return {
     exists: Boolean(role),
     permissionCount: role?.permissions?.length ?? 0,
-    expectedPermissionCount: permissionCount,
+    expectedPermissionCount: permissions.length,
+    missingPermissionCodes: getMissingPermissionCodes(
+      permissions,
+      role?.permissions ?? [],
+    ),
   };
 }
 
@@ -594,8 +599,15 @@ function assertVerificationPassed(
   if (!superAdmin.exists) {
     throw new Error('SUPER_ADMIN role verification failed');
   }
-  if (superAdmin.permissionCount !== superAdmin.expectedPermissionCount) {
-    throw new Error('SUPER_ADMIN does not have all permissions');
+  if (superAdmin.missingPermissionCodes.length > 0) {
+    throw new Error(
+      [
+        'SUPER_ADMIN does not have all permissions',
+        `DB permissions: ${superAdmin.expectedPermissionCount}`,
+        `SUPER_ADMIN permissions: ${superAdmin.permissionCount}`,
+        `Missing permissions: ${superAdmin.missingPermissionCodes.join(', ')}`,
+      ].join('; '),
+    );
   }
 }
 

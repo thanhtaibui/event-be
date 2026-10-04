@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
-import { PermissionCode } from 'src/common/constants/permission-codes';
+import { IsNull, Repository } from 'typeorm';
+import { PermissionCode } from '../../common/constants/permission-codes';
 import { Permission } from './entities/permission.entity';
 import { Role } from '../role/entities/role.entity';
 
@@ -257,6 +257,39 @@ export const ROLE_PERMISSION_CODES: Record<string, string[]> = {
   ],
 };
 
+const SUPER_ADMIN_ROLE_CODE = 'SUPER_ADMIN';
+
+type PermissionLike = Pick<Permission, 'permission_code'>;
+
+export function selectPermissionsForRole<T extends PermissionLike>(
+  roleCode: string,
+  permissionCodes: string[],
+  allPermissions: T[],
+): T[] {
+  if (roleCode.trim().toUpperCase() === SUPER_ADMIN_ROLE_CODE) {
+    return allPermissions;
+  }
+
+  const permissionCodeSet = new Set(permissionCodes);
+  return allPermissions.filter((permission) =>
+    permissionCodeSet.has(permission.permission_code),
+  );
+}
+
+export function getMissingPermissionCodes<T extends PermissionLike>(
+  allPermissions: T[],
+  assignedPermissions: T[],
+): string[] {
+  const assignedCodes = new Set(
+    assignedPermissions.map((permission) => permission.permission_code),
+  );
+
+  return allPermissions
+    .map((permission) => permission.permission_code)
+    .filter((permissionCode) => !assignedCodes.has(permissionCode))
+    .sort();
+}
+
 @Injectable()
 export class PermissionSeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PermissionSeedService.name);
@@ -327,6 +360,8 @@ export class PermissionSeedService implements OnApplicationBootstrap {
   }
 
   private async seedRolePermissions(): Promise<void> {
+    const allPermissions = await this.permissionRepo.find();
+
     for (const [roleCode, permissionCodes] of Object.entries(
       ROLE_PERMISSION_CODES,
     )) {
@@ -342,9 +377,11 @@ export class PermissionSeedService implements OnApplicationBootstrap {
         continue;
       }
 
-      const permissions = await this.permissionRepo.find({
-        where: { permission_code: In([...new Set(permissionCodes)]) },
-      });
+      const permissions = selectPermissionsForRole(
+        roleCode,
+        permissionCodes,
+        allPermissions,
+      );
 
       for (const role of roles) {
         const currentPermissionIds = new Set(
