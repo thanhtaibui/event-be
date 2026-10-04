@@ -1,7 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -19,6 +19,11 @@ import { Role } from '../role/entities/role.entity';
 import { DeleteSort } from './dto/delete-sort-user.dto';
 import { FilterOperator, paginate, type PaginateQuery } from 'nestjs-paginate';
 import { Ticket } from '../ticket/entities/ticket.entity';
+import {
+  SUPER_ADMIN_ROLE_CODE,
+  assertNotSuperAdminSystemUser,
+  isSuperAdminRoleCode,
+} from '../../common/system-account/super-admin-protection';
 @Injectable()
 export class UserService {
   constructor(
@@ -101,16 +106,30 @@ export class UserService {
   ): Promise<ApiResponse<PaginationResult<UserResponseDto>>> {
     console.time('GET_USERS');
     try {
-      const result = await paginate(query, this.userRepo, {
+      const userQuery = this.userRepo
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.memberships', 'memberships')
+        .leftJoinAndSelect('memberships.organization', 'membershipOrganization')
+        .leftJoinAndSelect('memberships.role', 'membershipRole')
+        .where('user.isDelete = :isDelete', { isDelete: false })
+        .andWhere(
+          `
+          NOT EXISTS (
+            SELECT 1
+            FROM memberships "superAdminMembership"
+            INNER JOIN roles "superAdminRole"
+              ON "superAdminRole"."id" = "superAdminMembership"."roleId"
+            WHERE "superAdminMembership"."userId" = "user"."id"
+              AND UPPER("superAdminRole"."role_code") = :superAdminRoleCode
+          )
+        `,
+          { superAdminRoleCode: SUPER_ADMIN_ROLE_CODE },
+        );
+
+      const result = await paginate(query, userQuery, {
         sortableColumns: ['email', 'fullName'],
         searchableColumns: ['email', 'fullName'],
         filterableColumns: { isActive: [FilterOperator.EQ] },
-        where: { isDelete: false },
-        relations: [
-          'memberships',
-          'memberships.organization',
-          'memberships.role',
-        ],
       });
 
       // Logger.warn("sortedData", sortedData)
@@ -122,7 +141,7 @@ export class UserService {
         isActive: user.isActive,
         role: (user.memberships || [])
           .filter((m) => m.role !== null && m.role !== undefined)
-          .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
+          .filter((m) => !isSuperAdminRoleCode(m.role.role_code))
           .map((m) => ({
             role_name: m.role.role_name,
             orgName: m.organization?.name || 'No Organization',
@@ -150,11 +169,16 @@ export class UserService {
     // 1. Check user tồn tại
     const user = await this.userRepo.findOne({
       where: { id: userId },
+      relations: ['memberships', 'memberships.role'],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    assertNotSuperAdminSystemUser(
+      user,
+      'SUPER_ADMIN system account cannot be updated.',
+    );
 
     // 2. Handle memberships (REPLACE)
     if (updateUserDto.memberships) {
@@ -230,10 +254,14 @@ export class UserService {
     id: string,
     isActive: boolean,
   ): Promise<ApiResponse<UserResponseDto>> {
-    const user = await this.findOne(id);
+    const user = await this.findOneWithMembershipRoles(id);
     if (!user) {
       throw new NotFoundException('User not exist');
     }
+    assertNotSuperAdminSystemUser(
+      user,
+      'SUPER_ADMIN system account cannot be deactivated.',
+    );
     user.isActive = isActive;
     const savedUser = await this.userRepo.save(user);
     return Response(200, 'User updated Active successfully', savedUser);
@@ -263,7 +291,7 @@ export class UserService {
         isActive: user.isActive,
         role: (user.memberships || [])
           .filter((m) => m.role !== null && m.role !== undefined)
-          .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
+          .filter((m) => !isSuperAdminRoleCode(m.role.role_code))
           .map((m) => ({
             role_name: m.role.role_name,
             orgName: m.organization?.name || 'No Organization',
@@ -296,7 +324,7 @@ export class UserService {
 
       const membership = memberships
         .filter((m) => m.role !== null && m.organization !== null)
-        .filter((m) => !this.isSuperAdminRoleCode(m.role.role_code))
+        .filter((m) => !isSuperAdminRoleCode(m.role.role_code))
         .map((m) => ({
           role_name: m.role.role_name,
           orgName: m.organization.name,
@@ -377,16 +405,36 @@ export class UserService {
     }
   }
 
-  private isSuperAdminRoleCode(roleCode?: string): boolean {
-    return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
+  private async findOneWithMembershipRoles(id: string): Promise<User> {
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['memberships', 'memberships.role'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
   }
 
   async deleteSort(deleteSort: DeleteSort): Promise<ApiResponse<DeleteSort>> {
     const users = await this.userRepo.find({
       where: { id: In(deleteSort.ids) },
+      relations: ['memberships', 'memberships.role'],
     });
     if (users.length !== deleteSort.ids.length) {
       throw new BadRequestException('Invalid ids');
+    }
+    const hasSuperAdmin = users.some((user) =>
+      user.memberships?.some((membership) =>
+        isSuperAdminRoleCode(membership.role?.role_code),
+      ),
+    );
+    if (hasSuperAdmin) {
+      throw new ForbiddenException(
+        'SUPER_ADMIN system account cannot be deleted.',
+      );
     }
     const names = users.map((i) => i.fullName);
     await this.userRepo.update({ id: In(deleteSort.ids) }, { isDelete: true });

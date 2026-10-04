@@ -18,6 +18,12 @@ import { MembershipDto, OrganizationMembershipDto } from './dto/membership.dto';
 import { Role } from '../role/entities/role.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { User } from '../user/entities/user.entity';
+import {
+  assertNotSuperAdminSystemMembership,
+  assertNotSuperAdminSystemUser,
+  isSuperAdminRole,
+  isSuperAdminRoleCode,
+} from '../../common/system-account/super-admin-protection';
 
 @Injectable()
 export class MembershipService {
@@ -41,7 +47,10 @@ export class MembershipService {
     }
 
     const [user, organization, role] = await Promise.all([
-      this.userRepo.findOne({ where: { id: createMembershipDto.userId } }),
+      this.userRepo.findOne({
+        where: { id: createMembershipDto.userId },
+        relations: ['memberships', 'memberships.role'],
+      }),
       this.organizationRepo.findOne({
         where: { id: createMembershipDto.orgId },
       }),
@@ -54,6 +63,10 @@ export class MembershipService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    assertNotSuperAdminSystemUser(
+      user,
+      'SUPER_ADMIN system account membership cannot be modified.',
+    );
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
@@ -61,6 +74,11 @@ export class MembershipService {
 
     if (!role) {
       throw new NotFoundException('Role not found');
+    }
+    if (isSuperAdminRole(role)) {
+      throw new ForbiddenException(
+        'SUPER_ADMIN system role cannot be assigned.',
+      );
     }
     if (!this.roleCanBeUsedInOrganization(role, organization.id)) {
       throw new BadRequestException('Role does not belong to this organization');
@@ -75,6 +93,10 @@ export class MembershipService {
     });
 
     if (existingMembership) {
+      assertNotSuperAdminSystemMembership(
+        existingMembership,
+        'SUPER_ADMIN system membership cannot be modified.',
+      );
       existingMembership.role = role;
       existingMembership.isActive = true;
       const saved = await this.membershipRepo.save(existingMembership);
@@ -135,6 +157,7 @@ export class MembershipService {
         'Get Memberships Successfully',
         memberships
           .filter((membership) => membership.user)
+          .filter((membership) => !isSuperAdminRole(membership.role))
           .map((membership) => ({
             id: membership.id,
             userId: membership.user.id,
@@ -262,6 +285,10 @@ export class MembershipService {
       if (!membership) {
         throw new NotFoundException('Membership not found');
       }
+      assertNotSuperAdminSystemMembership(
+        membership,
+        'SUPER_ADMIN system membership cannot be read through normal CRUD.',
+      );
       await this.assertCanManageOrganization(
         membership.organization.id,
         currentUser,
@@ -294,6 +321,10 @@ export class MembershipService {
     if (!membership) {
       throw new NotFoundException('Membership not found');
     }
+    assertNotSuperAdminSystemMembership(
+      membership,
+      'SUPER_ADMIN system membership cannot be modified.',
+    );
     await this.assertCanManageOrganization(
       membership.organization.id,
       currentUser,
@@ -316,6 +347,11 @@ export class MembershipService {
       });
       if (!role) {
         throw new NotFoundException('Role not found');
+      }
+      if (isSuperAdminRole(role)) {
+        throw new ForbiddenException(
+          'SUPER_ADMIN system role cannot be assigned.',
+        );
       }
       const targetOrgId = membership.organization?.id;
       if (!this.roleCanBeUsedInOrganization(role, targetOrgId)) {
@@ -351,6 +387,10 @@ export class MembershipService {
     if (!membership) {
       throw new NotFoundException('Membership not found');
     }
+    assertNotSuperAdminSystemMembership(
+      membership,
+      'SUPER_ADMIN system membership cannot be modified.',
+    );
     await this.assertCanManageOrganization(
       membership.organization.id,
       currentUser,
@@ -383,6 +423,10 @@ export class MembershipService {
     if (!membership) {
       throw new NotFoundException('Membership not found');
     }
+    assertNotSuperAdminSystemMembership(
+      membership,
+      'SUPER_ADMIN system membership cannot be modified.',
+    );
     await this.assertCanManageOrganization(
       membership.organization.id,
       currentUser,
@@ -398,6 +442,11 @@ export class MembershipService {
 
     if (!role) {
       throw new NotFoundException('Role not found');
+    }
+    if (isSuperAdminRole(role)) {
+      throw new ForbiddenException(
+        'SUPER_ADMIN system role cannot be assigned.',
+      );
     }
 
     if (!this.roleCanBeUsedInOrganization(role, membership.organization.id)) {
@@ -432,6 +481,10 @@ export class MembershipService {
     if (!membership) {
       throw new NotFoundException('Membership not found');
     }
+    assertNotSuperAdminSystemMembership(
+      membership,
+      'SUPER_ADMIN system membership cannot be deleted.',
+    );
     await this.assertCanManageOrganization(
       membership.organization.id,
       currentUser,
@@ -452,7 +505,7 @@ export class MembershipService {
   }
 
   private isSuperAdminRoleCode(roleCode?: string): boolean {
-    return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
+    return isSuperAdminRoleCode(roleCode);
   }
 
   private roleCanBeUsedInOrganization(role: Role, orgId?: string): boolean {

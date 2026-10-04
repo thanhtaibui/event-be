@@ -21,8 +21,11 @@ import { response } from 'express';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { paginate, PaginateQuery } from 'nestjs-paginate';
 import { Membership } from '../membership/entities/membership.entity';
-
-const SUPER_ADMIN_ROLE_CODE = 'SUPER_ADMIN';
+import {
+  SUPER_ADMIN_ROLE_CODE,
+  assertNotSuperAdminSystemRole,
+  isSuperAdminRoleCode,
+} from '../../common/system-account/super-admin-protection';
 
 @Injectable()
 export class RoleService {
@@ -367,7 +370,7 @@ export class RoleService {
       (role) => this.isSuperAdminRole(role),
     );
     if (hasSuperAdminRole) {
-      throw new BadRequestException('SUPER_ADMIN role cannot be deleted');
+      throw new ForbiddenException('SUPER_ADMIN role cannot be deleted');
     }
     for (const role of roles) {
       this.assertCompanyRole(role);
@@ -507,13 +510,14 @@ export class RoleService {
   }
 
   private isSuperAdminRoleCode(roleCode?: string): boolean {
-    return roleCode?.trim().toUpperCase() === SUPER_ADMIN_ROLE_CODE;
+    return isSuperAdminRoleCode(roleCode);
   }
 
   private assertRoleIsEditable(role: Role): void {
-    if (this.isSuperAdminRole(role)) {
-      throw new BadRequestException('SUPER_ADMIN role cannot be modified');
-    }
+    assertNotSuperAdminSystemRole(
+      role,
+      'SUPER_ADMIN role cannot be modified',
+    );
   }
 
   private assertCompanyRole(role: Role): void {
