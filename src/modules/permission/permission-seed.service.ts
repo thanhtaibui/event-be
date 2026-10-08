@@ -74,16 +74,6 @@ export const PERMISSION_TREE: PermissionParentDefinition[] = [
     ],
   },
   {
-    code: 'PERMISSION',
-    name: 'Permission',
-    children: [
-      { code: PermissionCode.PERMISSION_VIEW, name: 'View Permission' },
-      { code: PermissionCode.PERMISSION_CREATE, name: 'Create Permission' },
-      { code: PermissionCode.PERMISSION_UPDATE, name: 'Update Permission' },
-      { code: PermissionCode.PERMISSION_DELETE, name: 'Delete Permission' },
-    ],
-  },
-  {
     code: 'REPORT',
     name: 'Report',
     children: [
@@ -129,6 +119,17 @@ export const PERMISSION_TREE: PermissionParentDefinition[] = [
     code: 'UPLOAD',
     name: 'Upload',
     children: [{ code: PermissionCode.UPLOAD_CREATE, name: 'Create Upload' }],
+  },
+  {
+    code: 'SYSTEM',
+    name: 'System',
+    children: [
+      {
+        code: PermissionCode.PERMISSION_SUPER_ADMIN,
+        name: 'View Super Admin Permissions',
+      },
+      { code: PermissionCode.PERMISSION_OWNER, name: 'View Owner Permissions' },
+    ],
   },
   {
     code: 'CATEGORY',
@@ -182,6 +183,8 @@ export const ROLE_PERMISSION_CODES: Record<string, string[]> = {
     PermissionCode.DASHBOARD_VIEW,
     'UPLOAD',
     PermissionCode.UPLOAD_CREATE,
+    'SYSTEM',
+    PermissionCode.PERMISSION_OWNER,
     'CATEGORY',
     PermissionCode.CATEGORY_VIEW,
     PermissionCode.CATEGORY_CREATE,
@@ -266,10 +269,6 @@ export function selectPermissionsForRole<T extends PermissionLike>(
   permissionCodes: string[],
   allPermissions: T[],
 ): T[] {
-  if (roleCode.trim().toUpperCase() === SUPER_ADMIN_ROLE_CODE) {
-    return allPermissions;
-  }
-
   const permissionCodeSet = new Set(permissionCodes);
   return allPermissions.filter((permission) =>
     permissionCodeSet.has(permission.permission_code),
@@ -290,6 +289,13 @@ export function getMissingPermissionCodes<T extends PermissionLike>(
     .sort();
 }
 
+export const CANONICAL_PERMISSION_CODES = new Set(
+  PERMISSION_TREE.flatMap((parent) => [
+    parent.code,
+    ...parent.children.map((child) => child.code),
+  ]),
+);
+
 @Injectable()
 export class PermissionSeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PermissionSeedService.name);
@@ -303,6 +309,7 @@ export class PermissionSeedService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     await this.seedPermissionTree();
+    await this.cleanObsoletePermissions();
     await this.seedRolePermissions();
   }
 
@@ -361,6 +368,7 @@ export class PermissionSeedService implements OnApplicationBootstrap {
 
   private async seedRolePermissions(): Promise<void> {
     const allPermissions = await this.permissionRepo.find();
+    await this.pruneObsoleteRolePermissions();
 
     for (const [roleCode, permissionCodes] of Object.entries(
       ROLE_PERMISSION_CODES,
@@ -384,18 +392,20 @@ export class PermissionSeedService implements OnApplicationBootstrap {
       );
 
       for (const role of roles) {
-        const currentPermissionIds = new Set(
-          (role.permissions || []).map((permission) => permission.id),
+        const currentPermissionCodes = new Set(
+          (role.permissions || []).map((permission) => permission.permission_code),
         );
-        const mergedPermissions = [
-          ...(role.permissions || []),
-          ...permissions.filter(
-            (permission) => !currentPermissionIds.has(permission.id),
-          ),
-        ];
+        const nextPermissionCodes = new Set(
+          permissions.map((permission) => permission.permission_code),
+        );
+        const changed =
+          currentPermissionCodes.size !== nextPermissionCodes.size ||
+          [...nextPermissionCodes].some(
+            (permissionCode) => !currentPermissionCodes.has(permissionCode),
+          );
 
-        if (mergedPermissions.length !== (role.permissions || []).length) {
-          role.permissions = mergedPermissions;
+        if (changed) {
+          role.permissions = permissions;
           await this.roleRepo.save(role);
           this.logger.log(
             `Seeded ${permissions.length} permissions for role ${role.role_code}`,
@@ -403,5 +413,51 @@ export class PermissionSeedService implements OnApplicationBootstrap {
         }
       }
     }
+  }
+
+  private async pruneObsoleteRolePermissions(): Promise<void> {
+    const roles = await this.roleRepo.find({ relations: ['permissions'] });
+
+    for (const role of roles) {
+      const canonicalPermissions = (role.permissions || []).filter(
+        (permission) =>
+          CANONICAL_PERMISSION_CODES.has(permission.permission_code),
+      );
+
+      if (canonicalPermissions.length !== (role.permissions || []).length) {
+        role.permissions = canonicalPermissions;
+        await this.roleRepo.save(role);
+      }
+    }
+  }
+
+  private async cleanObsoletePermissions(): Promise<void> {
+    const permissions = await this.permissionRepo.find({ relations: ['parent'] });
+    const obsoletePermissions = permissions
+      .filter(
+        (permission) =>
+          !CANONICAL_PERMISSION_CODES.has(permission.permission_code),
+      )
+      .sort((left, right) => {
+        if (left.parent && !right.parent) {
+          return -1;
+        }
+        if (!left.parent && right.parent) {
+          return 1;
+        }
+        return left.permission_code.localeCompare(right.permission_code);
+      });
+
+    if (!obsoletePermissions.length) {
+      return;
+    }
+
+    await this.pruneObsoleteRolePermissions();
+    await this.permissionRepo.remove(obsoletePermissions);
+    this.logger.log(
+      `Removed obsolete permissions: ${obsoletePermissions
+        .map((permission) => permission.permission_code)
+        .join(', ')}`,
+    );
   }
 }

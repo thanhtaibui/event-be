@@ -1,4 +1,6 @@
+import { PermissionCode } from '../../common/constants/permission-codes';
 import {
+  CANONICAL_PERMISSION_CODES,
   PERMISSION_TREE,
   ROLE_PERMISSION_CODES,
   getMissingPermissionCodes,
@@ -7,38 +9,69 @@ import {
 
 const makePermission = (permission_code: string) => ({ permission_code });
 
-describe('role permission selection', () => {
-  const configuredCodes = ROLE_PERMISSION_CODES.SUPER_ADMIN;
-  const extraCodes = Array.from({ length: 10 }, (_, index) => {
-    return `LEGACY_PERMISSION_${index + 1}`;
+describe('permission normalization', () => {
+  const configuredCodes = [...CANONICAL_PERMISSION_CODES];
+  const legacyCodes = [
+    'CREATE_USER',
+    'UPDATE_USER',
+    'DELETE_USER',
+    'CREATE_ROLE',
+    'UPDATE_ROLE',
+    'CREATE_EVENT',
+    'DELETE_EVENT',
+    'VIEW_REPORT',
+    'EXPORT_REPORT',
+    'DOWNLOAD_REPORT',
+    'PERMISSION',
+    'PERMISSION_VIEW',
+    'PERMISSION_CREATE',
+    'PERMISSION_UPDATE',
+    'PERMISSION_DELETE',
+  ];
+  const allPermissions = [...configuredCodes, ...legacyCodes].map(makePermission);
+
+  it('keeps only canonical permission codes in the configured tree', () => {
+    expect(CANONICAL_PERMISSION_CODES.has('PERMISSION')).toBe(false);
+    expect(CANONICAL_PERMISSION_CODES.has('PERMISSION_VIEW')).toBe(false);
+    expect(CANONICAL_PERMISSION_CODES.has('CREATE_USER')).toBe(false);
+    expect(CANONICAL_PERMISSION_CODES.has(PermissionCode.PERMISSION_OWNER)).toBe(
+      true,
+    );
+    expect(
+      CANONICAL_PERMISSION_CODES.has(PermissionCode.PERMISSION_SUPER_ADMIN),
+    ).toBe(true);
   });
-  const allPermissions = [...configuredCodes, ...extraCodes].map(makePermission);
 
-  it('keeps the configured permission tree at 56 permissions', () => {
-    const parentCount = PERMISSION_TREE.length;
-    const childCount = PERMISSION_TREE.reduce((total, parent) => {
-      return total + parent.children.length;
-    }, 0);
+  it('keeps permission resources to exactly two runtime access permissions', () => {
+    const permissionAccessCodes = configuredCodes.filter((permissionCode) =>
+      permissionCode.startsWith('PERMISSION_'),
+    );
 
-    expect(parentCount).toBe(12);
-    expect(childCount).toBe(44);
-    expect(configuredCodes).toHaveLength(56);
+    expect(permissionAccessCodes.sort()).toEqual([
+      PermissionCode.PERMISSION_OWNER,
+      PermissionCode.PERMISSION_SUPER_ADMIN,
+    ]);
   });
 
-  it('assigns every database permission to SUPER_ADMIN', () => {
+  it('assigns canonical permissions, not legacy database rows, to SUPER_ADMIN', () => {
     const selected = selectPermissionsForRole(
       'SUPER_ADMIN',
-      configuredCodes,
+      ROLE_PERMISSION_CODES.SUPER_ADMIN,
       allPermissions,
     );
+    const selectedCodes = selected.map((permission) => permission.permission_code);
 
-    expect(selected).toHaveLength(66);
-    expect(selected.map((permission) => permission.permission_code)).toEqual(
-      allPermissions.map((permission) => permission.permission_code),
+    expect(selectedCodes).toHaveLength(ROLE_PERMISSION_CODES.SUPER_ADMIN.length);
+    expect(selectedCodes).toEqual(
+      expect.arrayContaining([
+        PermissionCode.PERMISSION_SUPER_ADMIN,
+        PermissionCode.PERMISSION_OWNER,
+      ]),
     );
+    expect(selectedCodes).not.toEqual(expect.arrayContaining(legacyCodes));
   });
 
-  it('keeps other roles limited to ROLE_PERMISSION_CODES mapping', () => {
+  it('assigns OWNER canonical permissions without PERMISSION_SUPER_ADMIN', () => {
     const selected = selectPermissionsForRole(
       'OWNER',
       ROLE_PERMISSION_CODES.OWNER,
@@ -47,16 +80,37 @@ describe('role permission selection', () => {
     const selectedCodes = selected.map((permission) => permission.permission_code);
 
     expect(selectedCodes).toEqual(
-      expect.arrayContaining(ROLE_PERMISSION_CODES.OWNER),
+      expect.arrayContaining([PermissionCode.PERMISSION_OWNER]),
     );
-    expect(selectedCodes).not.toEqual(expect.arrayContaining(extraCodes));
+    expect(selectedCodes).not.toEqual(
+      expect.arrayContaining([PermissionCode.PERMISSION_SUPER_ADMIN]),
+    );
+    expect(selectedCodes).not.toEqual(expect.arrayContaining(legacyCodes));
   });
 
-  it('reports missing permission codes for diagnostics', () => {
-    const assignedPermissions = allPermissions.slice(0, 56);
+  it('reports missing canonical permission codes for diagnostics', () => {
+    const assignedPermissions = configuredCodes
+      .filter(
+        (permissionCode) =>
+          permissionCode !== PermissionCode.PERMISSION_SUPER_ADMIN,
+      )
+      .map(makePermission);
 
-    expect(getMissingPermissionCodes(allPermissions, assignedPermissions)).toEqual(
-      [...extraCodes].sort(),
-    );
+    expect(
+      getMissingPermissionCodes(
+        configuredCodes.map(makePermission),
+        assignedPermissions,
+      ),
+    ).toEqual([PermissionCode.PERMISSION_SUPER_ADMIN]);
+  });
+
+  it('keeps tree codes aligned with role mappings', () => {
+    const treeCodes = PERMISSION_TREE.flatMap((parent) => [
+      parent.code,
+      ...parent.children.map((child) => child.code),
+    ]);
+
+    expect(new Set(treeCodes)).toEqual(CANONICAL_PERMISSION_CODES);
+    expect(ROLE_PERMISSION_CODES.SUPER_ADMIN).toEqual(treeCodes);
   });
 });

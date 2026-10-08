@@ -28,6 +28,7 @@ import { Item } from '../modules/item/entities/item.entity';
 import { TicketTypeItem } from '../modules/ticket-type-item/entities/ticket-type-item.entity';
 import { Category } from '../modules/category/entities/category.entity';
 import {
+  CANONICAL_PERMISSION_CODES,
   PERMISSION_TREE,
   ROLE_PERMISSION_CODES,
   getMissingPermissionCodes,
@@ -566,6 +567,9 @@ async function verifySuperAdmin(
   permissionRepo: Repository<Permission>,
 ) {
   const permissions = await permissionRepo.find();
+  const expectedPermissions = permissions.filter((permission) =>
+    CANONICAL_PERMISSION_CODES.has(permission.permission_code),
+  );
   const role = await roleRepo.findOne({
     where: {
       role_code: SUPER_ADMIN_ROLE_CODE,
@@ -578,9 +582,9 @@ async function verifySuperAdmin(
   return {
     exists: Boolean(role),
     permissionCount: role?.permissions?.length ?? 0,
-    expectedPermissionCount: permissions.length,
+    expectedPermissionCount: expectedPermissions.length,
     missingPermissionCodes: getMissingPermissionCodes(
-      permissions,
+      expectedPermissions,
       role?.permissions ?? [],
     ),
   };
