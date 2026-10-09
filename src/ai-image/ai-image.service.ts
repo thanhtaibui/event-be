@@ -32,10 +32,14 @@ export class AiImageService {
         dto.description,
         dto.ratio,
       );
-      const image = await this.cloudflareImageProvider.generate({
+      const generatedImage = await this.cloudflareImageProvider.generate({
         prompt,
         ratio: dto.ratio,
       });
+      const image = await this.normalizeGeneratedImageRatio(
+        generatedImage,
+        dto.ratio,
+      );
       const previewUrl = await this.imageStorageService.createPreviewImage(
         image,
         'ai-generated-image',
@@ -192,6 +196,41 @@ export class AiImageService {
       imageUrl,
       status: 'preview' as const,
     };
+  }
+
+  private async normalizeGeneratedImageRatio(
+    image: AiImageBuffer,
+    ratio?: string,
+  ): Promise<AiImageBuffer> {
+    if (!ratio) {
+      return image;
+    }
+
+    const croppedImage = await this.sharpImageProcessor.process({
+      image,
+      action: 'crop',
+      ratio,
+    });
+    const size = this.getGeneratedImageSize(ratio);
+
+    return this.sharpImageProcessor.process({
+      image: croppedImage,
+      action: 'resize',
+      width: size.width,
+      height: size.height,
+      format: 'png',
+    });
+  }
+
+  private getGeneratedImageSize(ratio: string): { width: number; height: number } {
+    if (ratio === '1:1') {
+      return { width: 1024, height: 1024 };
+    }
+    if (ratio === '9:16') {
+      return { width: 576, height: 1024 };
+    }
+
+    return { width: 1024, height: 576 };
   }
 
   private getErrorMessage(error: unknown): string {

@@ -28,14 +28,15 @@ export class CloudflareImageProvider implements AiImageProvider {
       'CLOUDFLARE_IMAGE_GENERATION_MODEL',
       '@cf/black-forest-labs/flux-1-schnell',
     );
-    const size = this.getSize(input.ratio);
+    const payload = {
+      prompt: input.prompt,
+    };
 
     this.logger.log(`AI_IMAGE_GENERATE:cloudflare:${model}`);
-    return this.callCloudflare(model, {
-      prompt: input.prompt,
-      width: size.width,
-      height: size.height,
-    });
+    this.logger.log(
+      `AI_IMAGE_GENERATE_PAYLOAD_KEYS:${Object.keys(payload).join(',')}`,
+    );
+    return this.callCloudflare(model, payload);
   }
 
   async edit(input: EditImageInput): Promise<AiImageBuffer> {

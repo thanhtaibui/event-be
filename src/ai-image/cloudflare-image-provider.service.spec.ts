@@ -56,10 +56,8 @@ describe('CloudflareImageProvider', () => {
     );
 
     const [, request] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(JSON.parse(request.body)).toMatchObject({
+    expect(JSON.parse(request.body)).toEqual({
       prompt: 'Create event banner',
-      width: 1024,
-      height: 576,
     });
   });
 
