@@ -145,7 +145,61 @@ describe('AiClientService', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('does not allow image intent to fall back to tutorial chat response', async () => {
+  it('continues image creation flow when user provides event fields', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'image_prompt_ready',
+              summary: {
+                eventName: 'Green Future Agriculture Expo 2026',
+                organization: 'GreenFarm Vietnam',
+                theme: 'Smart agriculture, IoT and sustainable development',
+                audience:
+                  'Agricultural businesses, investors, technology experts',
+                style:
+                  'Natural premium, environmental technology, green and white',
+                colors: 'Green and white',
+              },
+              imagePrompt:
+                'Create a professional event banner for Green Future Agriculture Expo 2026. Organization: GreenFarm Vietnam. Theme: Smart agriculture, IoT, sustainable development. Target audience: Agricultural businesses, investors, technology experts. Style: Natural premium environmental technology. Color: Green and white. Composition: Wide event banner with clean space for title overlay.',
+              negativePrompt:
+                'no fake logo, no watermark, no random text, no Eventix branding, no unwanted style',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Event name:',
+        'Green Future Agriculture Expo 2026',
+        '',
+        'Organization:',
+        'GreenFarm Vietnam',
+        '',
+        'Theme:',
+        'Smart agriculture, IoT and sustainable development',
+        '',
+        'Target audience:',
+        'Agricultural businesses, investors, technology experts',
+        '',
+        'Preferred style/color:',
+        'Natural premium, environmental technology, green and white',
+      ].join('\n'),
+    );
+
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.canUseForCreate).toBe(true);
+    expect(result.message).toContain('IMAGE_PROMPT_READY:');
+    expect(result.imagePrompt).toContain('Green Future Agriculture Expo 2026');
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
+  it('does not allow complete image intent to fall back to tutorial chat response', async () => {
     mockFetchResponse(200, {
       choices: [
         {
@@ -172,8 +226,10 @@ describe('AiClientService', () => {
       ].join('\n'),
     );
 
-    expect(result.mode).toBe('need_more_information');
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.canUseForCreate).toBe(true);
     expect(result.message).not.toContain('guide to creating banners');
+    expect(result.message).toContain('IMAGE_PROMPT_READY:');
   });
 
   it('returns controlled error when GROQ_API_KEY is missing', async () => {

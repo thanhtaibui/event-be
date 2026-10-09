@@ -23,17 +23,28 @@ type GroqChatResponse = {
   }>;
 };
 
+type ImageCreationInfo = {
+  eventName?: string;
+  organization?: string;
+  theme?: string;
+  audience?: string;
+  styleOrColor?: string;
+};
+
 @Injectable()
 export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
 
   async chat(message: string): Promise<AiChatResponseDto> {
-    const isImageCreationIntent = this.isImageCreationIntent(message);
-    const missingImageInfo = isImageCreationIntent
-      ? this.getMissingImageCreationFields(message)
+    const imageCreationInfo = this.extractImageCreationInfo(message);
+    const isImageCreationFlow =
+      this.isImageCreationIntent(message) ||
+      this.isImageCreationContinuation(imageCreationInfo);
+    const missingImageInfo = isImageCreationFlow
+      ? this.getMissingImageCreationFields(imageCreationInfo)
       : [];
 
-    if (isImageCreationIntent && missingImageInfo.length > 0) {
+    if (isImageCreationFlow && missingImageInfo.length > 0) {
       return this.buildNeedMoreInformationResponse(
         this.getImageCreationQuestions(missingImageInfo),
         missingImageInfo,
@@ -62,12 +73,12 @@ export class AiClientService {
               {
                 role: 'system',
                 content: this.getEventAssistantSystemPrompt(
-                  isImageCreationIntent,
+                  isImageCreationFlow,
                 ),
               },
               { role: 'user', content: message },
             ],
-            temperature: isImageCreationIntent ? 0.2 : 0.3,
+            temperature: isImageCreationFlow ? 0.2 : 0.3,
             max_tokens: GROQ_MAX_OUTPUT_TOKENS,
           }),
         },
@@ -84,7 +95,7 @@ export class AiClientService {
         throw new BadGatewayException('AI_REQUEST_FAILED');
       }
 
-      return this.normalizeChatReply(reply, isImageCreationIntent);
+      return this.normalizeChatReply(reply, isImageCreationFlow, imageCreationInfo);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -175,15 +186,13 @@ export class AiClientService {
 
   private normalizeChatReply(
     reply: string,
-    isImageCreationIntent = false,
+    isImageCreationFlow = false,
+    imageCreationInfo: ImageCreationInfo = {},
   ): AiChatResponseDto {
     const parsed = this.tryParseJson(reply);
     if (!parsed) {
-      if (isImageCreationIntent) {
-        return this.buildNeedMoreInformationResponse(
-          this.getDefaultImageCreationQuestions(),
-          ['eventName', 'organization', 'theme', 'audience', 'styleOrColor'],
-        );
+      if (isImageCreationFlow) {
+        return this.buildImagePromptReadyResponseFromInfo(imageCreationInfo);
       }
 
       return {
@@ -199,11 +208,9 @@ export class AiClientService {
       const negativePrompt = String(parsed.negativePrompt || '').trim();
 
       if (!imagePrompt) {
-        return {
-          type: 'text',
-          message: reply,
-          mode: 'chat',
-        };
+        return isImageCreationFlow
+          ? this.buildImagePromptReadyResponseFromInfo(imageCreationInfo)
+          : this.buildChatResponse(reply);
       }
 
       return {
@@ -241,11 +248,8 @@ export class AiClientService {
       };
     }
 
-    if (isImageCreationIntent) {
-      return this.buildNeedMoreInformationResponse(
-        this.getDefaultImageCreationQuestions(),
-        ['eventName', 'organization', 'theme', 'audience', 'styleOrColor'],
-      );
+    if (isImageCreationFlow) {
+      return this.buildImagePromptReadyResponseFromInfo(imageCreationInfo);
     }
 
     return this.buildChatResponse(String(parsed.message || reply).trim());
@@ -277,38 +281,97 @@ export class AiClientService {
     ].some((keyword) => normalized.includes(keyword));
   }
 
-  private getMissingImageCreationFields(message: string): string[] {
-    const checks: Array<[string, RegExp[]]> = [
-      [
-        'eventName',
-        [
-          /(event name|tên sự kiện)\s*[:：]\s*\S+/i,
-          /(?:for|cho)\s+["“][^"”]+["”]/i,
-        ],
-      ],
-      [
+  private isImageCreationContinuation(info: ImageCreationInfo): boolean {
+    return Object.values(info).filter(Boolean).length >= 3;
+  }
+
+  private extractImageCreationInfo(message: string): ImageCreationInfo {
+    return {
+      eventName: this.extractFieldValue(message, [
+        'event name',
+        'tên sự kiện',
+      ]),
+      organization: this.extractFieldValue(message, [
         'organization',
-        [
-          /(organization|organizer|tổ chức|đơn vị tổ chức)\s*[:：]\s*\S+/i,
-          /organized by\s+["“]?\S+/i,
-        ],
-      ],
-      ['theme', [/(theme|chủ đề)\s*[:：]\s*\S+/i]],
-      [
+        'organizer',
+        'tổ chức',
+        'đơn vị tổ chức',
+      ]),
+      theme: this.extractFieldValue(message, ['theme', 'chủ đề']),
+      audience: this.extractFieldValue(message, [
+        'target audience',
         'audience',
-        [/(target audience|audience|đối tượng|khán giả)\s*[:：]\s*\S+/i],
-      ],
-      [
-        'styleOrColor',
-        [
-          /(style|phong cách)\s*[:：]\s*\S+/i,
-          /(color|colors|màu|màu sắc)\s*[:：]\s*\S+/i,
-        ],
-      ],
+        'đối tượng',
+        'khán giả',
+      ]),
+      styleOrColor: this.extractFieldValue(message, [
+        'preferred style/color',
+        'style/color',
+        'style',
+        'color',
+        'colors',
+        'phong cách',
+        'màu',
+        'màu sắc',
+      ]),
+    };
+  }
+
+  private extractFieldValue(
+    message: string,
+    labels: string[],
+  ): string | undefined {
+    const lines = message.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      for (const label of labels) {
+        const pattern = new RegExp(`^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*(.+)$`, 'i');
+        const match = line.match(pattern);
+        if (match?.[1]?.trim()) {
+          return match[1].trim();
+        }
+
+        const labelOnlyPattern = new RegExp(
+          `^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*$`,
+          'i',
+        );
+        if (labelOnlyPattern.test(line)) {
+          const nextValue = this.findNextNonEmptyLine(lines, index + 1);
+          if (nextValue) {
+            return nextValue;
+          }
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private findNextNonEmptyLine(
+    lines: string[],
+    startIndex: number,
+  ): string | undefined {
+    for (let index = startIndex; index < lines.length; index += 1) {
+      const value = lines[index].trim();
+      if (value) {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  private getMissingImageCreationFields(info: ImageCreationInfo): string[] {
+    const checks: Array<[string, RegExp[]]> = [
+      ['eventName', []],
+      ['organization', []],
+      ['theme', []],
+      ['audience', []],
+      ['styleOrColor', []],
     ];
 
     return checks
-      .filter(([, patterns]) => !patterns.some((pattern) => pattern.test(message)))
+      .filter(([field]) => !info[field as keyof ImageCreationInfo])
       .map(([field]) => field);
   }
 
@@ -351,6 +414,58 @@ export class AiClientService {
         'I need some more information to create your event image:',
         ...questions.map((question) => `- ${question}`),
       ].join('\n'),
+    };
+  }
+
+  private buildImagePromptReadyResponseFromInfo(
+    info: ImageCreationInfo,
+  ): AiChatResponseDto {
+    const summary = {
+      eventName: info.eventName,
+      organization: info.organization,
+      theme: info.theme,
+      audience: info.audience,
+      style: info.styleOrColor,
+      colors: this.extractColorText(info.styleOrColor),
+    };
+    const imagePrompt = [
+      `Create a professional event banner for "${info.eventName}" organized by "${info.organization}".`,
+      '',
+      `Theme: ${info.theme}.`,
+      '',
+      `Target audience: ${info.audience}.`,
+      '',
+      `Style and color direction: ${info.styleOrColor}.`,
+      '',
+      'Visual direction: create a clean, professional, realistic event visual with a premium event atmosphere, believable environment, clear visual hierarchy, and strong commercial quality.',
+      '',
+      'Composition: wide event banner composition with clean space for title overlay, balanced lighting, main visual subject supported by a relevant event environment, suitable for Eventix frontend text overlay.',
+      '',
+      'Quality requirements: high-quality, realistic, professional event marketing image, clean layout, no tutorial-style graphic, no fake text inside the image.',
+    ].join('\n');
+    const negativePrompt = [
+      'no fake logo',
+      'no watermark',
+      'no random text',
+      'no Eventix branding',
+      'no unwanted style',
+      'no distorted faces',
+      'no messy composition',
+      'no low quality text',
+    ].join(', ');
+
+    return {
+      type: 'text',
+      mode: 'image_prompt_ready',
+      summary,
+      imagePrompt,
+      negativePrompt,
+      canUseForCreate: true,
+      message: this.buildImagePromptReadyMessage(
+        summary,
+        imagePrompt,
+        negativePrompt,
+      ),
     };
   }
 
@@ -423,6 +538,22 @@ export class AiClientService {
   private asOptionalString(value: unknown): string | undefined {
     const normalized = String(value || '').trim();
     return normalized || undefined;
+  }
+
+  private extractColorText(styleOrColor?: string): string | undefined {
+    if (!styleOrColor) {
+      return undefined;
+    }
+
+    const colorMatch = styleOrColor.match(
+      /(green|white|blue|red|gold|black|purple|yellow|orange|pink|gray|grey|màu[^,.;]*)[\w\s,/-]*/i,
+    );
+
+    return colorMatch?.[0]?.trim() || styleOrColor;
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private async normalizeGroqError(response: Response): Promise<HttpException> {
