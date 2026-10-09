@@ -435,7 +435,333 @@ The generated image should be:
 
 The image model should receive a clear creative direction, not a vague instruction.
 
-## 13. Final Prompt Example
+## 13. Image Model Limitations Awareness
+
+AI image models are not reliable text rendering engines.
+
+Therefore, never depend on image generation models to create readable:
+
+- Event title
+- Date
+- Location
+- Organization name
+- Slogans
+- CTA text
+- Ticket price
+- Website URL
+- Sponsor names
+
+Images should prioritize:
+
+- Visual storytelling
+- Atmosphere
+- Composition
+- Professional design
+- Event identity
+- Realistic environment
+
+All readable text should be rendered by the Eventix frontend layer, not baked into the generated image.
+
+The image should provide a professional visual foundation, with clean layout space where Eventix can overlay accurate text.
+
+## 14. Text And Brand Safety Rules
+
+Mandatory rule:
+
+Never generate:
+
+- Eventix logo
+- Organization logo
+- Fake logos
+- Fake brand marks
+- Watermarks
+- Random symbols
+- Unreadable typography
+- Fake sponsor banners
+- Incorrect event names
+- Incorrect dates or locations
+
+If branding is required, generate:
+
+> Clean branding area.
+
+Instead of creating text or logos directly.
+
+Wrong:
+
+> Show Eventix logo on stage.
+
+Correct:
+
+> Create a clean stage screen area suitable for brand placement.
+
+Wrong:
+
+> Add the event title AI Innovation Summit 2026.
+
+Correct:
+
+> Leave clean negative space for the frontend to render the event title.
+
+## 15. Professional Event Visual Style
+
+Avoid generic AI poster style.
+
+Do not overuse:
+
+- Neon glow
+- Cyberpunk style
+- Excessive holograms
+- Unrealistic futuristic cities
+- Random technology effects
+- Floating abstract symbols
+- Overly saturated sci-fi backgrounds
+
+Prefer:
+
+- Realistic event venue
+- Professional photography style
+- Premium conference atmosphere
+- Believable audience
+- Realistic lighting
+- Clean stage production
+- Strong visual hierarchy
+- Commercial event marketing quality
+
+Reference feeling:
+
+- Apple WWDC
+- Google Cloud Next
+- Microsoft Build
+- TED Conference
+
+Do not copy these brands or their exact assets. Use them only as quality direction for professional event staging, lighting, realism, and presentation polish.
+
+## 16. Industry Style Control
+
+The LLM must select visual language based on the event category.
+
+### Technology
+
+Prefer:
+
+- Enterprise technology
+- Clean digital environment
+- Professional stage
+- Modern architecture
+- Product demo atmosphere
+- Credible innovation showcase
+
+Avoid:
+
+- Robots everywhere
+- Sci-fi fantasy
+- Excessive neon
+- Generic hologram overload
+
+### Agriculture
+
+Prefer:
+
+- Real farms
+- Sustainable technology
+- Smart agriculture
+- Natural environment
+- Greenhouse innovation
+- Agricultural expo atmosphere
+
+Avoid:
+
+- Random futuristic farming concepts
+- Fake farm icons
+- Unnatural sci-fi fields
+- Unrealistic poster collage
+
+### Healthcare
+
+Prefer:
+
+- Clean
+- Trustworthy
+- Human-centered
+- Calm lighting
+- Professional medical environment
+
+Avoid:
+
+- Scary clinical visuals
+- Random medical symbols
+- Fake hospital logos
+
+### Finance
+
+Prefer:
+
+- Premium
+- Corporate
+- Trustworthy
+- Elegant
+- Structured
+- Executive atmosphere
+
+Avoid:
+
+- Random money graphics
+- Fake bank logos
+- Overly flashy gold effects
+
+### Education
+
+Prefer:
+
+- Inspiring
+- Collaborative
+- Human interaction
+- Friendly learning environment
+- Clear and accessible visuals
+
+Avoid:
+
+- Generic classroom stock-photo feeling
+- Fake school logos
+- Unreadable board text
+
+## 17. Event Banner Composition Rule
+
+Every generated image must consider frontend overlay.
+
+Reserve 30-40% clean visual space for:
+
+- Event title
+- Date
+- Organization
+- Registration button
+- Short metadata
+
+The image should not place important objects in the text area.
+
+Composition priority:
+
+1. Main visual subject
+2. Supporting environment
+3. Empty space
+4. Lighting balance
+
+For banner images:
+
+- Keep the focal subject away from the primary text overlay area.
+- Avoid clutter behind expected text areas.
+- Use clean gradients, wall surfaces, sky, stage lighting, or soft background zones as title-safe space.
+- Make the image usable even after frontend overlays text and buttons.
+
+## 18. Image Prompt Output Format Update
+
+Before sending a prompt to the image model, the LLM must create:
+
+### A. Event Understanding
+
+Include:
+
+- Event type
+- Audience
+- Mood
+- Industry
+- Objective
+
+### B. Creative Direction
+
+Include:
+
+- Visual style
+- Color palette
+- Composition
+- Realism level
+- Brand-safe direction
+
+### C. Image Prompt
+
+Include:
+
+- Subject
+- Environment
+- Camera angle
+- Lighting
+- Realism level
+- Composition
+- Text-safe space
+
+### D. Negative Prompt
+
+Always include:
+
+- Avoid fake text
+- Avoid wrong spelling
+- Avoid logos
+- Avoid watermarks
+- Avoid random symbols
+- Avoid distorted humans
+- Avoid unrealistic AI effects
+- Avoid unreadable typography
+- Avoid Eventix branding
+
+## 19. Consistency Without Repetition
+
+Maintain consistency through:
+
+- Quality level
+- Professional composition
+- Brand awareness
+- Realistic style
+- Commercial usability
+- Clear visual hierarchy
+
+Do not repeat:
+
+- Same colors
+- Same camera angle
+- Same stage design
+- Same background
+- Same abstract technology effects
+- Same audience arrangement
+- Same lighting setup
+
+Every event should have its own visual identity.
+
+For multiple generations of the same event, keep the strategic identity consistent but vary the visual execution.
+
+## 20. Final Quality Check
+
+Before generating an image, the LLM must check:
+
+Brand:
+
+- [ ] No Eventix branding
+- [ ] No fake logos
+- [ ] No fake organization marks
+
+Text:
+
+- [ ] No important text inside image
+- [ ] No fake title, date, location, slogan, or CTA
+- [ ] Leave clean area for frontend text
+
+Style:
+
+- [ ] Matches event category
+- [ ] Not generic AI poster
+- [ ] Not overusing neon/cyberpunk unless truly appropriate
+- [ ] Not using default purple theme
+
+Quality:
+
+- [ ] Professional event photography feeling
+- [ ] Suitable for real event promotion
+- [ ] Believable audience or environment
+- [ ] Strong composition and lighting
+
+If any check fails, revise the prompt before sending it to the image model.
+
+## 21. Final Prompt Example
 
 User request:
 
