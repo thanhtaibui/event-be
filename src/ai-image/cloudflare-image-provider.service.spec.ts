@@ -45,7 +45,7 @@ describe('CloudflareImageProvider', () => {
     expect(result.mimeType).toBe('image/png');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining(
-        '/ai/run/%40cf%2Fblack-forest-labs%2Fflux-1-schnell',
+        '/ai/run/%40cf/black-forest-labs/flux-1-schnell',
       ),
       expect.objectContaining({
         method: 'POST',
@@ -105,7 +105,7 @@ describe('CloudflareImageProvider', () => {
     expect(result.buffer.toString()).toBe('inpainted');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining(
-        '/ai/run/%40cf%2Frunwayml%2Fstable-diffusion-v1-5-inpainting',
+        '/ai/run/%40cf/runwayml/stable-diffusion-v1-5-inpainting',
       ),
       expect.any(Object),
     );

@@ -80,20 +80,23 @@ export class CloudflareImageProvider implements AiImageProvider {
     const apiToken = this.getRequiredEnv('CLOUDFLARE_API_TOKEN');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CLOUDFLARE_TIMEOUT_MS);
+    const modelPath = this.encodeModelPath(model);
+    const cloudflareUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelPath}`;
+
+    this.logger.log(
+      `AI_IMAGE_PROVIDER_REQUEST:cloudflare:path=/client/v4/accounts/<account>/ai/run/${modelPath}:model=${model}:payloadKeys=${Object.keys(payload).join(',')}`,
+    );
 
     try {
-      const response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(model)}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
+      const response = await fetch(cloudflareUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         throw await this.normalizeCloudflareError(response);
@@ -267,6 +270,13 @@ export class CloudflareImageProvider implements AiImageProvider {
 
   private getModel(envName: string, fallback: string): string {
     return process.env[envName]?.trim() || fallback;
+  }
+
+  private encodeModelPath(model: string): string {
+    return model
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
   }
 
   private truncateLogBody(body: string): string {
