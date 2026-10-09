@@ -149,6 +149,47 @@ describe('AiClientService', () => {
     expect(global.fetch).toHaveBeenCalled();
   });
 
+  it('supports Groq reasoning_content response fallback', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: '',
+            reasoning_content: JSON.stringify({
+              mode: 'chat',
+              message: 'Hello from reasoning content.',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat('hello', AiChatMode.CHAT);
+
+    expect(result.mode).toBe('chat');
+    expect(result.content).toBe('Hello from reasoning content.');
+  });
+
+  it('supports Groq text response fallback', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          text: JSON.stringify({
+            mode: 'chat',
+            message: 'Hello from text fallback.',
+          }),
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat('hello', AiChatMode.CHAT);
+
+    expect(result.mode).toBe('chat');
+    expect(result.content).toBe('Hello from text fallback.');
+  });
+
   it('asks for missing information in image_prompt_builder mode', async () => {
     const service = new AiClientService();
     const result = await service.chat(

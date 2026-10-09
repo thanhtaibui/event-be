@@ -23,8 +23,13 @@ type GroqChatResponse = {
   choices?: Array<{
     message?: {
       content?: string;
+      reasoning_content?: string;
+      [key: string]: unknown;
     };
+    text?: string;
+    [key: string]: unknown;
   }>;
+  [key: string]: unknown;
 };
 
 type ResponseLanguage = 'vi' | 'en';
@@ -153,11 +158,12 @@ export class AiClientService {
       }
 
       const output = (await response.json()) as GroqChatResponse;
-      const reply = output.choices?.[0]?.message?.content?.trim();
+      this.logGroqResponseShape(output, params.logScope, model);
+      const reply = this.extractGroqReply(output);
 
       if (!reply) {
         this.logger.error(
-          `AI_CHAT_EMPTY_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}`,
+          `AI_CHAT_EMPTY_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}:shape=${this.getGroqResponseShape(output)}`,
         );
         throw new BadGatewayException('AI_REQUEST_FAILED');
       }
@@ -187,6 +193,49 @@ export class AiClientService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private extractGroqReply(output: GroqChatResponse): string | undefined {
+    const firstChoice = output.choices?.[0];
+    const candidates = [
+      firstChoice?.message?.content,
+      firstChoice?.message?.reasoning_content,
+      firstChoice?.text,
+    ];
+
+    return candidates
+      .map((candidate) =>
+        typeof candidate === 'string' ? candidate.trim() : '',
+      )
+      .find(Boolean);
+  }
+
+  private logGroqResponseShape(
+    output: GroqChatResponse,
+    mode: string,
+    model: string,
+  ): void {
+    this.logger.debug(
+      `AI_CHAT_RESPONSE_SHAPE:mode=${mode}:provider=groq:model=${model}:shape=${this.getGroqResponseShape(output)}`,
+    );
+  }
+
+  private getGroqResponseShape(output: GroqChatResponse): string {
+    const firstChoice = output.choices?.[0];
+    const message =
+      firstChoice?.message && typeof firstChoice.message === 'object'
+        ? firstChoice.message
+        : undefined;
+
+    return JSON.stringify({
+      responseKeys: Object.keys(output || {}),
+      choicesLength: output.choices?.length ?? 0,
+      firstChoiceKeys:
+        firstChoice && typeof firstChoice === 'object'
+          ? Object.keys(firstChoice)
+          : [],
+      messageKeys: message ? Object.keys(message) : [],
+    });
   }
 
   private getGroqApiKey(): string {
