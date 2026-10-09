@@ -8,12 +8,16 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { AiChatResponseDto } from './dto/ai-chat.dto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { AiChatMode, AiChatResponseDto } from './dto/ai-chat.dto';
+import { AiAuthenticatedUser } from './optional-jwt.guard';
 
 const GROQ_CHAT_COMPLETIONS_URL =
   'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_CHAT_TIMEOUT_MS = Number(process.env.GROQ_CHAT_TIMEOUT_MS ?? 30000);
 const GROQ_MAX_OUTPUT_TOKENS = Number(process.env.GROQ_MAX_OUTPUT_TOKENS ?? 1200);
+const IMAGE_DESIGN_GUIDE_PATH = 'AI_EVENT_IMAGE_DESIGN_EXPERT_GUIDE.md';
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -22,6 +26,8 @@ type GroqChatResponse = {
     };
   }>;
 };
+
+type ResponseLanguage = 'vi' | 'en';
 
 type ImageCreationInfo = {
   eventName?: string;
@@ -34,55 +40,108 @@ type ImageCreationInfo = {
 @Injectable()
 export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
+  private imageDesignGuide?: string;
 
-  async chat(message: string): Promise<AiChatResponseDto> {
+  async chat(
+    message: string,
+    mode: AiChatMode = AiChatMode.CHAT,
+    user?: AiAuthenticatedUser,
+  ): Promise<AiChatResponseDto> {
+    const language = this.detectLanguage(message);
+
+    if (mode === AiChatMode.IMAGE_PROMPT_BUILDER) {
+      return this.buildImagePrompt(message, language);
+    }
+
+    return this.normalChat(message, language, user);
+  }
+
+  private async normalChat(
+    message: string,
+    language: ResponseLanguage,
+    user?: AiAuthenticatedUser,
+  ): Promise<AiChatResponseDto> {
+    const reply = await this.callGroq({
+      message,
+      systemPrompt: this.getNormalChatSystemPrompt(language, user),
+      temperature: 0.3,
+      logScope: 'chat',
+    });
+
+    const parsed = this.tryParseJson(reply);
+    const content =
+      parsed && typeof parsed.message === 'string'
+        ? parsed.message.trim()
+        : reply;
+
+    return {
+      type: 'text',
+      mode: 'chat',
+      language,
+      message: content,
+      canUseForCreate: false,
+    };
+  }
+
+  private async buildImagePrompt(
+    message: string,
+    language: ResponseLanguage,
+  ): Promise<AiChatResponseDto> {
     const imageCreationInfo = this.extractImageCreationInfo(message);
-    const isImageCreationFlow =
-      this.isImageCreationIntent(message) ||
-      this.isImageCreationContinuation(imageCreationInfo);
-    const missingImageInfo = isImageCreationFlow
-      ? this.getMissingImageCreationFields(imageCreationInfo)
-      : [];
+    const missingImageInfo =
+      this.getMissingImageCreationFields(imageCreationInfo);
 
-    if (isImageCreationFlow && missingImageInfo.length > 0) {
+    if (missingImageInfo.length > 0) {
       return this.buildNeedMoreInformationResponse(
-        this.getImageCreationQuestions(missingImageInfo),
+        this.getImageCreationQuestions(missingImageInfo, language),
         missingImageInfo,
+        language,
       );
     }
 
+    const reply = await this.callGroq({
+      message,
+      systemPrompt: this.getImagePromptBuilderSystemPrompt(language),
+      temperature: 0.2,
+      logScope: 'image_prompt_builder',
+    });
+
+    return this.normalizeImagePromptReply(reply, imageCreationInfo, language);
+  }
+
+  private async callGroq(params: {
+    message: string;
+    systemPrompt: string;
+    temperature: number;
+    logScope: string;
+  }): Promise<string> {
     const apiKey = this.getGroqApiKey();
     const model = this.getGroqChatModel();
-    this.logger.log(`AI_CHAT:groq:${model}`);
+    this.logger.log(`AI_CHAT:${params.logScope}:groq:${model}`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GROQ_CHAT_TIMEOUT_MS);
     try {
-      const response = await fetch(
-        GROQ_CHAT_COMPLETIONS_URL,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: 'system',
-                content: this.getEventAssistantSystemPrompt(
-                  isImageCreationFlow,
-                ),
-              },
-              { role: 'user', content: message },
-            ],
-            temperature: isImageCreationFlow ? 0.2 : 0.3,
-            max_tokens: GROQ_MAX_OUTPUT_TOKENS,
-          }),
+      const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
-      );
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: params.systemPrompt,
+            },
+            { role: 'user', content: params.message },
+          ],
+          temperature: params.temperature,
+          max_tokens: GROQ_MAX_OUTPUT_TOKENS,
+        }),
+      });
 
       if (!response.ok) {
         throw await this.normalizeGroqError(response);
@@ -95,20 +154,22 @@ export class AiClientService {
         throw new BadGatewayException('AI_REQUEST_FAILED');
       }
 
-      return this.normalizeChatReply(reply, isImageCreationFlow, imageCreationInfo);
+      return reply;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
 
       if (error instanceof Error && error.name === 'AbortError') {
-        this.logger.error(`AI_CHAT_TIMEOUT:groq:${model}`);
+        this.logger.error(`AI_CHAT_TIMEOUT:${params.logScope}:groq:${model}`);
         throw new GatewayTimeoutException('AI_PROVIDER_TIMEOUT');
       }
 
       const errorMessage =
         error instanceof Error ? error.message : 'Groq request failed';
-      this.logger.error(`AI_CHAT_FAILED:groq:${model}:${errorMessage}`);
+      this.logger.error(
+        `AI_CHAT_FAILED:${params.logScope}:groq:${model}:${errorMessage}`,
+      );
 
       throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
     } finally {
@@ -140,149 +201,143 @@ export class AiClientService {
     return model;
   }
 
-  private getEventAssistantSystemPrompt(isImageCreationIntent = false): string {
+  private getNormalChatSystemPrompt(
+    language: ResponseLanguage,
+    user?: AiAuthenticatedUser,
+  ): string {
     return [
       'You are Eventix AI Event Assistant.',
-      'Help with event ideas, event planning, marketing content, scripts, ticket/event copy, and image prompts.',
-      'Answer in Vietnamese unless the user asks for another language.',
+      'Mode: CHAT.',
+      'Help with general questions, event ideas, planning, content, scripts, reports, and product support.',
+      'Do not generate image prompt structures in CHAT mode.',
+      'Do not use or mention the Event Image Design Expert Guide in CHAT mode.',
+      'Return compact valid JSON only: {"mode":"chat","message":"..."}',
+      `Answer language: ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
       '',
-      'You must classify whether the user is asking for normal chat help or asking to create an image/banner/poster/event visual.',
-      'Always return compact valid JSON only. Do not wrap in markdown.',
-      '',
-      'IMAGE CREATION INTENT RULE:',
-      'If the user intent includes create image, create banner, event poster, generate visual, design artwork, create cover image, or similar wording, you MUST enter IMAGE_CREATION mode.',
-      'In IMAGE_CREATION mode, you are NOT a banner design teacher.',
-      'Do NOT return tutorials, design lessons, long guides, markdown tables, or explanations of how to create a banner.',
-      'Your job is to collect missing information, then prepare a production-ready prompt for Create Image.',
-      isImageCreationIntent
-        ? 'The current user message has already been classified by backend as IMAGE_CREATION mode.'
-        : '',
-      '',
-      'If the user is NOT asking to create an image, return:',
-      '{"mode":"chat","message":"normal helpful answer"}',
-      '',
-      'If the user is asking to create an image/banner/poster/event visual, check required fields:',
-      '- eventName',
-      '- organization',
-      '- theme',
-      '- style',
-      '- colors',
-      'Audience may be inferred safely if missing. If any required field is missing, return:',
-      '{"mode":"need_more_information","message":"short clarification request","questions":["..."],"missingFields":["..."]}',
-      '',
-      'If enough information exists, return exactly:',
-      '{"mode":"image_prompt_ready","summary":{"eventName":"","organization":"","theme":"","audience":"","style":"","colors":""},"imagePrompt":"","negativePrompt":""}',
-      '',
-      'For image_prompt_ready:',
-      '- message should not be long; the backend will format the final message.',
-      '- summary must be concise.',
-      '- imagePrompt must be in English and ready to copy into Create Image.',
-      '- imagePrompt must include image type, event name, organization, theme, target audience, style, main colors, visual tone, composition, and restrictions.',
-      '- Do not use markdown tables.',
-      '- Do not mix general explanation into imagePrompt.',
-      '- negativePrompt must be short and include no website logo, no purple dominant color, no cyberpunk, no distorted faces, no low quality text, no messy composition when relevant.',
+      this.buildSafeUserContext(user),
     ].join('\n');
   }
 
-  private normalizeChatReply(
+  private getImagePromptBuilderSystemPrompt(
+    language: ResponseLanguage,
+  ): string {
+    return [
+      'You are Eventix AI Creative Assistant.',
+      'Mode: IMAGE_PROMPT_BUILDER.',
+      'Your job is to create production-ready image prompts, not tutorials or design lessons.',
+      'Use the design guide below as private system knowledge only. Do not send it to the image model as a separate document.',
+      '',
+      'Required output must be compact valid JSON only:',
+      '{"mode":"image_prompt_ready","summary":{"eventName":"","organization":"","theme":"","audience":"","style":"","colors":""},"imagePrompt":"","negativePrompt":""}',
+      '',
+      'Rules:',
+      '- imagePrompt must be in English and directly usable by image generation.',
+      '- imagePrompt must include image type, event name, organization, theme, audience, style, colors, visual direction, composition, and quality requirements.',
+      '- negativePrompt must be short and include no fake logo, no watermark, no random text, no Eventix branding, no distorted faces, no messy composition, no low quality text.',
+      '- Do not return markdown tables.',
+      '- Do not return tutorials.',
+      `Display language for summary text: ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
+      '',
+      'IMAGE DESIGN GUIDE:',
+      this.getImageDesignGuide(),
+    ].join('\n');
+  }
+
+  private buildSafeUserContext(user?: AiAuthenticatedUser): string {
+    if (!user) {
+      return 'Current authenticated user context: Not available.';
+    }
+
+    const role = user.role || {};
+    const permissions = Array.isArray(user.permissions)
+      ? user.permissions.join(', ')
+      : Array.isArray(role.permissions)
+        ? role.permissions.join(', ')
+        : undefined;
+    const organizations = Array.isArray(user.organizations)
+      ? user.organizations
+          .map((organization) =>
+            [
+              organization.name || 'N/A',
+              organization.slug ? `slug: ${organization.slug}` : undefined,
+              organization.roleName || organization.roleCode
+                ? `role: ${organization.roleName || organization.roleCode}`
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(' | '),
+          )
+          .join('; ')
+      : undefined;
+
+    return [
+      'Current authenticated user context:',
+      `User ID: ${user.userId || 'N/A'}`,
+      `Name: ${user.fullName || 'N/A'}`,
+      `Email: ${user.email || 'N/A'}`,
+      `Organization: ${organizations || 'N/A'}`,
+      `Role: ${role.isSuperAdmin ? 'Super Admin' : 'See organization roles'}`,
+      `Permissions: ${permissions || 'N/A'}`,
+      'Never reveal secrets, tokens, raw JWT, or credentials.',
+    ].join('\n');
+  }
+
+  private getImageDesignGuide(): string {
+    if (this.imageDesignGuide !== undefined) {
+      return this.imageDesignGuide;
+    }
+
+    const guidePath = join(process.cwd(), IMAGE_DESIGN_GUIDE_PATH);
+    if (!existsSync(guidePath)) {
+      this.logger.warn(`AI_IMAGE_GUIDE_MISSING:${IMAGE_DESIGN_GUIDE_PATH}`);
+      this.imageDesignGuide = '';
+      return this.imageDesignGuide;
+    }
+
+    this.imageDesignGuide = readFileSync(guidePath, 'utf8');
+    return this.imageDesignGuide;
+  }
+
+  private normalizeImagePromptReply(
     reply: string,
-    isImageCreationFlow = false,
-    imageCreationInfo: ImageCreationInfo = {},
+    imageCreationInfo: ImageCreationInfo,
+    language: ResponseLanguage,
   ): AiChatResponseDto {
     const parsed = this.tryParseJson(reply);
-    if (!parsed) {
-      if (isImageCreationFlow) {
-        return this.buildImagePromptReadyResponseFromInfo(imageCreationInfo);
-      }
-
-      return {
-        type: 'text',
-        message: reply,
-        mode: 'chat',
-      };
+    if (!parsed || parsed.mode !== 'image_prompt_ready') {
+      return this.buildImagePromptReadyResponseFromInfo(
+        imageCreationInfo,
+        language,
+      );
     }
 
-    if (parsed.mode === 'image_prompt_ready') {
-      const summary = this.normalizeSummary(parsed.summary);
-      const imagePrompt = String(parsed.imagePrompt || '').trim();
-      const negativePrompt = String(parsed.negativePrompt || '').trim();
+    const summary = this.normalizeSummary(parsed.summary, imageCreationInfo);
+    const imagePrompt = String(parsed.imagePrompt || '').trim();
+    const negativePrompt = String(parsed.negativePrompt || '').trim();
 
-      if (!imagePrompt) {
-        return isImageCreationFlow
-          ? this.buildImagePromptReadyResponseFromInfo(imageCreationInfo)
-          : this.buildChatResponse(reply);
-      }
+    if (!imagePrompt) {
+      return this.buildImagePromptReadyResponseFromInfo(
+        imageCreationInfo,
+        language,
+      );
+    }
 
-      return {
-        type: 'text',
-        mode: 'image_prompt_ready',
+    return {
+      type: 'text',
+      mode: 'image_prompt_ready',
+      language,
+      summary,
+      imagePrompt,
+      negativePrompt: negativePrompt || this.getDefaultNegativePrompt(),
+      canUseForCreate: true,
+      actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
+      message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
-        negativePrompt,
-        canUseForCreate: true,
-        message: this.buildImagePromptReadyMessage(
-          summary,
-          imagePrompt,
-          negativePrompt,
-        ),
-      };
-    }
-
-    if (parsed.mode === 'need_more_information') {
-      const questions = Array.isArray(parsed.questions)
-        ? parsed.questions.map((question) => String(question)).filter(Boolean)
-        : [];
-      const missingFields = Array.isArray(parsed.missingFields)
-        ? parsed.missingFields.map((field) => String(field)).filter(Boolean)
-        : [];
-
-      return {
-        type: 'text',
-        mode: 'need_more_information',
-        canUseForCreate: false,
-        questions,
-        missingFields,
-        message:
-          String(parsed.message || '').trim() ||
-          this.buildNeedMoreInformationMessage(questions),
-      };
-    }
-
-    if (isImageCreationFlow) {
-      return this.buildImagePromptReadyResponseFromInfo(imageCreationInfo);
-    }
-
-    return this.buildChatResponse(String(parsed.message || reply).trim());
-  }
-
-  private isImageCreationIntent(message: string): boolean {
-    const normalized = message.toLowerCase();
-    return [
-      'create image',
-      'create an image',
-      'create banner',
-      'create a banner',
-      'event banner',
-      'banner for',
-      'event poster',
-      'poster for',
-      'generate visual',
-      'design artwork',
-      'create cover image',
-      'cover image',
-      'tạo ảnh',
-      'tạo banner',
-      'làm banner',
-      'thiết kế banner',
-      'tạo poster',
-      'làm poster',
-      'ảnh sự kiện',
-      'hình sự kiện',
-    ].some((keyword) => normalized.includes(keyword));
-  }
-
-  private isImageCreationContinuation(info: ImageCreationInfo): boolean {
-    return Object.values(info).filter(Boolean).length >= 3;
+        negativePrompt || this.getDefaultNegativePrompt(),
+        language,
+      ),
+    };
   }
 
   private extractImageCreationInfo(message: string): ImageCreationInfo {
@@ -325,7 +380,10 @@ export class AiClientService {
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
       for (const label of labels) {
-        const pattern = new RegExp(`^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*(.+)$`, 'i');
+        const pattern = new RegExp(
+          `^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*(.+)$`,
+          'i',
+        );
         const match = line.match(pattern);
         if (match?.[1]?.trim()) {
           return match[1].trim();
@@ -362,27 +420,37 @@ export class AiClientService {
   }
 
   private getMissingImageCreationFields(info: ImageCreationInfo): string[] {
-    const checks: Array<[string, RegExp[]]> = [
-      ['eventName', []],
-      ['organization', []],
-      ['theme', []],
-      ['audience', []],
-      ['styleOrColor', []],
+    const checks: Array<[string, string | undefined]> = [
+      ['eventName', info.eventName],
+      ['organization', info.organization],
+      ['theme', info.theme],
+      ['audience', info.audience],
+      ['styleOrColor', info.styleOrColor],
     ];
 
-    return checks
-      .filter(([field]) => !info[field as keyof ImageCreationInfo])
-      .map(([field]) => field);
+    return checks.filter(([, value]) => !value).map(([field]) => field);
   }
 
-  private getImageCreationQuestions(missingFields: string[]): string[] {
-    const questionByField: Record<string, string> = {
+  private getImageCreationQuestions(
+    missingFields: string[],
+    language: ResponseLanguage,
+  ): string[] {
+    const englishQuestionByField: Record<string, string> = {
       eventName: 'Event name?',
       organization: 'Organization?',
       theme: 'Theme?',
       audience: 'Target audience?',
       styleOrColor: 'Preferred style/color?',
     };
+    const vietnameseQuestionByField: Record<string, string> = {
+      eventName: 'Tên sự kiện là gì?',
+      organization: 'Đơn vị tổ chức là ai?',
+      theme: 'Chủ đề chính của sự kiện là gì?',
+      audience: 'Đối tượng tham gia là ai?',
+      styleOrColor: 'Phong cách hoặc màu chủ đạo mong muốn là gì?',
+    };
+    const questionByField =
+      language === 'vi' ? vietnameseQuestionByField : englishQuestionByField;
 
     return missingFields
       .map((field) => questionByField[field])
@@ -390,35 +458,32 @@ export class AiClientService {
       .slice(0, 5);
   }
 
-  private getDefaultImageCreationQuestions(): string[] {
-    return [
-      'Event name?',
-      'Organization?',
-      'Theme?',
-      'Target audience?',
-      'Preferred style/color?',
-    ];
-  }
-
   private buildNeedMoreInformationResponse(
     questions: string[],
     missingFields: string[],
+    language: ResponseLanguage,
   ): AiChatResponseDto {
+    const intro =
+      language === 'vi'
+        ? 'Mình cần thêm một vài thông tin để tạo hình ảnh sự kiện:'
+        : 'I need some more information to create your event image:';
+
     return {
       type: 'text',
       mode: 'need_more_information',
+      language,
       canUseForCreate: false,
       questions,
       missingFields,
-      message: [
-        'I need some more information to create your event image:',
-        ...questions.map((question) => `- ${question}`),
-      ].join('\n'),
+      message: [intro, ...questions.map((question) => `- ${question}`)].join(
+        '\n',
+      ),
     };
   }
 
   private buildImagePromptReadyResponseFromInfo(
     info: ImageCreationInfo,
+    language: ResponseLanguage,
   ): AiChatResponseDto {
     const summary = {
       eventName: info.eventName,
@@ -443,37 +508,23 @@ export class AiClientService {
       '',
       'Quality requirements: high-quality, realistic, professional event marketing image, clean layout, no tutorial-style graphic, no fake text inside the image.',
     ].join('\n');
-    const negativePrompt = [
-      'no fake logo',
-      'no watermark',
-      'no random text',
-      'no Eventix branding',
-      'no unwanted style',
-      'no distorted faces',
-      'no messy composition',
-      'no low quality text',
-    ].join(', ');
+    const negativePrompt = this.getDefaultNegativePrompt();
 
     return {
       type: 'text',
       mode: 'image_prompt_ready',
+      language,
       summary,
       imagePrompt,
       negativePrompt,
       canUseForCreate: true,
+      actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
         negativePrompt,
+        language,
       ),
-    };
-  }
-
-  private buildChatResponse(message: string): AiChatResponseDto {
-    return {
-      type: 'text',
-      message,
-      mode: 'chat',
     };
   }
 
@@ -489,17 +540,23 @@ export class AiClientService {
     }
   }
 
-  private normalizeSummary(summary: unknown): AiChatResponseDto['summary'] {
+  private normalizeSummary(
+    summary: unknown,
+    fallback: ImageCreationInfo,
+  ): AiChatResponseDto['summary'] {
     const value = summary && typeof summary === 'object' ? summary : {};
     const source = value as Record<string, unknown>;
 
     return {
-      eventName: this.asOptionalString(source.eventName),
-      organization: this.asOptionalString(source.organization),
-      theme: this.asOptionalString(source.theme),
-      audience: this.asOptionalString(source.audience),
-      style: this.asOptionalString(source.style),
-      colors: this.asOptionalString(source.colors),
+      eventName: this.asOptionalString(source.eventName) || fallback.eventName,
+      organization:
+        this.asOptionalString(source.organization) || fallback.organization,
+      theme: this.asOptionalString(source.theme) || fallback.theme,
+      audience: this.asOptionalString(source.audience) || fallback.audience,
+      style: this.asOptionalString(source.style) || fallback.styleOrColor,
+      colors:
+        this.asOptionalString(source.colors) ||
+        this.extractColorText(fallback.styleOrColor),
     };
   }
 
@@ -507,9 +564,12 @@ export class AiClientService {
     summary: AiChatResponseDto['summary'],
     imagePrompt: string,
     negativePrompt: string,
+    language: ResponseLanguage,
   ): string {
+    const summaryLabel = language === 'vi' ? 'TOM_TAT' : 'SUMMARY';
+
     return [
-      'SUMMARY:',
+      `${summaryLabel}:`,
       `eventName: ${summary?.eventName || 'N/A'}`,
       `organization: ${summary?.organization || 'N/A'}`,
       `theme: ${summary?.theme || 'N/A'}`,
@@ -525,14 +585,42 @@ export class AiClientService {
     ].join('\n');
   }
 
-  private buildNeedMoreInformationMessage(questions: string[]): string {
-    if (!questions.length) {
-      return 'Mình cần thêm một vài thông tin về event trước khi tạo prompt ảnh.';
+  private detectLanguage(message: string): ResponseLanguage {
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes('answer in english') ||
+      normalized.includes('reply in english') ||
+      normalized.includes('trả lời bằng tiếng anh') ||
+      normalized.includes('tra loi bang tieng anh')
+    ) {
+      return 'en';
     }
 
-    return ['Mình cần thêm thông tin để tạo prompt ảnh chính xác:', ...questions]
-      .join('\n- ')
-      .replace(':\n- ', ':\n- ');
+    if (
+      normalized.includes('trả lời tiếng việt') ||
+      normalized.includes('trả lời bằng tiếng việt') ||
+      normalized.includes('tra loi tieng viet')
+    ) {
+      return 'vi';
+    }
+
+    return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(
+      message,
+    )
+      ? 'vi'
+      : 'en';
+  }
+
+  private getDefaultNegativePrompt(): string {
+    return [
+      'no fake logo',
+      'no watermark',
+      'no random text',
+      'no Eventix branding',
+      'no distorted faces',
+      'no messy composition',
+      'no low quality text',
+    ].join(', ');
   }
 
   private asOptionalString(value: unknown): string | undefined {
