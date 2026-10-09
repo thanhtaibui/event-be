@@ -14,4 +14,18 @@ export class AiChatDto {
 export class AiChatResponseDto {
   type: 'text';
   message: string;
+  mode?: 'chat' | 'image_prompt_ready' | 'need_more_information';
+  summary?: {
+    eventName?: string;
+    organization?: string;
+    theme?: string;
+    audience?: string;
+    style?: string;
+    colors?: string;
+  };
+  imagePrompt?: string;
+  negativePrompt?: string;
+  canUseForCreate?: boolean;
+  questions?: string[];
+  missingFields?: string[];
 }

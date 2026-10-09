@@ -42,13 +42,26 @@ describe('AiClientService', () => {
 
   it('calls Groq and returns normalized chat text', async () => {
     mockFetchResponse(200, {
-      choices: [{ message: { content: 'Xin chao Anh Tai Bui' } }],
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'chat',
+              message: 'Xin chao Anh Tai Bui',
+            }),
+          },
+        },
+      ],
     });
 
     const service = new AiClientService();
     const result = await service.chat('Hello');
 
-    expect(result).toBe('Xin chao Anh Tai Bui');
+    expect(result).toEqual({
+      type: 'text',
+      message: 'Xin chao Anh Tai Bui',
+      mode: 'chat',
+    });
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.groq.com/openai/v1/chat/completions',
       expect.objectContaining({
@@ -69,6 +82,76 @@ describe('AiClientService', () => {
         expect.objectContaining({ role: 'user', content: 'Hello' }),
       ]),
     );
+  });
+
+  it('returns image prompt ready structure for image intent', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'image_prompt_ready',
+              summary: {
+                eventName: 'Green Future Agriculture Expo 2026',
+                organization: 'GreenFarm Vietnam',
+                theme: 'Smart agriculture, IoT and sustainability',
+                audience:
+                  'Agricultural businesses, investors, technology experts',
+                style: 'Natural premium, environmental technology',
+                colors: 'Green and white',
+              },
+              imagePrompt:
+                'Create a professional event banner for "Green Future Agriculture Expo 2026" organized by "GreenFarm Vietnam". Theme: smart agriculture, IoT, sustainability, green innovation, agricultural technology. Target audience: agricultural businesses, investors, technology experts. Style: natural premium, environmental technology, clean, modern, realistic, not overly AI-generated. Color palette: green and white. Visual direction: a clean professional agriculture expo atmosphere with sustainable farming technology, smart farming systems, IoT devices, eco-friendly innovation, and premium conference feeling. Requirements: clean layout, realistic and professional, suitable for an event banner, no website logo, no purple dominant color, no cyberpunk style, no excessive fantasy elements.',
+              negativePrompt:
+                'no website logo, no purple dominant color, no cyberpunk, no distorted faces, no messy composition, no low quality text',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat('Tên sự kiện: Green Future Agriculture Expo 2026');
+
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.canUseForCreate).toBe(true);
+    expect(result.summary?.eventName).toBe(
+      'Green Future Agriculture Expo 2026',
+    );
+    expect(result.imagePrompt).toContain('Create a professional event banner');
+    expect(result.negativePrompt).toContain('no cyberpunk');
+    expect(result.message).toContain('SUMMARY:');
+    expect(result.message).toContain('IMAGE_PROMPT_READY:');
+    expect(result.message).toContain('NEGATIVE_PROMPT:');
+  });
+
+  it('asks for missing information before creating image prompt', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'need_more_information',
+              message: 'Mình cần thêm thông tin để tạo prompt ảnh chính xác.',
+              questions: [
+                'Tên sự kiện là gì?',
+                'Tổ chức nào đứng sau sự kiện?',
+                'Phong cách hình ảnh mong muốn là gì?',
+              ],
+              missingFields: ['eventName', 'organization', 'style'],
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat('I need a banner for agriculture event');
+
+    expect(result.mode).toBe('need_more_information');
+    expect(result.canUseForCreate).toBe(false);
+    expect(result.questions).toContain('Tên sự kiện là gì?');
+    expect(result.missingFields).toContain('eventName');
   });
 
   it('returns controlled error when GROQ_API_KEY is missing', async () => {

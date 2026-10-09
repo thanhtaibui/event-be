@@ -12,9 +12,6 @@ export class AiService {
       throw new BadRequestException('Message is required');
     }
 
-    return {
-      type: 'text',
-      message: await this.aiClientService.chat(message),
-    };
+    return this.aiClientService.chat(message);
   }
 }
