@@ -13,15 +13,34 @@ export type EditImageInput = {
   imageUrl: string;
   instruction: string;
   ratio?: string;
+  strength?: number;
+};
+
+export type InpaintImageInput = EditImageInput & {
+  mask: AiImageBuffer;
 };
 
 export type EnhanceImageInput = {
   image: AiImageBuffer;
-  action: 'remove_background' | 'upscale';
+  action:
+    | 'remove_background'
+    | 'upscale'
+    | 'crop'
+    | 'resize'
+    | 'rotate'
+    | 'compress'
+    | 'convert';
+  factor?: 2 | 4;
+  ratio?: string;
+  width?: number;
+  height?: number;
+  angle?: number;
+  quality?: number;
+  format?: 'png' | 'jpeg' | 'webp';
 };
 
 export interface AiImageProvider {
   generate(input: GenerateImageInput): Promise<AiImageBuffer>;
   edit(input: EditImageInput): Promise<AiImageBuffer>;
-  enhance(input: EnhanceImageInput): Promise<AiImageBuffer>;
+  inpaint(input: InpaintImageInput): Promise<AiImageBuffer>;
 }

@@ -4,11 +4,19 @@ import { AiImageController } from './ai-image.controller';
 import { AiPromptService } from './ai-prompt.service';
 import { AiImageService } from './ai-image.service';
 import { ImageStorageService } from './image-storage.service';
+import { CloudflareImageProvider } from './cloudflare-image-provider.service';
+import { SharpImageProcessor } from './sharp-image-processor.service';
 
 @Module({
   imports: [UploadModule],
   controllers: [AiImageController],
-  providers: [AiImageService, AiPromptService, ImageStorageService],
+  providers: [
+    AiImageService,
+    AiPromptService,
+    ImageStorageService,
+    CloudflareImageProvider,
+    SharpImageProcessor,
+  ],
   exports: [AiImageService],
 })
 export class AiImageModule {}

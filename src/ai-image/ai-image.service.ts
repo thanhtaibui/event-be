@@ -1,26 +1,17 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import { InferenceClient } from '@huggingface/inference';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
   EditImageDto,
   EnhanceImageDto,
   GenerateImageDto,
-  ImageEnhanceAction,
   SaveImageDto,
 } from './dto/ai-image.dto';
 import { AiPromptService } from './ai-prompt.service';
 import { ImageStorageService } from './image-storage.service';
-import {
-  AiImageBuffer,
-  AiImageProvider,
-  EditImageInput,
-  EnhanceImageInput,
-  GenerateImageInput,
-} from './interfaces/ai-image-provider.interface';
+import { AiImageBuffer } from './interfaces/ai-image-provider.interface';
+import { CloudflareImageProvider } from './cloudflare-image-provider.service';
+import { SharpImageProcessor } from './sharp-image-processor.service';
+
+const MAX_INPUT_IMAGE_BYTES = 12 * 1024 * 1024;
 
 @Injectable()
 export class AiImageService {
@@ -29,18 +20,19 @@ export class AiImageService {
   constructor(
     private readonly aiPromptService: AiPromptService,
     private readonly imageStorageService: ImageStorageService,
+    private readonly cloudflareImageProvider: CloudflareImageProvider,
+    private readonly sharpImageProcessor: SharpImageProcessor,
   ) {}
 
   async generate(dto: GenerateImageDto) {
     const timer = 'POST_AI_IMAGE_GENERATE';
     console.time(timer);
     try {
-      const provider = this.getGenerationProvider();
       const prompt = await this.aiPromptService.generateImagePrompt(
         dto.description,
         dto.ratio,
       );
-      const image = await provider.generate({
+      const image = await this.cloudflareImageProvider.generate({
         prompt,
         ratio: dto.ratio,
       });
@@ -56,25 +48,36 @@ export class AiImageService {
   }
 
   async edit(dto: EditImageDto) {
-    const timer = 'POST_AI_IMAGE_EDIT';
+    const timer = dto.maskImageUrl ? 'POST_AI_IMAGE_INPAINT' : 'POST_AI_IMAGE_EDIT';
     console.time(timer);
     try {
       const sourceImage = await this.fetchImageFromUrl(dto.imageUrl);
-      const provider = this.getEditProvider();
       const instruction =
         await this.aiPromptService.generateImageEditInstruction(
           dto.description,
           dto.ratio,
         );
-      const image = await provider.edit({
-        image: sourceImage,
-        imageUrl: dto.imageUrl,
-        instruction,
-        ratio: dto.ratio,
-      });
+
+      const image = dto.maskImageUrl
+        ? await this.cloudflareImageProvider.inpaint({
+            image: sourceImage,
+            imageUrl: dto.imageUrl,
+            mask: await this.fetchImageFromUrl(dto.maskImageUrl),
+            instruction,
+            ratio: dto.ratio,
+            strength: dto.strength,
+          })
+        : await this.cloudflareImageProvider.edit({
+            image: sourceImage,
+            imageUrl: dto.imageUrl,
+            instruction,
+            ratio: dto.ratio,
+            strength: dto.strength,
+          });
+
       const previewUrl = await this.imageStorageService.createPreviewImage(
         image,
-        'ai-edited-image',
+        dto.maskImageUrl ? 'ai-inpainted-image' : 'ai-edited-image',
       );
 
       return this.toPreviewResponse(previewUrl);
@@ -88,10 +91,16 @@ export class AiImageService {
     console.time(timer);
     try {
       const sourceImage = await this.fetchImageFromUrl(dto.imageUrl);
-      const provider = this.getEnhanceProvider();
-      const image = await provider.enhance({
+      const image = await this.sharpImageProcessor.process({
         image: sourceImage,
         action: dto.action,
+        factor: dto.factor,
+        ratio: dto.ratio,
+        width: dto.width,
+        height: dto.height,
+        angle: dto.angle,
+        quality: dto.quality,
+        format: dto.format,
       });
       const previewUrl = await this.imageStorageService.createPreviewImage(
         image,
@@ -121,62 +130,11 @@ export class AiImageService {
     }
   }
 
-  private getGenerationProvider(): AiImageProvider {
-    return this.createProvider(
-      process.env.IMAGE_GENERATION_PROVIDER,
-      process.env.IMAGE_GENERATION_MODEL,
-      'IMAGE_GENERATION_PROVIDER',
-      'IMAGE_GENERATION_MODEL',
-    );
-  }
-
-  private getEditProvider(): AiImageProvider {
-    return this.createProvider(
-      process.env.IMAGE_EDIT_PROVIDER,
-      process.env.IMAGE_EDIT_MODEL,
-      'IMAGE_EDIT_PROVIDER',
-      'IMAGE_EDIT_MODEL',
-    );
-  }
-
-  private getEnhanceProvider(): AiImageProvider {
-    return new HuggingFaceImageProvider(this.getHfToken(), this.logger);
-  }
-
-  private createProvider(
-    providerName: string | undefined,
-    model: string | undefined,
-    providerEnvName: string,
-    modelEnvName: string,
-  ): AiImageProvider {
-    if (!providerName) {
-      throw new BadRequestException(`${providerEnvName} is missing`);
-    }
-    if (!model) {
-      throw new BadRequestException(`${modelEnvName} is missing`);
-    }
-
-    const provider = providerName.toLowerCase();
-    if (provider === 'huggingface' || provider === 'hf') {
-      return new HuggingFaceImageProvider(this.getHfToken(), this.logger, model);
-    }
-    if (provider === 'http' || provider === 'workflow') {
-      return new HttpImageProvider(model, this.logger);
-    }
-
-    throw new BadRequestException(`Unsupported AI image provider: ${providerName}`);
-  }
-
-  private getHfToken(): string {
-    const token = process.env.HF_TOKEN;
-    if (!token) {
-      throw new BadRequestException('HF_TOKEN is missing');
-    }
-
-    return token;
-  }
-
   private async fetchImageFromUrl(imageUrl: string): Promise<AiImageBuffer> {
+    if (imageUrl.startsWith('data:image/')) {
+      return this.readDataUrlImage(imageUrl);
+    }
+
     let response: globalThis.Response;
     try {
       response = await fetch(imageUrl);
@@ -193,184 +151,40 @@ export class AiImageService {
       throw new BadRequestException('imageUrl must point to an image file');
     }
 
+    const buffer = Buffer.from(await response.arrayBuffer());
+    this.validateImageSize(buffer);
+
     return {
-      buffer: Buffer.from(await response.arrayBuffer()),
+      buffer,
       mimeType,
     };
+  }
+
+  private readDataUrlImage(imageUrl: string): AiImageBuffer {
+    const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      throw new BadRequestException('Invalid image data URL');
+    }
+
+    const buffer = Buffer.from(match[2], 'base64');
+    this.validateImageSize(buffer);
+
+    return {
+      mimeType: match[1],
+      buffer,
+    };
+  }
+
+  private validateImageSize(buffer: Buffer): void {
+    if (buffer.length > MAX_INPUT_IMAGE_BYTES) {
+      throw new BadRequestException('Image file is too large');
+    }
   }
 
   private toPreviewResponse(imageUrl: string) {
     return {
       imageUrl,
       status: 'preview' as const,
-    };
-  }
-}
-
-class HuggingFaceImageProvider implements AiImageProvider {
-  private readonly client: InferenceClient;
-
-  constructor(
-    private readonly token: string,
-    private readonly logger: Logger,
-    private readonly model?: string,
-  ) {
-    this.client = new InferenceClient(token);
-  }
-
-  async generate(input: GenerateImageInput): Promise<AiImageBuffer> {
-    if (!this.model) {
-      throw new BadRequestException('IMAGE_GENERATION_MODEL is missing');
-    }
-
-    this.logger.log(`AI_IMAGE_GENERATE:huggingface:${this.model}`);
-    const blob = await this.client.textToImage(
-      {
-        model: this.model,
-        inputs: this.withRatio(input.prompt, input.ratio),
-      },
-      { outputType: 'blob' },
-    );
-
-    return this.blobToBuffer(blob);
-  }
-
-  async edit(input: EditImageInput): Promise<AiImageBuffer> {
-    if (!this.model) {
-      throw new BadRequestException('IMAGE_EDIT_MODEL is missing');
-    }
-
-    this.logger.log(`AI_IMAGE_EDIT:huggingface:${this.model}`);
-    const blob = await this.client.imageToImage({
-      model: this.model,
-      inputs: input.image.buffer,
-      parameters: {
-        prompt: this.withRatio(input.instruction, input.ratio),
-      },
-    } as any);
-
-    return this.blobToBuffer(blob);
-  }
-
-  async enhance(input: EnhanceImageInput): Promise<AiImageBuffer> {
-    const model =
-      input.action === ImageEnhanceAction.REMOVE_BACKGROUND
-        ? 'briaai/RMBG-1.4'
-        : 'ai-forever/Real-ESRGAN';
-
-    this.logger.log(`AI_IMAGE_ENHANCE:huggingface:${model}`);
-    const response = await fetch(
-      `https://api-inference.huggingface.co/models/${model}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          'Content-Type': input.image.mimeType,
-          Accept: 'image/png, image/jpeg, application/json',
-        },
-        body: new Uint8Array(input.image.buffer),
-      },
-    );
-
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok || contentType.includes('application/json')) {
-      const errorText = await response.text();
-      throw new InternalServerErrorException(
-        `Failed to enhance image: ${errorText || response.statusText}`,
-      );
-    }
-
-    return {
-      buffer: Buffer.from(await response.arrayBuffer()),
-      mimeType: contentType.startsWith('image/') ? contentType : 'image/png',
-    };
-  }
-
-  private async blobToBuffer(blob: Blob): Promise<AiImageBuffer> {
-    return {
-      buffer: Buffer.from(await blob.arrayBuffer()),
-      mimeType: blob.type || 'image/png',
-    };
-  }
-
-  private withRatio(prompt: string, ratio?: string): string {
-    if (!ratio) {
-      return prompt;
-    }
-
-    return `${prompt}\nAspect ratio: ${ratio}`;
-  }
-}
-
-class HttpImageProvider implements AiImageProvider {
-  constructor(
-    private readonly endpointUrl: string,
-    private readonly logger: Logger,
-  ) {}
-
-  async generate(input: GenerateImageInput): Promise<AiImageBuffer> {
-    return this.callWorkflow('generate', input);
-  }
-
-  async edit(input: EditImageInput): Promise<AiImageBuffer> {
-    return this.callWorkflow('edit', {
-      imageUrl: input.imageUrl,
-      instruction: input.instruction,
-      ratio: input.ratio,
-      imageBase64: `data:${input.image.mimeType};base64,${input.image.buffer.toString('base64')}`,
-    });
-  }
-
-  async enhance(input: EnhanceImageInput): Promise<AiImageBuffer> {
-    return this.callWorkflow('enhance', {
-      action: input.action,
-      imageBase64: `data:${input.image.mimeType};base64,${input.image.buffer.toString('base64')}`,
-    });
-  }
-
-  private async callWorkflow(
-    action: 'generate' | 'edit' | 'enhance',
-    payload: Record<string, unknown>,
-  ): Promise<AiImageBuffer> {
-    this.logger.log(`AI_IMAGE_${action.toUpperCase()}:http:${this.endpointUrl}`);
-    const response = await fetch(this.endpointUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload }),
-    });
-
-    if (!response.ok) {
-      throw new InternalServerErrorException(
-        `Image workflow failed: ${await response.text()}`,
-      );
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.startsWith('image/')) {
-      return {
-        buffer: Buffer.from(await response.arrayBuffer()),
-        mimeType: contentType,
-      };
-    }
-
-    const data = await response.json();
-    const resultImageUrl = data.imageUrl || data.resultImageUrl || data.url;
-    if (!resultImageUrl) {
-      throw new InternalServerErrorException(
-        'Image workflow response must include imageUrl',
-      );
-    }
-
-    const imageResponse = await fetch(resultImageUrl);
-    if (!imageResponse.ok) {
-      throw new InternalServerErrorException(
-        'Cannot download image from workflow response',
-      );
-    }
-
-    return {
-      buffer: Buffer.from(await imageResponse.arrayBuffer()),
-      mimeType: imageResponse.headers.get('content-type') || 'image/png',
     };
   }
 }
