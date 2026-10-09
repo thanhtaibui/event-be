@@ -42,6 +42,12 @@ export class AiImageService {
       );
 
       return this.toPreviewResponse(previewUrl);
+    } catch (error) {
+      this.logger.error(
+        `POST_AI_IMAGE_GENERATE_FAILED:${this.getErrorMessage(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     } finally {
       console.timeEnd(timer);
     }
@@ -186,5 +192,17 @@ export class AiImageService {
       imageUrl,
       status: 'preview' as const,
     };
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
   }
 }

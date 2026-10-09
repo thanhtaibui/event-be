@@ -203,7 +203,9 @@ export class CloudflareImageProvider implements AiImageProvider {
     const body = await response.text().catch(() => '');
     const normalizedBody = body.toLowerCase();
 
-    this.logger.error(`AI_IMAGE_PROVIDER_ERROR:cloudflare:${response.status}`);
+    this.logger.error(
+      `AI_IMAGE_PROVIDER_ERROR:cloudflare:${response.status}:${this.truncateLogBody(body)}`,
+    );
 
     if (
       response.status === HttpStatus.TOO_MANY_REQUESTS ||
@@ -265,6 +267,14 @@ export class CloudflareImageProvider implements AiImageProvider {
 
   private getModel(envName: string, fallback: string): string {
     return process.env[envName]?.trim() || fallback;
+  }
+
+  private truncateLogBody(body: string): string {
+    if (!body) {
+      return '<empty body>';
+    }
+
+    return body.length > 2000 ? `${body.slice(0, 2000)}...<truncated>` : body;
   }
 
   private getSize(ratio?: string): { width: number; height: number } {
