@@ -28,7 +28,7 @@ export class AiImageService {
     const timer = 'POST_AI_IMAGE_GENERATE';
     console.time(timer);
     try {
-      const prompt = await this.aiPromptService.generateImagePrompt(
+      const prompt = await this.aiPromptService.generateReadyImagePrompt(
         dto.description,
         dto.ratio,
       );

@@ -6,6 +6,7 @@ import { AiImageService } from './ai-image.service';
 import { ImageStorageService } from './image-storage.service';
 import { CloudflareImageProvider } from './cloudflare-image-provider.service';
 import { SharpImageProcessor } from './sharp-image-processor.service';
+import { ImagePromptGeneratorService } from './image-prompt-generator.service';
 
 @Module({
   imports: [UploadModule],
@@ -13,6 +14,7 @@ import { SharpImageProcessor } from './sharp-image-processor.service';
   providers: [
     AiImageService,
     AiPromptService,
+    ImagePromptGeneratorService,
     ImageStorageService,
     CloudflareImageProvider,
     SharpImageProcessor,
