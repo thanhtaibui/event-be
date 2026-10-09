@@ -73,6 +73,7 @@ export class AiChatResponseDto {
   message: string;
   content?: string;
   mode?: 'chat' | 'image_prompt_ready' | 'need_more_information';
+  locale?: 'vi' | 'en';
   language?: 'vi' | 'en';
   summary?: {
     eventName?: string;
@@ -82,8 +83,15 @@ export class AiChatResponseDto {
     style?: string;
     colors?: string;
   };
+  prompt?: string;
   imagePrompt?: string;
   negativePrompt?: string;
+  display?: {
+    summaryTitle: string;
+    promptTitle: string;
+    negativePromptTitle: string;
+    hint: string;
+  };
   canUseForCreate?: boolean;
   questions?: string[];
   missingFields?: string[];

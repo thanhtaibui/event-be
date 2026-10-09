@@ -98,6 +98,7 @@ export class AiClientService {
     return {
       type: 'text',
       mode: 'chat',
+      locale: language,
       language,
       content,
       message: content,
@@ -415,15 +416,16 @@ export class AiClientService {
       'Use the design guide below as private system knowledge only. Do not send it to the image model as a separate document.',
       '',
       'Required output must be compact valid JSON only:',
-      '{"mode":"image_prompt_ready","summary":{"eventName":"","organization":"","theme":"","audience":"","style":"","colors":""},"imagePrompt":"","negativePrompt":""}',
+      '{"mode":"image_prompt_ready","summary":{"eventName":"","organization":"","theme":"","audience":"","style":"","colors":""},"prompt":"","negativePrompt":""}',
       '',
       'Rules:',
-      '- imagePrompt must be in English and directly usable by image generation.',
-      '- imagePrompt must include image type, event name, organization, theme, audience, style, colors, visual direction, composition, and quality requirements.',
-      '- negativePrompt must be short and include no fake logo, no watermark, no random text, no Eventix branding, no distorted faces, no messy composition, no low quality text.',
+      `- prompt and negativePrompt must be written in ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
+      '- prompt must be directly usable by image generation.',
+      '- prompt must include image type, event name, organization, theme, audience, style, colors, visual direction, composition, and quality requirements.',
+      '- negativePrompt must be short, clear, and aligned with the same language.',
       '- Do not return markdown tables.',
       '- Do not return tutorials.',
-      `Display language for summary text: ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
+      `Display language for all user-facing fields: ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
       '',
       'IMAGE DESIGN GUIDE:',
       this.getImageDesignGuide(),
@@ -499,7 +501,7 @@ export class AiClientService {
     }
 
     const summary = this.normalizeSummary(parsed.summary, imageCreationInfo);
-    const imagePrompt = String(parsed.imagePrompt || '').trim();
+    const imagePrompt = String(parsed.prompt || parsed.imagePrompt || '').trim();
     const negativePrompt = String(parsed.negativePrompt || '').trim();
 
     if (!imagePrompt) {
@@ -512,22 +514,26 @@ export class AiClientService {
     return {
       type: 'text',
       mode: 'image_prompt_ready',
+      locale: language,
       language,
       summary,
+      prompt: imagePrompt,
       imagePrompt,
-      negativePrompt: negativePrompt || this.getDefaultNegativePrompt(),
+      negativePrompt:
+        negativePrompt || this.getDefaultNegativePrompt(language),
       canUseForCreate: true,
+      display: this.getImagePromptDisplay(language),
       actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
       content: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
-        negativePrompt || this.getDefaultNegativePrompt(),
+        negativePrompt || this.getDefaultNegativePrompt(language),
         language,
       ),
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
-        negativePrompt || this.getDefaultNegativePrompt(),
+        negativePrompt || this.getDefaultNegativePrompt(language),
         language,
       ),
     };
@@ -664,6 +670,7 @@ export class AiClientService {
     return {
       type: 'text',
       mode: 'need_more_information',
+      locale: language,
       language,
       canUseForCreate: false,
       questions,
@@ -689,31 +696,20 @@ export class AiClientService {
       style: info.styleOrColor,
       colors: this.extractColorText(info.styleOrColor),
     };
-    const imagePrompt = [
-      `Create a professional event banner for "${info.eventName}" organized by "${info.organization}".`,
-      '',
-      `Theme: ${info.theme}.`,
-      '',
-      `Target audience: ${info.audience}.`,
-      '',
-      `Style and color direction: ${info.styleOrColor}.`,
-      '',
-      'Visual direction: create a clean, professional, realistic event visual with a premium event atmosphere, believable environment, clear visual hierarchy, and strong commercial quality.',
-      '',
-      'Composition: wide event banner composition with clean space for title overlay, balanced lighting, main visual subject supported by a relevant event environment, suitable for Eventix frontend text overlay.',
-      '',
-      'Quality requirements: high-quality, realistic, professional event marketing image, clean layout, no tutorial-style graphic, no fake text inside the image.',
-    ].join('\n');
-    const negativePrompt = this.getDefaultNegativePrompt();
+    const imagePrompt = this.buildLocalizedFallbackPrompt(info, language);
+    const negativePrompt = this.getDefaultNegativePrompt(language);
 
     return {
       type: 'text',
       mode: 'image_prompt_ready',
+      locale: language,
       language,
       summary,
+      prompt: imagePrompt,
       imagePrompt,
       negativePrompt,
       canUseForCreate: true,
+      display: this.getImagePromptDisplay(language),
       actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
       content: this.buildImagePromptReadyMessage(
         summary,
@@ -768,22 +764,42 @@ export class AiClientService {
     negativePrompt: string,
     language: ResponseLanguage,
   ): string {
-    const summaryLabel = language === 'vi' ? 'TOM_TAT' : 'SUMMARY';
+    const display = this.getImagePromptDisplay(language);
+    const labels =
+      language === 'vi'
+        ? {
+            eventName: 'Tên sự kiện',
+            organization: 'Đơn vị tổ chức',
+            theme: 'Chủ đề',
+            audience: 'Đối tượng',
+            style: 'Phong cách',
+            colors: 'Màu sắc',
+          }
+        : {
+            eventName: 'Event name',
+            organization: 'Organization',
+            theme: 'Theme',
+            audience: 'Audience',
+            style: 'Style',
+            colors: 'Colors',
+          };
 
     return [
-      `${summaryLabel}:`,
-      `eventName: ${summary?.eventName || 'N/A'}`,
-      `organization: ${summary?.organization || 'N/A'}`,
-      `theme: ${summary?.theme || 'N/A'}`,
-      `audience: ${summary?.audience || 'N/A'}`,
-      `style: ${summary?.style || 'N/A'}`,
-      `colors: ${summary?.colors || 'N/A'}`,
+      `${display.summaryTitle}:`,
+      `- ${labels.eventName}: ${summary?.eventName || 'N/A'}`,
+      `- ${labels.organization}: ${summary?.organization || 'N/A'}`,
+      `- ${labels.theme}: ${summary?.theme || 'N/A'}`,
+      `- ${labels.audience}: ${summary?.audience || 'N/A'}`,
+      `- ${labels.style}: ${summary?.style || 'N/A'}`,
+      `- ${labels.colors}: ${summary?.colors || 'N/A'}`,
       '',
-      'IMAGE_PROMPT_READY:',
+      `${display.promptTitle}:`,
       imagePrompt,
       '',
-      'NEGATIVE_PROMPT:',
+      `${display.negativePromptTitle}:`,
       negativePrompt,
+      '',
+      display.hint,
     ].join('\n');
   }
 
@@ -813,9 +829,21 @@ export class AiClientService {
       : 'en';
   }
 
-  private getDefaultNegativePrompt(): string {
+  private getDefaultNegativePrompt(language: ResponseLanguage): string {
+    if (language === 'vi') {
+      return [
+        'Không dùng logo website',
+        'không dùng watermark',
+        'không thêm chữ ngẫu nhiên',
+        'không dùng thương hiệu Eventix',
+        'không làm méo khuôn mặt',
+        'không bố cục rối',
+        'không chữ chất lượng thấp',
+      ].join(', ');
+    }
+
     return [
-      'no fake logo',
+      'no website logo',
       'no watermark',
       'no random text',
       'no Eventix branding',
@@ -823,6 +851,51 @@ export class AiClientService {
       'no messy composition',
       'no low quality text',
     ].join(', ');
+  }
+
+  private getImagePromptDisplay(language: ResponseLanguage) {
+    if (language === 'vi') {
+      return {
+        summaryTitle: 'Tóm tắt thông tin',
+        promptTitle: 'Prompt dùng cho Tạo ảnh',
+        negativePromptTitle: 'Negative prompt',
+        hint: 'Bạn có thể sao chép prompt bên dưới để dùng trong mục Tạo ảnh.',
+      };
+    }
+
+    return {
+      summaryTitle: 'Information summary',
+      promptTitle: 'Prompt for Create Image',
+      negativePromptTitle: 'Negative prompt',
+      hint: 'You can copy the prompt below and use it in Create Image.',
+    };
+  }
+
+  private buildLocalizedFallbackPrompt(
+    info: ImageCreationInfo,
+    language: ResponseLanguage,
+  ): string {
+    if (language === 'vi') {
+      return [
+        `Tạo banner sự kiện khổ ngang chuyên nghiệp cho "${info.eventName}" do "${info.organization}" tổ chức.`,
+        `Chủ đề: ${info.theme}.`,
+        `Đối tượng mục tiêu: ${info.audience}.`,
+        `Phong cách và màu sắc: ${info.styleOrColor}.`,
+        'Định hướng hình ảnh: không khí sự kiện cao cấp, chuyên nghiệp, chân thực, bố cục rõ ràng, phù hợp cho truyền thông sự kiện.',
+        'Bố cục: banner ngang, có khoảng trống sạch để đặt tiêu đề, ánh sáng cân bằng, chủ thể chính nổi bật và bối cảnh liên quan đến sự kiện.',
+        'Yêu cầu chất lượng: hình ảnh sắc nét, hiện đại, đáng tin cậy, không giống ảnh mẫu đại trà, không thêm chữ giả khó đọc trong ảnh.',
+      ].join('\n');
+    }
+
+    return [
+      `Create a professional horizontal event banner for "${info.eventName}" organized by "${info.organization}".`,
+      `Theme: ${info.theme}.`,
+      `Target audience: ${info.audience}.`,
+      `Style and color direction: ${info.styleOrColor}.`,
+      'Visual direction: premium, professional, realistic event atmosphere with clear hierarchy and strong marketing quality.',
+      'Composition: wide banner layout with clean space for title overlay, balanced lighting, a strong main subject, and a relevant event environment.',
+      'Quality requirements: sharp, modern, trustworthy, non-generic, no unreadable fake text inside the image.',
+    ].join('\n');
   }
 
   private asOptionalString(value: unknown): string | undefined {

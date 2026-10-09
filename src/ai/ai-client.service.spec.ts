@@ -115,6 +115,7 @@ describe('AiClientService', () => {
       message: 'You are Anh Tài Bùi.',
       content: 'You are Anh Tài Bùi.',
       mode: 'chat',
+      locale: 'en',
       language: 'en',
       canUseForCreate: false,
     });
@@ -346,10 +347,10 @@ describe('AiClientService', () => {
                 style: 'Natural premium, environmental technology',
                 colors: 'Green and white',
               },
-              imagePrompt:
+              prompt:
                 'Create a professional event banner for Green Future Agriculture Expo 2026. Organization: GreenFarm Vietnam. Theme: smart agriculture, IoT, sustainability. Target audience: agricultural businesses, investors, technology experts. Style: natural premium environmental technology. Color palette: green and white. Composition: wide event banner with clean space for title overlay.',
               negativePrompt:
-                'no fake logo, no watermark, no random text, no Eventix branding, no distorted faces, no messy composition, no low quality text',
+                'no website logo, no watermark, no random text, no Eventix branding, no distorted faces, no messy composition, no low quality text',
             }),
           },
         },
@@ -379,20 +380,82 @@ describe('AiClientService', () => {
 
     expect(result.mode).toBe('image_prompt_ready');
     expect(result.canUseForCreate).toBe(true);
+    expect(result.locale).toBe('en');
     expect(result.language).toBe('en');
     expect(result.actions).toEqual(['COPY_PROMPT', 'USE_IN_CREATE']);
     expect(result.summary?.eventName).toBe(
       'Green Future Agriculture Expo 2026',
     );
+    expect(result.prompt).toContain('Create a professional event banner');
     expect(result.imagePrompt).toContain('Create a professional event banner');
     expect(result.negativePrompt).toContain('no Eventix branding');
-    expect(result.content).toContain('IMAGE_PROMPT_READY:');
-    expect(result.message).toContain('IMAGE_PROMPT_READY:');
+    expect(result.display?.summaryTitle).toBe('Information summary');
+    expect(result.display?.promptTitle).toBe('Prompt for Create Image');
+    expect(result.content).toContain('Prompt for Create Image:');
+    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
+    expect(result.message).not.toContain('TOM_TAT:');
 
     const [, request] = (global.fetch as jest.Mock).mock.calls[0];
     const body = JSON.parse(request.body);
     expect(body.messages[0].content).toContain('Mode: IMAGE_PROMPT_BUILDER.');
     expect(body.messages[0].content).toContain('IMAGE DESIGN GUIDE');
+    expect(body.messages[0].content).toContain(
+      'prompt and negativePrompt must be written in English',
+    );
+  });
+
+  it('returns Vietnamese image prompt contract when user writes Vietnamese', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'image_prompt_ready',
+              summary: {
+                eventName: 'Green Future Agriculture Expo 2026',
+                organization: 'GreenFarm Vietnam',
+                theme: 'Nông nghiệp thông minh, IoT và phát triển bền vững',
+                audience:
+                  'Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
+                style: 'Natural premium, environmental technology',
+                colors: 'Xanh lá, trắng',
+              },
+              prompt:
+                'Tạo banner sự kiện khổ ngang cho Green Future Agriculture Expo 2026, phong cách natural premium, công nghệ môi trường, màu xanh lá và trắng.',
+              negativePrompt:
+                'Không dùng logo website, không dùng watermark, không thêm chữ ngẫu nhiên, không bố cục rối.',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Tên sự kiện: Green Future Agriculture Expo 2026',
+        'Tổ chức: GreenFarm Vietnam',
+        'Chủ đề: Nông nghiệp thông minh, IoT và phát triển bền vững',
+        'Đối tượng: Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
+        'Phong cách: Natural premium, environmental technology, màu xanh lá và trắng',
+      ].join('\n'),
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.locale).toBe('vi');
+    expect(result.prompt).toContain('Tạo banner sự kiện');
+    expect(result.negativePrompt).toContain('Không dùng logo website');
+    expect(result.display).toEqual({
+      summaryTitle: 'Tóm tắt thông tin',
+      promptTitle: 'Prompt dùng cho Tạo ảnh',
+      negativePromptTitle: 'Negative prompt',
+      hint: 'Bạn có thể sao chép prompt bên dưới để dùng trong mục Tạo ảnh.',
+    });
+    expect(result.message).toContain('Tóm tắt thông tin:');
+    expect(result.message).toContain('Prompt dùng cho Tạo ảnh:');
+    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
+    expect(result.message).not.toContain('TOM_TAT:');
   });
 
   it('falls back to structured prompt when image provider returns wrong mode', async () => {
@@ -425,7 +488,8 @@ describe('AiClientService', () => {
     expect(result.mode).toBe('image_prompt_ready');
     expect(result.canUseForCreate).toBe(true);
     expect(result.message).not.toContain('guide to creating banners');
-    expect(result.message).toContain('IMAGE_PROMPT_READY:');
+    expect(result.message).toContain('Prompt for Create Image:');
+    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
   });
 
   it('returns controlled error when GROQ_API_KEY is missing', async () => {

@@ -62,6 +62,7 @@ export class AiController {
       example: {
         type: 'text',
         mode: 'chat',
+        locale: 'vi',
         language: 'vi',
         content:
           'Bạn có thể tổ chức concept khai trương công nghệ với khu trải nghiệm sản phẩm...',
