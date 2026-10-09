@@ -126,19 +126,33 @@ describe('AiClientService', () => {
   });
 
   it('asks for missing information before creating image prompt', async () => {
+    const service = new AiClientService();
+    const result = await service.chat('I need a banner for agriculture event');
+
+    expect(result.mode).toBe('need_more_information');
+    expect(result.canUseForCreate).toBe(false);
+    expect(result.message).toContain(
+      'I need some more information to create your event image:',
+    );
+    expect(result.questions).toEqual([
+      'Event name?',
+      'Organization?',
+      'Theme?',
+      'Target audience?',
+      'Preferred style/color?',
+    ]);
+    expect(result.missingFields).toContain('eventName');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not allow image intent to fall back to tutorial chat response', async () => {
     mockFetchResponse(200, {
       choices: [
         {
           message: {
             content: JSON.stringify({
-              mode: 'need_more_information',
-              message: 'Mình cần thêm thông tin để tạo prompt ảnh chính xác.',
-              questions: [
-                'Tên sự kiện là gì?',
-                'Tổ chức nào đứng sau sự kiện?',
-                'Phong cách hình ảnh mong muốn là gì?',
-              ],
-              missingFields: ['eventName', 'organization', 'style'],
+              mode: 'chat',
+              message: 'Here is a guide to creating banners...',
             }),
           },
         },
@@ -146,12 +160,20 @@ describe('AiClientService', () => {
     });
 
     const service = new AiClientService();
-    const result = await service.chat('I need a banner for agriculture event');
+    const result = await service.chat(
+      [
+        'Event name: Green Future Agriculture Expo 2026',
+        'Organization: GreenFarm Vietnam',
+        'Theme: Smart agriculture and IoT',
+        'Audience: Agricultural businesses',
+        'Style: Natural premium',
+        'Colors: Green and white',
+        'Create a banner',
+      ].join('\n'),
+    );
 
     expect(result.mode).toBe('need_more_information');
-    expect(result.canUseForCreate).toBe(false);
-    expect(result.questions).toContain('Tên sự kiện là gì?');
-    expect(result.missingFields).toContain('eventName');
+    expect(result.message).not.toContain('guide to creating banners');
   });
 
   it('returns controlled error when GROQ_API_KEY is missing', async () => {

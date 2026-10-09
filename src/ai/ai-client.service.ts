@@ -28,6 +28,18 @@ export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
 
   async chat(message: string): Promise<AiChatResponseDto> {
+    const isImageCreationIntent = this.isImageCreationIntent(message);
+    const missingImageInfo = isImageCreationIntent
+      ? this.getMissingImageCreationFields(message)
+      : [];
+
+    if (isImageCreationIntent && missingImageInfo.length > 0) {
+      return this.buildNeedMoreInformationResponse(
+        this.getImageCreationQuestions(missingImageInfo),
+        missingImageInfo,
+      );
+    }
+
     const apiKey = this.getGroqApiKey();
     const model = this.getGroqChatModel();
     this.logger.log(`AI_CHAT:groq:${model}`);
@@ -47,10 +59,15 @@ export class AiClientService {
           body: JSON.stringify({
             model,
             messages: [
-              { role: 'system', content: this.getEventAssistantSystemPrompt() },
+              {
+                role: 'system',
+                content: this.getEventAssistantSystemPrompt(
+                  isImageCreationIntent,
+                ),
+              },
               { role: 'user', content: message },
             ],
-            temperature: 0.3,
+            temperature: isImageCreationIntent ? 0.2 : 0.3,
             max_tokens: GROQ_MAX_OUTPUT_TOKENS,
           }),
         },
@@ -67,7 +84,7 @@ export class AiClientService {
         throw new BadGatewayException('AI_REQUEST_FAILED');
       }
 
-      return this.normalizeChatReply(reply);
+      return this.normalizeChatReply(reply, isImageCreationIntent);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -112,7 +129,7 @@ export class AiClientService {
     return model;
   }
 
-  private getEventAssistantSystemPrompt(): string {
+  private getEventAssistantSystemPrompt(isImageCreationIntent = false): string {
     return [
       'You are Eventix AI Event Assistant.',
       'Help with event ideas, event planning, marketing content, scripts, ticket/event copy, and image prompts.',
@@ -120,6 +137,15 @@ export class AiClientService {
       '',
       'You must classify whether the user is asking for normal chat help or asking to create an image/banner/poster/event visual.',
       'Always return compact valid JSON only. Do not wrap in markdown.',
+      '',
+      'IMAGE CREATION INTENT RULE:',
+      'If the user intent includes create image, create banner, event poster, generate visual, design artwork, create cover image, or similar wording, you MUST enter IMAGE_CREATION mode.',
+      'In IMAGE_CREATION mode, you are NOT a banner design teacher.',
+      'Do NOT return tutorials, design lessons, long guides, markdown tables, or explanations of how to create a banner.',
+      'Your job is to collect missing information, then prepare a production-ready prompt for Create Image.',
+      isImageCreationIntent
+        ? 'The current user message has already been classified by backend as IMAGE_CREATION mode.'
+        : '',
       '',
       'If the user is NOT asking to create an image, return:',
       '{"mode":"chat","message":"normal helpful answer"}',
@@ -147,9 +173,19 @@ export class AiClientService {
     ].join('\n');
   }
 
-  private normalizeChatReply(reply: string): AiChatResponseDto {
+  private normalizeChatReply(
+    reply: string,
+    isImageCreationIntent = false,
+  ): AiChatResponseDto {
     const parsed = this.tryParseJson(reply);
     if (!parsed) {
+      if (isImageCreationIntent) {
+        return this.buildNeedMoreInformationResponse(
+          this.getDefaultImageCreationQuestions(),
+          ['eventName', 'organization', 'theme', 'audience', 'styleOrColor'],
+        );
+      }
+
       return {
         type: 'text',
         message: reply,
@@ -205,9 +241,123 @@ export class AiClientService {
       };
     }
 
+    if (isImageCreationIntent) {
+      return this.buildNeedMoreInformationResponse(
+        this.getDefaultImageCreationQuestions(),
+        ['eventName', 'organization', 'theme', 'audience', 'styleOrColor'],
+      );
+    }
+
+    return this.buildChatResponse(String(parsed.message || reply).trim());
+  }
+
+  private isImageCreationIntent(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return [
+      'create image',
+      'create an image',
+      'create banner',
+      'create a banner',
+      'event banner',
+      'banner for',
+      'event poster',
+      'poster for',
+      'generate visual',
+      'design artwork',
+      'create cover image',
+      'cover image',
+      'tạo ảnh',
+      'tạo banner',
+      'làm banner',
+      'thiết kế banner',
+      'tạo poster',
+      'làm poster',
+      'ảnh sự kiện',
+      'hình sự kiện',
+    ].some((keyword) => normalized.includes(keyword));
+  }
+
+  private getMissingImageCreationFields(message: string): string[] {
+    const checks: Array<[string, RegExp[]]> = [
+      [
+        'eventName',
+        [
+          /(event name|tên sự kiện)\s*[:：]\s*\S+/i,
+          /(?:for|cho)\s+["“][^"”]+["”]/i,
+        ],
+      ],
+      [
+        'organization',
+        [
+          /(organization|organizer|tổ chức|đơn vị tổ chức)\s*[:：]\s*\S+/i,
+          /organized by\s+["“]?\S+/i,
+        ],
+      ],
+      ['theme', [/(theme|chủ đề)\s*[:：]\s*\S+/i]],
+      [
+        'audience',
+        [/(target audience|audience|đối tượng|khán giả)\s*[:：]\s*\S+/i],
+      ],
+      [
+        'styleOrColor',
+        [
+          /(style|phong cách)\s*[:：]\s*\S+/i,
+          /(color|colors|màu|màu sắc)\s*[:：]\s*\S+/i,
+        ],
+      ],
+    ];
+
+    return checks
+      .filter(([, patterns]) => !patterns.some((pattern) => pattern.test(message)))
+      .map(([field]) => field);
+  }
+
+  private getImageCreationQuestions(missingFields: string[]): string[] {
+    const questionByField: Record<string, string> = {
+      eventName: 'Event name?',
+      organization: 'Organization?',
+      theme: 'Theme?',
+      audience: 'Target audience?',
+      styleOrColor: 'Preferred style/color?',
+    };
+
+    return missingFields
+      .map((field) => questionByField[field])
+      .filter(Boolean)
+      .slice(0, 5);
+  }
+
+  private getDefaultImageCreationQuestions(): string[] {
+    return [
+      'Event name?',
+      'Organization?',
+      'Theme?',
+      'Target audience?',
+      'Preferred style/color?',
+    ];
+  }
+
+  private buildNeedMoreInformationResponse(
+    questions: string[],
+    missingFields: string[],
+  ): AiChatResponseDto {
     return {
       type: 'text',
-      message: String(parsed.message || reply).trim(),
+      mode: 'need_more_information',
+      canUseForCreate: false,
+      questions,
+      missingFields,
+      message: [
+        'I need some more information to create your event image:',
+        ...questions.map((question) => `- ${question}`),
+      ].join('\n'),
+    };
+  }
+
+  private buildChatResponse(message: string): AiChatResponseDto {
+    return {
+      type: 'text',
+      message,
       mode: 'chat',
     };
   }
