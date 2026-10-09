@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Repository } from 'typeorm';
 import { AiClientService } from './ai-client.service';
-import { AiChatMode, AiChatResponseDto } from './dto/ai-chat.dto';
+import {
+  AiChatHistoryMessageDto,
+  AiChatMode,
+  AiChatResponseDto,
+} from './dto/ai-chat.dto';
 import { AiAuthenticatedUser } from './optional-jwt.guard';
 
 @Injectable()
@@ -20,6 +24,7 @@ export class AiService {
     prompt: string,
     mode: AiChatMode = AiChatMode.CHAT,
     user?: AiAuthenticatedUser,
+    history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
     const message = prompt?.trim();
     if (!message) {
@@ -28,7 +33,7 @@ export class AiService {
 
     const safeUserContext = await this.getSafeUserContext(user);
 
-    return this.aiClientService.chat(message, mode, safeUserContext);
+    return this.aiClientService.chat(message, mode, safeUserContext, history);
   }
 
   private async getSafeUserContext(

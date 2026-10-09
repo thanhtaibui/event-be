@@ -10,14 +10,23 @@ import {
 } from '@nestjs/common';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AiChatMode, AiChatResponseDto } from './dto/ai-chat.dto';
+import {
+  AiChatHistoryMessageDto,
+  AiChatMode,
+  AiChatResponseDto,
+} from './dto/ai-chat.dto';
 import { AiAuthenticatedUser } from './optional-jwt.guard';
 
 const GROQ_CHAT_COMPLETIONS_URL =
   'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_CHAT_TIMEOUT_MS = Number(process.env.GROQ_CHAT_TIMEOUT_MS ?? 30000);
+const GROQ_CHAT_TIMEOUT_MS = Math.max(
+  Number(process.env.GROQ_CHAT_TIMEOUT_MS ?? 30000),
+  30000,
+);
 const GROQ_MAX_OUTPUT_TOKENS = Number(process.env.GROQ_MAX_OUTPUT_TOKENS ?? 1200);
 const IMAGE_DESIGN_GUIDE_PATH = 'AI_EVENT_IMAGE_DESIGN_EXPERT_GUIDE.md';
+const GROQ_MAX_RETRIES = 2;
+const GROQ_RETRY_DELAY_MS = 1000;
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -33,6 +42,10 @@ type GroqChatResponse = {
 };
 
 type ResponseLanguage = 'vi' | 'en';
+type GroqMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 type ImageCreationInfo = {
   eventName?: string;
@@ -51,23 +64,26 @@ export class AiClientService {
     message: string,
     mode: AiChatMode = AiChatMode.CHAT,
     user?: AiAuthenticatedUser,
+    history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
     const language = this.detectLanguage(message);
 
     if (mode === AiChatMode.IMAGE_PROMPT_BUILDER) {
-      return this.buildImagePrompt(message, language);
+      return this.buildImagePrompt(message, language, history);
     }
 
-    return this.normalChat(message, language, user);
+    return this.normalChat(message, language, user, history);
   }
 
   private async normalChat(
     message: string,
     language: ResponseLanguage,
     user?: AiAuthenticatedUser,
+    history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
     const reply = await this.callGroq({
       message,
+      history,
       systemPrompt: this.getNormalChatSystemPrompt(language, user),
       temperature: 0.3,
       logScope: 'chat',
@@ -92,6 +108,7 @@ export class AiClientService {
   private async buildImagePrompt(
     message: string,
     language: ResponseLanguage,
+    history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
     const imageCreationInfo = this.extractImageCreationInfo(message);
     const missingImageInfo =
@@ -107,6 +124,7 @@ export class AiClientService {
 
     const reply = await this.callGroq({
       message,
+      history,
       systemPrompt: this.getImagePromptBuilderSystemPrompt(language),
       temperature: 0.2,
       logScope: 'image_prompt_builder',
@@ -117,82 +135,190 @@ export class AiClientService {
 
   private async callGroq(params: {
     message: string;
+    history?: AiChatHistoryMessageDto[];
     systemPrompt: string;
     temperature: number;
     logScope: string;
   }): Promise<string> {
     const apiKey = this.getGroqApiKey();
     const model = this.getGroqChatModel();
-    this.logger.log(`AI_CHAT:${params.logScope}:groq:${model}`);
+    const messages = this.buildGroqMessages(
+      params.systemPrompt,
+      params.message,
+      params.history,
+    );
+    const totalCharacters = this.countMessageCharacters(messages);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GROQ_CHAT_TIMEOUT_MS);
-    try {
-      const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: params.systemPrompt,
-            },
-            { role: 'user', content: params.message },
-          ],
-          temperature: params.temperature,
-          max_tokens: GROQ_MAX_OUTPUT_TOKENS,
-        }),
-      });
+    this.logger.log(
+      `AI_CHAT_REQUEST:mode=${params.logScope}:provider=groq:model=${model}:messages=${messages.length}:chars=${totalCharacters}`,
+    );
 
-      if (!response.ok) {
-        throw await this.normalizeGroqError(
-          response,
-          params.logScope,
-          model,
+    for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt += 1) {
+      const startedAt = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), GROQ_CHAT_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: params.temperature,
+            max_tokens: GROQ_MAX_OUTPUT_TOKENS,
+          }),
+        });
+        const latencyMs = Date.now() - startedAt;
+
+        if (!response.ok) {
+          throw await this.normalizeGroqError(
+            response,
+            params.logScope,
+            model,
+            latencyMs,
+            attempt,
+          );
+        }
+
+        const output = (await response.json()) as GroqChatResponse;
+        this.logGroqResponseShape(output, params.logScope, model);
+        const reply = this.extractGroqReply(output);
+
+        this.logger.log(
+          `AI_CHAT_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}:attempt=${attempt + 1}:status=${response.status}:latency=${latencyMs}ms:length=${reply?.length ?? 0}`,
         );
-      }
 
-      const output = (await response.json()) as GroqChatResponse;
-      this.logGroqResponseShape(output, params.logScope, model);
-      const reply = this.extractGroqReply(output);
+        if (!reply) {
+          const emptyError = new BadGatewayException('AI_REQUEST_FAILED');
+          this.logger.error(
+            `AI_CHAT_EMPTY_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}:attempt=${attempt + 1}:shape=${this.getGroqResponseShape(output)}`,
+            emptyError.stack,
+          );
 
-      if (!reply) {
+          if (attempt < GROQ_MAX_RETRIES) {
+            await this.delay(GROQ_RETRY_DELAY_MS);
+            continue;
+          }
+
+          throw emptyError;
+        }
+
+        return reply;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          const timeoutError = new GatewayTimeoutException(
+            'AI_PROVIDER_TIMEOUT',
+          );
+          this.logger.error(
+            `AI_CHAT_TIMEOUT:mode=${params.logScope}:provider=groq:model=${model}:attempt=${attempt + 1}:timeout=${GROQ_CHAT_TIMEOUT_MS}ms`,
+            timeoutError.stack,
+          );
+
+          if (attempt < GROQ_MAX_RETRIES) {
+            await this.delay(GROQ_RETRY_DELAY_MS);
+            continue;
+          }
+
+          throw timeoutError;
+        }
+
+        if (error instanceof HttpException) {
+          this.logger.error(
+            `AI_CHAT_EXCEPTION:mode=${params.logScope}:provider=groq:model=${model}:attempt=${attempt + 1}:message=${error.message}`,
+            error.stack,
+          );
+
+          if (this.isRetryableAiError(error) && attempt < GROQ_MAX_RETRIES) {
+            await this.delay(GROQ_RETRY_DELAY_MS);
+            continue;
+          }
+
+          throw error;
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : 'Groq request failed';
         this.logger.error(
-          `AI_CHAT_EMPTY_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}:shape=${this.getGroqResponseShape(output)}`,
+          `AI_CHAT_FAILED:mode=${params.logScope}:provider=groq:model=${model}:attempt=${attempt + 1}:message=${errorMessage}`,
+          error instanceof Error ? error.stack : undefined,
         );
-        throw new BadGatewayException('AI_REQUEST_FAILED');
+
+        if (attempt < GROQ_MAX_RETRIES) {
+          await this.delay(GROQ_RETRY_DELAY_MS);
+          continue;
+        }
+
+        throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+      } finally {
+        clearTimeout(timeout);
       }
-
-      return reply;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        this.logger.error(
-          `AI_CHAT_EXCEPTION:mode=${params.logScope}:provider=groq:model=${model}:message=${error.message}`,
-          error.stack,
-        );
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === 'AbortError') {
-        this.logger.error(`AI_CHAT_TIMEOUT:${params.logScope}:groq:${model}`);
-        throw new GatewayTimeoutException('AI_PROVIDER_TIMEOUT');
-      }
-
-      const errorMessage =
-        error instanceof Error ? error.message : 'Groq request failed';
-      this.logger.error(
-        `AI_CHAT_FAILED:${params.logScope}:groq:${model}:${errorMessage}`,
-      );
-
-      throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
-    } finally {
-      clearTimeout(timeout);
     }
+
+    throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+  }
+
+  private buildGroqMessages(
+    systemPrompt: string,
+    message: string,
+    history: AiChatHistoryMessageDto[] = [],
+  ): GroqMessage[] {
+    const historyMessages = history
+      .map((item) => this.normalizeGroqMessage(item))
+      .filter((item): item is GroqMessage => Boolean(item));
+    const currentMessage = this.normalizeGroqMessage({
+      role: 'user',
+      content: message,
+    });
+    const conversationMessages = [
+      ...historyMessages,
+      ...(currentMessage ? [currentMessage] : []),
+    ].slice(-10);
+
+    return [
+      {
+        role: 'system',
+        content: systemPrompt,
+      },
+      ...conversationMessages,
+    ];
+  }
+
+  private normalizeGroqMessage(
+    message: Pick<GroqMessage, 'role' | 'content'>,
+  ): GroqMessage | undefined {
+    const role = message.role;
+    const content =
+      typeof message.content === 'string' ? message.content.trim() : '';
+
+    if (!['system', 'user', 'assistant'].includes(role) || !content) {
+      return undefined;
+    }
+
+    if (this.isPreviousErrorMessage(content)) {
+      return undefined;
+    }
+
+    return { role, content };
+  }
+
+  private isPreviousErrorMessage(content: string): boolean {
+    const normalized = content.toUpperCase();
+    return [
+      'AI_REQUEST_FAILED',
+      'AI_PROVIDER_TIMEOUT',
+      'AI_CHAT_EMPTY_RESPONSE',
+      'AI_PROVIDER_UNAVAILABLE',
+      'AI_RATE_LIMITED',
+    ].some((errorCode) => normalized.includes(errorCode));
+  }
+
+  private countMessageCharacters(messages: GroqMessage[]): number {
+    return messages.reduce((total, message) => total + message.content.length, 0);
   }
 
   private extractGroqReply(output: GroqChatResponse): string | undefined {
@@ -724,13 +850,15 @@ export class AiClientService {
     response: Response,
     mode: string,
     model: string,
+    latencyMs: number,
+    attempt: number,
   ): Promise<HttpException> {
     const body = await response.text().catch(() => '');
     const normalizedBody = body.toLowerCase();
     const safeBody = this.sanitizeProviderErrorBody(body);
 
     this.logger.error(
-      `AI_CHAT_PROVIDER_ERROR:mode=${mode}:provider=groq:model=${model}:status=${response.status}:body=${safeBody}`,
+      `AI_CHAT_PROVIDER_ERROR:mode=${mode}:provider=groq:model=${model}:attempt=${attempt + 1}:status=${response.status}:latency=${latencyMs}ms:body=${safeBody}`,
     );
 
     if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
@@ -763,10 +891,25 @@ export class AiClientService {
     return new BadGatewayException('AI_REQUEST_FAILED');
   }
 
+  private isRetryableAiError(error: HttpException): boolean {
+    const status = error.getStatus();
+    return [
+      HttpStatus.REQUEST_TIMEOUT,
+      HttpStatus.TOO_MANY_REQUESTS,
+      HttpStatus.BAD_GATEWAY,
+      HttpStatus.SERVICE_UNAVAILABLE,
+      HttpStatus.GATEWAY_TIMEOUT,
+    ].includes(status);
+  }
+
   private sanitizeProviderErrorBody(body: string): string {
     return body
       .replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED_API_KEY]')
       .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
       .slice(0, 2000);
+  }
+
+  private async delay(milliseconds: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 }

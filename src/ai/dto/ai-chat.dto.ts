@@ -1,9 +1,37 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsEnum,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 
 export enum AiChatMode {
   CHAT = 'chat',
   IMAGE_PROMPT_BUILDER = 'image_prompt_builder',
+}
+
+export class AiChatHistoryMessageDto {
+  @ApiProperty({
+    enum: ['system', 'user', 'assistant'],
+    example: 'user',
+  })
+  @IsString()
+  @IsIn(['system', 'user', 'assistant'])
+  role: 'system' | 'user' | 'assistant';
+
+  @ApiProperty({
+    example: 'xin chào',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(3000)
+  content: string;
 }
 
 export class AiChatDto {
@@ -26,6 +54,18 @@ export class AiChatDto {
   @IsOptional()
   @IsEnum(AiChatMode)
   mode?: AiChatMode;
+
+  @ApiProperty({
+    required: false,
+    type: [AiChatHistoryMessageDto],
+    description:
+      'Optional chat history. Backend sanitizes and keeps only the last 10 valid messages.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiChatHistoryMessageDto)
+  history?: AiChatHistoryMessageDto[];
 }
 
 export class AiChatResponseDto {

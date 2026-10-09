@@ -74,6 +74,6 @@ export class AiController {
     @Body() dto: AiChatDto,
     @Req() request: AiRequest,
   ): Promise<AiChatResponseDto> {
-    return this.aiService.chat(dto.message, dto.mode, request.user);
+    return this.aiService.chat(dto.message, dto.mode, request.user, dto.history);
   }
 }
