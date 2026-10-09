@@ -110,6 +110,7 @@ describe('AiClientService', () => {
     expect(result).toEqual({
       type: 'text',
       message: 'You are Anh Tài Bùi.',
+      content: 'You are Anh Tài Bùi.',
       mode: 'chat',
       language: 'en',
       canUseForCreate: false,
@@ -157,6 +158,9 @@ describe('AiClientService', () => {
 
     expect(result.mode).toBe('need_more_information');
     expect(result.canUseForCreate).toBe(false);
+    expect(result.content).toContain(
+      'I need some more information to create your event image:',
+    );
     expect(result.language).toBe('en');
     expect(result.message).toContain(
       'I need some more information to create your event image:',
@@ -228,6 +232,7 @@ describe('AiClientService', () => {
     );
     expect(result.imagePrompt).toContain('Create a professional event banner');
     expect(result.negativePrompt).toContain('no Eventix branding');
+    expect(result.content).toContain('IMAGE_PROMPT_READY:');
     expect(result.message).toContain('IMAGE_PROMPT_READY:');
 
     const [, request] = (global.fetch as jest.Mock).mock.calls[0];

@@ -31,6 +31,7 @@ export class AiChatDto {
 export class AiChatResponseDto {
   type: 'text';
   message: string;
+  content?: string;
   mode?: 'chat' | 'image_prompt_ready' | 'need_more_information';
   language?: 'vi' | 'en';
   summary?: {

@@ -63,6 +63,8 @@ export class AiController {
         type: 'text',
         mode: 'chat',
         language: 'vi',
+        content:
+          'Bạn có thể tổ chức concept khai trương công nghệ với khu trải nghiệm sản phẩm...',
         message:
           'Bạn có thể tổ chức concept khai trương công nghệ với khu trải nghiệm sản phẩm...',
       },

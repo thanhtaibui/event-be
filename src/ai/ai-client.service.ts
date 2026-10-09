@@ -78,6 +78,7 @@ export class AiClientService {
       type: 'text',
       mode: 'chat',
       language,
+      content,
       message: content,
       canUseForCreate: false,
     };
@@ -144,19 +145,30 @@ export class AiClientService {
       });
 
       if (!response.ok) {
-        throw await this.normalizeGroqError(response);
+        throw await this.normalizeGroqError(
+          response,
+          params.logScope,
+          model,
+        );
       }
 
       const output = (await response.json()) as GroqChatResponse;
       const reply = output.choices?.[0]?.message?.content?.trim();
 
       if (!reply) {
+        this.logger.error(
+          `AI_CHAT_EMPTY_RESPONSE:mode=${params.logScope}:provider=groq:model=${model}`,
+        );
         throw new BadGatewayException('AI_REQUEST_FAILED');
       }
 
       return reply;
     } catch (error) {
       if (error instanceof HttpException) {
+        this.logger.error(
+          `AI_CHAT_EXCEPTION:mode=${params.logScope}:provider=groq:model=${model}:message=${error.message}`,
+          error.stack,
+        );
         throw error;
       }
 
@@ -331,6 +343,12 @@ export class AiClientService {
       negativePrompt: negativePrompt || this.getDefaultNegativePrompt(),
       canUseForCreate: true,
       actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
+      content: this.buildImagePromptReadyMessage(
+        summary,
+        imagePrompt,
+        negativePrompt || this.getDefaultNegativePrompt(),
+        language,
+      ),
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
@@ -475,6 +493,9 @@ export class AiClientService {
       canUseForCreate: false,
       questions,
       missingFields,
+      content: [intro, ...questions.map((question) => `- ${question}`)].join(
+        '\n',
+      ),
       message: [intro, ...questions.map((question) => `- ${question}`)].join(
         '\n',
       ),
@@ -519,6 +540,12 @@ export class AiClientService {
       negativePrompt,
       canUseForCreate: true,
       actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
+      content: this.buildImagePromptReadyMessage(
+        summary,
+        imagePrompt,
+        negativePrompt,
+        language,
+      ),
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
@@ -644,11 +671,18 @@ export class AiClientService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private async normalizeGroqError(response: Response): Promise<HttpException> {
+  private async normalizeGroqError(
+    response: Response,
+    mode: string,
+    model: string,
+  ): Promise<HttpException> {
     const body = await response.text().catch(() => '');
     const normalizedBody = body.toLowerCase();
+    const safeBody = this.sanitizeProviderErrorBody(body);
 
-    this.logger.error(`AI_CHAT_PROVIDER_ERROR:groq:${response.status}`);
+    this.logger.error(
+      `AI_CHAT_PROVIDER_ERROR:mode=${mode}:provider=groq:model=${model}:status=${response.status}:body=${safeBody}`,
+    );
 
     if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
       return new HttpException('AI_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
@@ -678,5 +712,12 @@ export class AiClientService {
     }
 
     return new BadGatewayException('AI_REQUEST_FAILED');
+  }
+
+  private sanitizeProviderErrorBody(body: string): string {
+    return body
+      .replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED_API_KEY]')
+      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+      .slice(0, 2000);
   }
 }
