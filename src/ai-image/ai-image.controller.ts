@@ -52,17 +52,27 @@ export class AiImageController {
   }
 
   @Post('edit')
-  @ApiOperation({ summary: 'Edit an image from imageUrl and natural description' })
+  @ApiOperation({
+    summary: 'Edit an image from imageUrl or generated imageData',
+  })
   @ApiBody({
     type: EditImageDto,
     examples: {
       saleBackground: {
-        summary: 'Edit product image',
+        summary: 'Edit public image URL',
         value: {
           imageUrl:
             'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/iphone.jpg',
           description:
             'Đổi nền thành showroom, thêm chữ SALE 9.9, giữ nguyên sản phẩm',
+          ratio: '16:9',
+        },
+      },
+      generatedPreview: {
+        summary: 'Edit generated preview image data',
+        value: {
+          imageData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...',
+          prompt: 'Đổi nền thành sân khấu sự kiện, giữ bố cục chính',
           ratio: '16:9',
         },
       },

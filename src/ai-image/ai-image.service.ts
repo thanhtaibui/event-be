@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import sharp from 'sharp';
 import {
   EditImageDto,
   EnhanceImageDto,
@@ -12,6 +13,11 @@ import { CloudflareImageProvider } from './cloudflare-image-provider.service';
 import { SharpImageProcessor } from './sharp-image-processor.service';
 
 const MAX_INPUT_IMAGE_BYTES = 12 * 1024 * 1024;
+const ALLOWED_INPUT_IMAGE_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+] as const;
 
 @Injectable()
 export class AiImageService {
@@ -61,10 +67,14 @@ export class AiImageService {
     const timer = dto.maskImageUrl ? 'POST_AI_IMAGE_INPAINT' : 'POST_AI_IMAGE_EDIT';
     console.time(timer);
     try {
-      const sourceImage = await this.fetchImageFromUrl(dto.imageUrl);
+      const editPrompt = this.getEditPrompt(dto);
+      const sourceImage = await this.normalizeImageSource({
+        imageUrl: dto.imageUrl,
+        imageData: dto.imageData,
+      });
       const instruction =
         await this.aiPromptService.generateImageEditInstruction(
-          dto.description,
+          editPrompt,
           dto.ratio,
         );
 
@@ -72,7 +82,9 @@ export class AiImageService {
         ? await this.cloudflareImageProvider.inpaint({
             image: sourceImage,
             imageUrl: dto.imageUrl,
-            mask: await this.fetchImageFromUrl(dto.maskImageUrl),
+            mask: await this.normalizeImageSource({
+              imageUrl: dto.maskImageUrl,
+            }),
             instruction,
             ratio: dto.ratio,
             strength: dto.strength,
@@ -140,25 +152,59 @@ export class AiImageService {
     }
   }
 
+  private async normalizeImageSource(input: {
+    imageUrl?: string;
+    imageData?: string;
+  }): Promise<AiImageBuffer> {
+    const imageUrl = input.imageUrl?.trim();
+    const imageData = input.imageData?.trim();
+
+    if (imageUrl && imageData) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
+    }
+
+    if (!imageUrl && !imageData) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
+    }
+
+    const image = imageData
+      ? this.readImageData(imageData)
+      : await this.fetchImageFromUrl(imageUrl as string);
+
+    await this.validateImageBuffer(image);
+
+    return image;
+  }
+
   private async fetchImageFromUrl(imageUrl: string): Promise<AiImageBuffer> {
+    if (imageUrl.startsWith('blob:')) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
+    }
+
     if (imageUrl.startsWith('data:image/')) {
-      return this.readDataUrlImage(imageUrl);
+      return this.readImageData(imageUrl);
+    }
+
+    if (!this.isHttpImageUrl(imageUrl)) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
 
     let response: globalThis.Response;
     try {
       response = await fetch(imageUrl);
     } catch {
-      throw new BadRequestException('Cannot download image from imageUrl');
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
 
     if (!response.ok) {
-      throw new BadRequestException('Cannot download image from imageUrl');
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
 
-    const mimeType = response.headers.get('content-type') || 'image/png';
-    if (!mimeType.startsWith('image/')) {
-      throw new BadRequestException('imageUrl must point to an image file');
+    const mimeType = this.normalizeMimeType(
+      response.headers.get('content-type') || 'image/png',
+    );
+    if (!this.isAllowedImageMimeType(mimeType)) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
@@ -170,25 +216,89 @@ export class AiImageService {
     };
   }
 
-  private readDataUrlImage(imageUrl: string): AiImageBuffer {
-    const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (!match) {
-      throw new BadRequestException('Invalid image data URL');
+  private readImageData(imageData: string): AiImageBuffer {
+    const dataUrlMatch = imageData.match(
+      /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i,
+    );
+    const mimeType = this.normalizeMimeType(dataUrlMatch?.[1] || 'image/png');
+    const base64 = dataUrlMatch?.[2] || imageData;
+
+    if (!this.isAllowedImageMimeType(mimeType)) {
+      throw new BadRequestException('INVALID_IMAGE_DATA');
     }
 
-    const buffer = Buffer.from(match[2], 'base64');
+    if (!this.isValidBase64(base64)) {
+      throw new BadRequestException('INVALID_IMAGE_DATA');
+    }
+
+    const buffer = Buffer.from(base64.replace(/\s/g, ''), 'base64');
     this.validateImageSize(buffer);
 
     return {
-      mimeType: match[1],
+      mimeType,
       buffer,
     };
   }
 
   private validateImageSize(buffer: Buffer): void {
     if (buffer.length > MAX_INPUT_IMAGE_BYTES) {
-      throw new BadRequestException('Image file is too large');
+      throw new BadRequestException('IMAGE_TOO_LARGE');
     }
+  }
+
+  private async validateImageBuffer(image: AiImageBuffer): Promise<void> {
+    if (!this.isAllowedImageMimeType(image.mimeType)) {
+      throw new BadRequestException('INVALID_IMAGE_SOURCE');
+    }
+
+    this.validateImageSize(image.buffer);
+
+    try {
+      await sharp(image.buffer).metadata();
+    } catch {
+      throw new BadRequestException('INVALID_IMAGE_DATA');
+    }
+  }
+
+  private getEditPrompt(dto: EditImageDto): string {
+    const prompt = (dto.description || dto.prompt || '').trim();
+    if (!prompt) {
+      throw new BadRequestException('INVALID_IMAGE_EDIT_PROMPT');
+    }
+
+    return prompt;
+  }
+
+  private isHttpImageUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  private normalizeMimeType(value: string): string {
+    return value.split(';')[0].trim().toLowerCase();
+  }
+
+  private isAllowedImageMimeType(mimeType: string): boolean {
+    return (ALLOWED_INPUT_IMAGE_MIME_TYPES as readonly string[]).includes(
+      this.normalizeMimeType(mimeType),
+    );
+  }
+
+  private isValidBase64(value: string): boolean {
+    const normalized = value.replace(/\s/g, '');
+    if (!normalized || normalized.length % 4 !== 0) {
+      return false;
+    }
+
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+      return false;
+    }
+
+    return Buffer.from(normalized, 'base64').toString('base64') === normalized;
   }
 
   private toPreviewResponse(imageUrl: string) {

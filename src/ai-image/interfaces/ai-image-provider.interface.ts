@@ -10,7 +10,7 @@ export type GenerateImageInput = {
 
 export type EditImageInput = {
   image: AiImageBuffer;
-  imageUrl: string;
+  imageUrl?: string;
   instruction: string;
   ratio?: string;
   strength?: number;

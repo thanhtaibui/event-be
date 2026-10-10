@@ -43,19 +43,41 @@ export class GenerateImageDto {
 }
 
 export class EditImageDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example:
       'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/iphone.jpg',
+    description: 'Public HTTP/HTTPS image URL. Use either imageUrl or imageData.',
   })
-  @IsUrl({ require_tld: false })
-  imageUrl: string;
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...',
+    description:
+      'Data URL or base64 image data from a generated image preview. Use either imageUrl or imageData.',
+  })
+  @IsString()
+  @MaxLength(20_000_000)
+  @IsOptional()
+  imageData?: string;
+
+  @ApiPropertyOptional({
     example: 'Đổi nền thành showroom, thêm chữ SALE 9.9, giữ nguyên sản phẩm',
   })
   @IsString()
   @MaxLength(3000)
-  description: string;
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({
+    example: 'make it simpler',
+    description: 'Alias for description. Kept for generated image edit flow.',
+  })
+  @IsString()
+  @MaxLength(3000)
+  @IsOptional()
+  prompt?: string;
 
   @ApiPropertyOptional({
     enum: IMAGE_RATIOS,
