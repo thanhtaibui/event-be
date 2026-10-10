@@ -8,9 +8,11 @@ import {
   IsUUID,
   IsUrl,
   IsArray,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EventStatus } from 'src/shared/enum/enum';
+import { Type } from 'class-transformer';
 
 export class CreateEventDto {
   @ApiProperty({
@@ -62,6 +64,7 @@ export class CreateEventDto {
   @ApiProperty({
     example: 100,
   })
+  @Type(() => Number)
   @IsNumber()
   @Min(1, { message: 'Capacity must be at least 1' })
   @IsNotEmpty({ message: 'Event capacity is required' })
@@ -71,9 +74,10 @@ export class CreateEventDto {
   //   example: 'PUBLISHED',
   //   enum: EventStatus,
   // })
+  @IsIn(Object.values(EventStatus))
   @IsString()
   @IsOptional()
-  status: EventStatus;
+  status?: EventStatus;
 
   @ApiProperty({
     example: 'uuid',
@@ -96,10 +100,10 @@ export class CreateEventDto {
   @IsString()
   @IsOptional()
   @ApiProperty({ example: 'description' })
-  description: string;
+  description?: string;
 
   @IsString()
   @IsOptional()
   @ApiProperty({ example: 'place' })
-  place: string;
+  place?: string;
 }

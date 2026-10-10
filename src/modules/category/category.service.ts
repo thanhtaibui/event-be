@@ -9,6 +9,16 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { Category } from './entities/category.entity';
+import {
+  CANONICAL_CATEGORY_CODE_BY_NAME,
+  CANONICAL_CATEGORY_ORDER_BY_CODE,
+} from './category-master-data';
+
+export type CategoryOptionDto = {
+  id: string;
+  code: string;
+  name: string;
+};
 
 @Injectable()
 export class CategoryService {
@@ -37,14 +47,28 @@ export class CategoryService {
     return Response(201, 'Category created successfully', saved);
   }
 
-  async findAll(): Promise<ApiResponse<Category[]>> {
+  async findAll(): Promise<ApiResponse<CategoryOptionDto[]>> {
     console.time('GET_CATEGORIES');
     try {
       const categories = await this.categoryRepo.find({
         where: { deletedAt: IsNull() },
-        order: { createdAt: 'DESC' },
       });
-      return Response(200, 'Categories retrieved successfully', categories);
+      const items = categories
+        .map((category) => this.toCategoryOption(category))
+        .sort((left, right) => {
+          const leftOrder =
+            CANONICAL_CATEGORY_ORDER_BY_CODE.get(left.code) ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder =
+            CANONICAL_CATEGORY_ORDER_BY_CODE.get(right.code) ?? Number.MAX_SAFE_INTEGER;
+
+          if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+          }
+
+          return left.name.localeCompare(right.name, 'vi');
+        });
+
+      return Response(200, 'Categories retrieved successfully', items);
     } finally {
       console.timeEnd('GET_CATEGORIES');
     }
@@ -110,5 +134,36 @@ export class CategoryService {
 
     await this.categoryRepo.softDelete(id);
     return Response(200, 'Category deleted successfully', { deleted: true });
+  }
+
+  private toCategoryOption(category: Category): CategoryOptionDto {
+    return {
+      id: category.id,
+      code:
+        this.getCanonicalCode(category) ||
+        this.toFallbackCode(category.name),
+      name: category.name,
+    };
+  }
+
+  private getCanonicalCode(category: Category): string | undefined {
+    const description = category.description?.trim();
+    if (description && CANONICAL_CATEGORY_ORDER_BY_CODE.has(description)) {
+      return description;
+    }
+
+    return CANONICAL_CATEGORY_CODE_BY_NAME.get(category.name);
+  }
+
+  private toFallbackCode(name: string): string {
+    return name
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toUpperCase();
   }
 }

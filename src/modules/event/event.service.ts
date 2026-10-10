@@ -9,7 +9,7 @@ import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { EventDto } from './dto/event.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Event } from './entities/event.entity';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
@@ -43,37 +43,57 @@ export class EventService {
     createEventDto: CreateEventDto,
     currentUser?: any,
   ): Promise<ApiResponse<EventDto>> {
-    const status = EventStatus.DRAFT;
-    const { categoryIds, ...eventData } = createEventDto;
-    await this.assertUserCanManageOrganization(
-      createEventDto.organizationId,
-      currentUser,
-    );
-    const categories = await this.findCategoriesByIds(categoryIds);
+    console.time('POST_EVENT_CREATE');
+    try {
+      this.validateEventDates(createEventDto);
+      const status = EventStatus.DRAFT;
+      const { categoryIds, ...eventData } = createEventDto;
+      const organization = await this.findOrganizationOrThrow(
+        createEventDto.organizationId,
+      );
 
-    const event = this.eventRepo.create({
-      ...eventData,
-      status,
-      organization: { id: createEventDto.organizationId },
-      categories,
-    });
-    const saveEvent = await this.eventRepo.save(event);
-    const item: EventDto = {
-      id: saveEvent.id,
-      title: saveEvent.title,
-      eventPoster: saveEvent.eventPoster,
-      eventBanner: saveEvent.eventBanner,
-      startDateTime: saveEvent.startDateTime,
-      endDateTime: saveEvent.endDateTime,
-      registrationEndDate: saveEvent.registrationEndDate,
-      capacity: saveEvent.capacity,
-      status: saveEvent.status,
-      organization: saveEvent.organization,
-      categories: saveEvent.categories,
-      description: saveEvent.description,
-      place: saveEvent.place,
-    };
-    return Response(201, 'Create Event Successfully', item);
+      await this.assertUserCanManageOrganization(
+        organization.id,
+        currentUser,
+      );
+      const categories = await this.findCategoriesByIds(categoryIds);
+
+      const event = this.eventRepo.create({
+        ...eventData,
+        status,
+        organization,
+        categories,
+      });
+      const saveEvent = await this.eventRepo.save(event);
+      const item: EventDto = {
+        id: saveEvent.id,
+        title: saveEvent.title,
+        eventPoster: saveEvent.eventPoster,
+        eventBanner: saveEvent.eventBanner,
+        startDateTime: saveEvent.startDateTime,
+        endDateTime: saveEvent.endDateTime,
+        registrationEndDate: saveEvent.registrationEndDate,
+        capacity: saveEvent.capacity,
+        status: saveEvent.status,
+        organization: saveEvent.organization,
+        categories: saveEvent.categories,
+        description: saveEvent.description,
+        place: saveEvent.place,
+      };
+      return Response(201, 'Create Event Successfully', item);
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
+        throw error;
+      }
+
+      console.error('POST_EVENT_CREATE_UNEXPECTED_FAILED', error);
+      throw error;
+    } finally {
+      console.timeEnd('POST_EVENT_CREATE');
+    }
   }
 
   async findAll(
@@ -386,6 +406,12 @@ export class EventService {
       event.organization.id,
       currentUser,
     );
+    this.validateEventDates({
+      startDateTime: updateEventDto.startDateTime ?? event.startDateTime,
+      endDateTime: updateEventDto.endDateTime ?? event.endDateTime,
+      registrationEndDate:
+        updateEventDto.registrationEndDate ?? event.registrationEndDate,
+    });
 
     // nếu đổi organization
     if (
@@ -396,10 +422,9 @@ export class EventService {
         updateEventDto.organizationId,
         currentUser,
       );
-      const org = await this.organizationRepo.findOne({
-        where: { id: updateEventDto.organizationId },
-      });
-      if (!org) throw new BadRequestException('Organization not found');
+      const org = await this.findOrganizationOrThrow(
+        updateEventDto.organizationId,
+      );
       event.organization = org;
     }
 
@@ -463,15 +488,66 @@ export class EventService {
     }
 
     const uniqueCategoryIds = [...new Set(categoryIds)];
+    if (uniqueCategoryIds.length !== categoryIds.length) {
+      throw new BadRequestException('DUPLICATE_CATEGORY_IDS');
+    }
+
     const categories = await this.categoryRepo.find({
-      where: { id: In(uniqueCategoryIds) },
+      where: { id: In(uniqueCategoryIds), deletedAt: IsNull() },
     });
 
     if (categories.length !== uniqueCategoryIds.length) {
-      throw new BadRequestException('Some categories not found');
+      throw new BadRequestException('CATEGORY_NOT_FOUND');
     }
 
     return categories;
+  }
+
+  private async findOrganizationOrThrow(orgId: string): Promise<Organization> {
+    const organization = await this.organizationRepo.findOne({
+      where: { id: orgId },
+    });
+
+    if (!organization) {
+      throw new BadRequestException('ORGANIZATION_NOT_FOUND');
+    }
+
+    return organization;
+  }
+
+  private validateEventDates(dto: {
+    startDateTime?: Date | string;
+    endDateTime?: Date | string;
+    registrationEndDate?: Date | string;
+  }): void {
+    const startDateTime = this.parseDate(dto.startDateTime);
+    const endDateTime = this.parseDate(dto.endDateTime);
+    const registrationEndDate = this.parseDate(dto.registrationEndDate);
+
+    if (startDateTime && endDateTime && startDateTime >= endDateTime) {
+      throw new BadRequestException('INVALID_EVENT_DATES');
+    }
+
+    if (
+      startDateTime &&
+      registrationEndDate &&
+      registrationEndDate > startDateTime
+    ) {
+      throw new BadRequestException('INVALID_EVENT_DATES');
+    }
+  }
+
+  private parseDate(value?: Date | string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('INVALID_EVENT_DATES');
+    }
+
+    return date;
   }
 
   private async syncEventStatuses(eventIds?: string[]): Promise<void> {
@@ -523,8 +599,12 @@ export class EventService {
     orgId: string,
     currentUser?: any,
   ): Promise<void> {
-    if (!currentUser || currentUser.role?.isSuperAdmin) {
+    if (currentUser?.role?.isSuperAdmin) {
       return;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('EVENT_CREATE_FORBIDDEN');
     }
 
     const membership = await this.membershipRepo.findOne({
@@ -536,7 +616,7 @@ export class EventService {
     });
 
     if (!membership) {
-      throw new ForbiddenException('User does not belong to this organization');
+      throw new ForbiddenException('EVENT_CREATE_FORBIDDEN');
     }
   }
 }

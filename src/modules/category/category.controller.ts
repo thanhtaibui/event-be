@@ -19,9 +19,10 @@ import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { Permissions } from 'src/common/decorators/permissions.decorator';
 import { PermissionCode } from 'src/common/constants/permission-codes';
+import { CategoryOptionDto } from './category.service';
 
 @ApiTags('category')
-@Controller('category')
+@Controller(['category', 'categories'])
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
@@ -43,7 +44,7 @@ export class CategoryController {
     status: 200,
     description: 'Categories retrieved successfully.',
   })
-  async findAll(): Promise<ApiResponseType<Category[]>> {
+  async findAll(): Promise<ApiResponseType<CategoryOptionDto[]>> {
     return this.categoryService.findAll();
   }
 
