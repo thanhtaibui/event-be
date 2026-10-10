@@ -52,7 +52,8 @@ type ImageCreationInfo = {
   organization?: string;
   theme?: string;
   audience?: string;
-  styleOrColor?: string;
+  style?: string;
+  colors?: string;
 };
 
 @Injectable()
@@ -540,38 +541,58 @@ export class AiClientService {
   }
 
   private extractImageCreationInfo(message: string): ImageCreationInfo {
-    return {
-      eventName: this.extractFieldValue(message, [
+    const info = {
+      eventName: this.extractFieldValueByLabels(message, [
         'event name',
         'tên sự kiện',
+        'sự kiện',
       ]),
-      organization: this.extractFieldValue(message, [
+      organization: this.extractFieldValueByLabels(message, [
         'organization',
         'organizer',
         'tổ chức',
         'đơn vị tổ chức',
       ]),
-      theme: this.extractFieldValue(message, ['theme', 'chủ đề']),
-      audience: this.extractFieldValue(message, [
+      theme: this.extractFieldValueByLabels(message, [
+        'theme',
+        'chủ đề',
+        'chủ đề chính',
+      ]),
+      audience: this.extractFieldValueByLabels(message, [
         'target audience',
         'audience',
         'đối tượng',
+        'đối tượng tham gia',
         'khán giả',
+        'khách chính',
       ]),
-      styleOrColor: this.extractFieldValue(message, [
-        'preferred style/color',
-        'style/color',
+      style: this.extractFieldValueByLabels(message, [
+        'preferred style',
         'style',
+        'phong cách',
+      ]),
+      colors: this.extractFieldValueByLabels(message, [
+        'preferred colors',
         'color',
         'colors',
-        'phong cách',
         'màu',
         'màu sắc',
+        'màu chủ đạo',
       ]),
     };
+
+    return this.normalizeImageCreationInfo({
+      eventName: info.eventName || this.extractNaturalField(message, 'eventName'),
+      organization:
+        info.organization || this.extractNaturalField(message, 'organization'),
+      theme: info.theme || this.extractNaturalField(message, 'theme'),
+      audience: info.audience || this.extractNaturalField(message, 'audience'),
+      style: info.style || this.extractNaturalField(message, 'style'),
+      colors: info.colors || this.extractNaturalField(message, 'colors'),
+    });
   }
 
-  private extractFieldValue(
+  private extractFieldValueByLabels(
     message: string,
     labels: string[],
   ): string | undefined {
@@ -604,6 +625,71 @@ export class AiClientService {
     return undefined;
   }
 
+  private extractNaturalField(
+    message: string,
+    field: keyof ImageCreationInfo,
+  ): string | undefined {
+    const patternsByField: Record<keyof ImageCreationInfo, RegExp[]> = {
+      eventName: [
+        /(?:tên\s+)?sự kiện(?:\s+của tôi)?\s+(?:là|tên là)\s+([^.\n]+)/i,
+        /(?:my\s+)?event(?:\s+name)?\s+(?:is|called)\s+([^.\n]+)/i,
+      ],
+      organization: [
+        /([^.\n]+?)\s+(?:tổ chức|là đơn vị tổ chức)(?:[.\n]|$)/i,
+        /(?:đơn vị tổ chức|tổ chức)\s+(?:là|:)?\s*([^.\n]+)/i,
+        /([^.\n]+?)\s+(?:organizes|is organizing|is the organizer)(?:[.\n]|$)/i,
+        /(?:organization|organizer)\s+(?:is|:)?\s*([^.\n]+)/i,
+      ],
+      theme: [
+        /(?:chủ đề|chủ đề chính)\s+(?:về|là|:)\s*([^.\n]+)/i,
+        /theme\s+(?:is|about|:)\s*([^.\n]+)/i,
+      ],
+      audience: [
+        /(?:khách chính|đối tượng(?: tham gia)?|khán giả)\s+(?:là|:)\s*([^.\n]+)/i,
+        /(?:target audience|audience)\s+(?:is|are|:)\s*([^.\n]+)/i,
+      ],
+      style: [
+        /(?:muốn|mong muốn)?\s*phong cách\s+(?:là|:)?\s*([^.\n]+)/i,
+        /style\s+(?:is|:)\s*([^.\n]+)/i,
+      ],
+      colors: [
+        /(?:màu|màu sắc|màu chủ đạo)\s+(?:là|:)?\s*([^.\n]+)/i,
+        /colors?\s+(?:is|are|:)\s*([^.\n]+)/i,
+      ],
+    };
+
+    for (const pattern of patternsByField[field]) {
+      const match = message.match(pattern);
+      const value = this.cleanExtractedValue(match?.[1]);
+      if (value) {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  private normalizeImageCreationInfo(info: ImageCreationInfo): ImageCreationInfo {
+    return {
+      eventName: this.cleanExtractedValue(info.eventName),
+      organization: this.cleanExtractedValue(info.organization),
+      theme: this.cleanExtractedValue(info.theme),
+      audience: this.cleanExtractedValue(info.audience),
+      style: this.cleanExtractedValue(info.style),
+      colors: this.cleanExtractedValue(info.colors),
+    };
+  }
+
+  private cleanExtractedValue(value?: string): string | undefined {
+    const normalized = value
+      ?.trim()
+      .replace(/^[\s:：,-]+/, '')
+      .replace(/[\s.。]+$/, '')
+      .trim();
+
+    return normalized || undefined;
+  }
+
   private findNextNonEmptyLine(
     lines: string[],
     startIndex: number,
@@ -624,7 +710,8 @@ export class AiClientService {
       ['organization', info.organization],
       ['theme', info.theme],
       ['audience', info.audience],
-      ['styleOrColor', info.styleOrColor],
+      ['style', info.style],
+      ['colors', info.colors],
     ];
 
     return checks.filter(([, value]) => !value).map(([field]) => field);
@@ -639,14 +726,16 @@ export class AiClientService {
       organization: 'Organization?',
       theme: 'Theme?',
       audience: 'Target audience?',
-      styleOrColor: 'Preferred style/color?',
+      style: 'Preferred style?',
+      colors: 'Preferred colors?',
     };
     const vietnameseQuestionByField: Record<string, string> = {
       eventName: 'Tên sự kiện là gì?',
       organization: 'Đơn vị tổ chức là ai?',
       theme: 'Chủ đề chính của sự kiện là gì?',
       audience: 'Đối tượng tham gia là ai?',
-      styleOrColor: 'Phong cách hoặc màu chủ đạo mong muốn là gì?',
+      style: 'Phong cách mong muốn là gì?',
+      colors: 'Màu chủ đạo mong muốn là gì?',
     };
     const questionByField =
       language === 'vi' ? vietnameseQuestionByField : englishQuestionByField;
@@ -669,7 +758,7 @@ export class AiClientService {
 
     return {
       type: 'text',
-      mode: 'need_more_information',
+      mode: 'image_prompt_collecting',
       locale: language,
       language,
       canUseForCreate: false,
@@ -693,8 +782,8 @@ export class AiClientService {
       organization: info.organization,
       theme: info.theme,
       audience: info.audience,
-      style: info.styleOrColor,
-      colors: this.extractColorText(info.styleOrColor),
+      style: info.style,
+      colors: info.colors,
     };
     const imagePrompt = this.buildLocalizedFallbackPrompt(info, language);
     const negativePrompt = this.getDefaultNegativePrompt(language);
@@ -751,10 +840,8 @@ export class AiClientService {
         this.asOptionalString(source.organization) || fallback.organization,
       theme: this.asOptionalString(source.theme) || fallback.theme,
       audience: this.asOptionalString(source.audience) || fallback.audience,
-      style: this.asOptionalString(source.style) || fallback.styleOrColor,
-      colors:
-        this.asOptionalString(source.colors) ||
-        this.extractColorText(fallback.styleOrColor),
+      style: this.asOptionalString(source.style) || fallback.style,
+      colors: this.asOptionalString(source.colors) || fallback.colors,
     };
   }
 
@@ -880,7 +967,8 @@ export class AiClientService {
         `Tạo banner sự kiện khổ ngang chuyên nghiệp cho "${info.eventName}" do "${info.organization}" tổ chức.`,
         `Chủ đề: ${info.theme}.`,
         `Đối tượng mục tiêu: ${info.audience}.`,
-        `Phong cách và màu sắc: ${info.styleOrColor}.`,
+        `Phong cách: ${info.style}.`,
+        `Màu sắc: ${info.colors}.`,
         'Định hướng hình ảnh: không khí sự kiện cao cấp, chuyên nghiệp, chân thực, bố cục rõ ràng, phù hợp cho truyền thông sự kiện.',
         'Bố cục: banner ngang, có khoảng trống sạch để đặt tiêu đề, ánh sáng cân bằng, chủ thể chính nổi bật và bối cảnh liên quan đến sự kiện.',
         'Yêu cầu chất lượng: hình ảnh sắc nét, hiện đại, đáng tin cậy, không giống ảnh mẫu đại trà, không thêm chữ giả khó đọc trong ảnh.',
@@ -891,7 +979,8 @@ export class AiClientService {
       `Create a professional horizontal event banner for "${info.eventName}" organized by "${info.organization}".`,
       `Theme: ${info.theme}.`,
       `Target audience: ${info.audience}.`,
-      `Style and color direction: ${info.styleOrColor}.`,
+      `Style direction: ${info.style}.`,
+      `Color palette: ${info.colors}.`,
       'Visual direction: premium, professional, realistic event atmosphere with clear hierarchy and strong marketing quality.',
       'Composition: wide banner layout with clean space for title overlay, balanced lighting, a strong main subject, and a relevant event environment.',
       'Quality requirements: sharp, modern, trustworthy, non-generic, no unreadable fake text inside the image.',
@@ -901,18 +990,6 @@ export class AiClientService {
   private asOptionalString(value: unknown): string | undefined {
     const normalized = String(value || '').trim();
     return normalized || undefined;
-  }
-
-  private extractColorText(styleOrColor?: string): string | undefined {
-    if (!styleOrColor) {
-      return undefined;
-    }
-
-    const colorMatch = styleOrColor.match(
-      /(green|white|blue|red|gold|black|purple|yellow|orange|pink|gray|grey|màu[^,.;]*)[\w\s,/-]*/i,
-    );
-
-    return colorMatch?.[0]?.trim() || styleOrColor;
   }
 
   private escapeRegExp(value: string): string {

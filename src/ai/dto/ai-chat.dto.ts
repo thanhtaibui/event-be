@@ -72,7 +72,11 @@ export class AiChatResponseDto {
   type: 'text';
   message: string;
   content?: string;
-  mode?: 'chat' | 'image_prompt_ready' | 'need_more_information';
+  mode?:
+    | 'chat'
+    | 'image_prompt_ready'
+    | 'need_more_information'
+    | 'image_prompt_collecting';
   locale?: 'vi' | 'en';
   language?: 'vi' | 'en';
   summary?: {

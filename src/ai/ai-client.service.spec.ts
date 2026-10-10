@@ -311,7 +311,7 @@ describe('AiClientService', () => {
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
-    expect(result.mode).toBe('need_more_information');
+    expect(result.mode).toBe('image_prompt_collecting');
     expect(result.canUseForCreate).toBe(false);
     expect(result.content).toContain(
       'I need some more information to create your event image:',
@@ -325,9 +325,10 @@ describe('AiClientService', () => {
       'Organization?',
       'Theme?',
       'Target audience?',
-      'Preferred style/color?',
+      'Preferred style?',
     ]);
     expect(result.missingFields).toContain('eventName');
+    expect(result.missingFields).toContain('colors');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -372,8 +373,11 @@ describe('AiClientService', () => {
         'Target audience:',
         'Agricultural businesses, investors, technology experts',
         '',
-        'Preferred style/color:',
-        'Natural premium, environmental technology, green and white',
+        'Style:',
+        'Natural premium, environmental technology',
+        '',
+        'Colors:',
+        'Green and white',
       ].join('\n'),
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
@@ -437,7 +441,8 @@ describe('AiClientService', () => {
         'Tổ chức: GreenFarm Vietnam',
         'Chủ đề: Nông nghiệp thông minh, IoT và phát triển bền vững',
         'Đối tượng: Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
-        'Phong cách: Natural premium, environmental technology, màu xanh lá và trắng',
+        'Phong cách: Natural premium, environmental technology',
+        'Màu chủ đạo: Xanh lá, trắng',
       ].join('\n'),
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
@@ -456,6 +461,103 @@ describe('AiClientService', () => {
     expect(result.message).toContain('Prompt dùng cho Tạo ảnh:');
     expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
     expect(result.message).not.toContain('TOM_TAT:');
+  });
+
+  it('normalizes Vietnamese labeled image prompt input to fixed English schema', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'chat',
+              message: 'This should be replaced by the fallback prompt.',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Tên sự kiện: Green Life Festival 2026',
+        'Đơn vị tổ chức: Green Future Community',
+        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+        'Đối tượng tham gia: Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
+        'Phong cách: Natural, fresh, eco-friendly',
+        'Màu chủ đạo: Xanh lá, trắng, be',
+      ].join('\n'),
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.summary).toEqual({
+      eventName: 'Green Life Festival 2026',
+      organization: 'Green Future Community',
+      theme: 'Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+      audience:
+        'Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
+      style: 'Natural, fresh, eco-friendly',
+      colors: 'Xanh lá, trắng, be',
+    });
+    expect(result.missingFields).toBeUndefined();
+  });
+
+  it('normalizes Vietnamese natural image prompt input to fixed English schema', async () => {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'chat',
+              message: 'This should be replaced by the fallback prompt.',
+            }),
+          },
+        },
+      ],
+    });
+
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Sự kiện của tôi là Green Life Festival 2026.',
+        'Green Future Community tổ chức.',
+        'Chủ đề về sống xanh và trồng cây.',
+        'Khách chính là gia đình và sinh viên.',
+        'Muốn phong cách tự nhiên, thân thiện môi trường.',
+        'Màu xanh lá và be.',
+      ].join('\n'),
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_ready');
+    expect(result.summary).toEqual({
+      eventName: 'Green Life Festival 2026',
+      organization: 'Green Future Community',
+      theme: 'sống xanh và trồng cây',
+      audience: 'gia đình và sinh viên',
+      style: 'tự nhiên, thân thiện môi trường',
+      colors: 'xanh lá và be',
+    });
+    expect(result.missingFields).toBeUndefined();
+  });
+
+  it('returns only colors as missing when image prompt input lacks colors', async () => {
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Tên sự kiện: Green Life Festival 2026',
+        'Đơn vị tổ chức: Green Future Community',
+        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+        'Đối tượng tham gia: Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
+        'Phong cách: Natural, fresh, eco-friendly',
+      ].join('\n'),
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.missingFields).toEqual(['colors']);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('falls back to structured prompt when image provider returns wrong mode', async () => {
