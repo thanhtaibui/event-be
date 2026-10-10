@@ -105,8 +105,8 @@ export class EventService {
       await this.syncEventStatuses();
       const eventQuery = this.eventRepo
         .createQueryBuilder('event')
-        .leftJoinAndSelect('event.organization', 'organization')
-        .leftJoinAndSelect('event.categories', 'categories');
+        .leftJoinAndSelect('event.organization', 'event_organization_rel')
+        .leftJoinAndSelect('event.categories', 'event_categories_rel');
       const scopedOrganizationIds =
         await this.getEventListOrganizationScope(currentUser);
 
@@ -121,7 +121,7 @@ export class EventService {
           });
         }
 
-        eventQuery.andWhere('organization.id IN (:...organizationIds)', {
+        eventQuery.andWhere('event_organization_rel.id IN (:...organizationIds)', {
           organizationIds: scopedOrganizationIds,
         });
       }

@@ -155,6 +155,14 @@ describe('EventService create', () => {
 
     expect(result.data?.items).toHaveLength(1);
     expect(result.data?.items[0].title).toBe('Green Life Festival 2026');
+    expect(queryBuilders[0].leftJoinAndSelect).toHaveBeenCalledWith(
+      'event.organization',
+      'event_organization_rel',
+    );
+    expect(queryBuilders[0].leftJoinAndSelect).toHaveBeenCalledWith(
+      'event.categories',
+      'event_categories_rel',
+    );
     expect(queryBuilders[0].where).not.toHaveBeenCalled();
     expect(queryBuilders[0].andWhere).not.toHaveBeenCalledWith(
       expect.stringContaining('event.status IN'),
@@ -190,7 +198,7 @@ describe('EventService create', () => {
       relations: ['organization'],
     });
     expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
-      'organization.id IN (:...organizationIds)',
+      'event_organization_rel.id IN (:...organizationIds)',
       { organizationIds: [organization.id] },
     );
   });
