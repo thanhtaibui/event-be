@@ -27,7 +27,7 @@ export class Category extends BaseEntity {
   events: Event[];
 
   @DeleteDateColumn({ name: 'deletedAt', nullable: true })
-  deletedAt: Date;
+  deletedAt: Date | null;
 }
 
 

@@ -30,6 +30,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { AiModule } from './ai/ai.module';
 import { AiImageModule } from './ai-image/ai-image.module';
 import { PerformanceLoggingInterceptor } from './common/interceptors/performance-logging.interceptor';
+import { CategoryModule } from './modules/category/category.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -74,6 +75,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     NotificationModule,
     AiModule,
     AiImageModule,
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [
