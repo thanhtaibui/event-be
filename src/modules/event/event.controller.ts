@@ -58,8 +58,9 @@ export class EventController {
   @Permissions(PermissionCode.EVENT_VIEW)
   async findAll(
     @Paginate() query: PaginateQuery,
+    @Req() req: any,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
-    return await this.eventService.findAll(query);
+    return await this.eventService.findAll(query, req.user);
   }
 
   @Get('org/:slug')

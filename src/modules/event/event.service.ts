@@ -98,23 +98,35 @@ export class EventService {
 
   async findAll(
     query: PaginateQuery,
+    currentUser?: any,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     console.time('GET_EVENTS');
     try {
       await this.syncEventStatuses();
-      const now = new Date();
       const eventQuery = this.eventRepo
         .createQueryBuilder('event')
         .leftJoinAndSelect('event.organization', 'organization')
-        .leftJoinAndSelect('event.categories', 'categories')
-        .where('event.status IN (:...statuses)', {
-          statuses: [
-            EventStatus.PUBLISHED,
-            EventStatus.UPCOMING,
-            EventStatus.ONGOING,
-          ],
-        })
-        .andWhere('event.registrationEndDate >= :now', { now });
+        .leftJoinAndSelect('event.categories', 'categories');
+      const scopedOrganizationIds =
+        await this.getEventListOrganizationScope(currentUser);
+
+      if (scopedOrganizationIds) {
+        if (scopedOrganizationIds.length === 0) {
+          return Response(200, 'Get All Events Successfully', {
+            items: [],
+            page: query.page ?? 1,
+            limit: query.limit ?? 10,
+            total: 0,
+            totalPages: 0,
+          });
+        }
+
+        eventQuery.andWhere('organization.id IN (:...organizationIds)', {
+          organizationIds: scopedOrganizationIds,
+        });
+      }
+
+      this.logGetAllContext(currentUser, scopedOrganizationIds, query);
 
       const result = await paginate(query, eventQuery, {
         sortableColumns: ['title', 'capacity', 'categories.name'],
@@ -501,6 +513,47 @@ export class EventService {
     }
 
     return categories;
+  }
+
+  private async getEventListOrganizationScope(
+    currentUser?: any,
+  ): Promise<string[] | undefined> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return undefined;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('EVENT_LIST_FORBIDDEN');
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: {
+        user: { id: currentUser.userId },
+        isActive: true,
+      },
+      relations: ['organization'],
+    });
+
+    return memberships
+      .map((membership) => membership.organization?.id)
+      .filter((organizationId): organizationId is string => Boolean(organizationId));
+  }
+
+  private logGetAllContext(
+    currentUser: any,
+    scopedOrganizationIds: string[] | undefined,
+    query: PaginateQuery,
+  ): void {
+    console.log(
+      'GET_EVENTS_CONTEXT',
+      JSON.stringify({
+        actor: currentUser?.role?.isSuperAdmin ? 'SUPER_ADMIN' : 'ORG_SCOPED',
+        scopedOrganizationCount: scopedOrganizationIds?.length ?? 'ALL',
+        page: query.page ?? 1,
+        limit: query.limit ?? 10,
+        filters: query.filter ? Object.keys(query.filter) : [],
+      }),
+    );
   }
 
   private async findOrganizationOrThrow(orgId: string): Promise<Organization> {
