@@ -88,6 +88,31 @@ describe('permission normalization', () => {
     expect(selectedCodes).not.toEqual(expect.arrayContaining(legacyCodes));
   });
 
+  it('defines organization member management permission metadata', () => {
+    const organizationPermissions = PERMISSION_TREE.find(
+      (permission) => permission.code === 'ORGANIZATION',
+    );
+    const memberManagePermission = organizationPermissions?.children.find(
+      (permission) =>
+        permission.code === PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    );
+
+    expect(memberManagePermission).toEqual({
+      code: PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+      name: 'Organization Member Manage',
+      description: 'Allow managing organization members and their roles.',
+    });
+    expect(ROLE_PERMISSION_CODES.OWNER).toContain(
+      PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    );
+  });
+
+  it('does not automatically assign member management to regular members', () => {
+    expect(ROLE_PERMISSION_CODES.MEMBER).not.toContain(
+      PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    );
+  });
+
   it('reports missing canonical permission codes for diagnostics', () => {
     const assignedPermissions = configuredCodes
       .filter(

@@ -55,7 +55,7 @@ export class MembershipController {
   findByOrganizationSlug(@Param('slug') slug: string, @Req() req: any) {
     return this.membershipService.findByOrganizationSlug(
       slug,
-      req.user.userId,
+      req.user,
     );
   }
 

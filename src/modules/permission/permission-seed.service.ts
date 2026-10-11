@@ -8,6 +8,7 @@ import { Role } from '../role/entities/role.entity';
 type PermissionChildDefinition = {
   code: string;
   name: string;
+  description?: string;
 };
 
 type PermissionParentDefinition = {
@@ -38,7 +39,8 @@ export const PERMISSION_TREE: PermissionParentDefinition[] = [
       { code: PermissionCode.ORGANIZATION_VERIFY, name: 'Verify Organization' },
       {
         code: PermissionCode.ORGANIZATION_MEMBER_MANAGE,
-        name: 'Manage Organization Members',
+        name: 'Organization Member Manage',
+        description: 'Allow managing organization members and their roles.',
       },
     ],
   },
@@ -334,6 +336,7 @@ export class PermissionSeedService implements OnApplicationBootstrap {
   private async ensurePermission(input: {
     code: string;
     name: string;
+    description?: string;
     parent: Permission | null;
   }): Promise<Permission> {
     let permission = await this.permissionRepo.findOne({
@@ -345,6 +348,7 @@ export class PermissionSeedService implements OnApplicationBootstrap {
       permission = this.permissionRepo.create({
         permission_code: input.code,
         permission_name: input.name,
+        description: input.description,
         parent: input.parent ?? undefined,
       });
       return this.permissionRepo.save(permission);
@@ -353,6 +357,13 @@ export class PermissionSeedService implements OnApplicationBootstrap {
     let changed = false;
     if (permission.permission_name !== input.name) {
       permission.permission_name = input.name;
+      changed = true;
+    }
+
+    const expectedDescription = input.description ?? null;
+    const currentDescription = permission.description ?? null;
+    if (currentDescription !== expectedDescription) {
+      permission.description = input.description;
       changed = true;
     }
 

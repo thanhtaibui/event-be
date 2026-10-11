@@ -14,6 +14,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Membership } from './entities/membership.entity';
 import { In, IsNull, Repository } from 'typeorm';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
+import {
+  PermissionCode,
+  PermissionCodeValue,
+} from 'src/common/constants/permission-codes';
 import { MembershipDto, OrganizationMembershipDto } from './dto/membership.dto';
 import { Role } from '../role/entities/role.entity';
 import { Organization } from '../organization/entities/organization.entity';
@@ -56,7 +60,7 @@ export class MembershipService {
       }),
       this.roleRepo.findOne({
         where: { id: createMembershipDto.roleId, deletedAt: IsNull() },
-        relations: ['organization'],
+        relations: ['organization', 'permissions'],
       }),
     ]);
 
@@ -83,6 +87,7 @@ export class MembershipService {
     if (!this.roleCanBeUsedInOrganization(role, organization.id)) {
       throw new BadRequestException('Role does not belong to this organization');
     }
+    await this.assertRoleAssignmentAllowed(role, organization.id, currentUser);
 
     const existingMembership = await this.membershipRepo.findOne({
       where: {
@@ -97,18 +102,7 @@ export class MembershipService {
         existingMembership,
         'SUPER_ADMIN system membership cannot be modified.',
       );
-      existingMembership.role = role;
-      existingMembership.isActive = true;
-      const saved = await this.membershipRepo.save(existingMembership);
-      return Response(200, 'Membership already existed and was updated', {
-        id: saved.id,
-        userId: user.id,
-        createdAt: saved.createdAt,
-        userName: user.fullName,
-        email: user.email,
-        isActive: saved.isActive,
-        role: role.role_name,
-      });
+      throw new BadRequestException('Membership already exists');
     }
 
     const membership = this.membershipRepo.create({
@@ -237,7 +231,7 @@ export class MembershipService {
 
   async findByOrganizationSlug(
     slug: string,
-    userId: string,
+    currentUser?: any,
   ): Promise<ApiResponse<OrganizationMembershipDto[]>> {
     const timer = `GET_MEMBERSHIPS_BY_ORG_SLUG:${slug}`;
     console.time(timer);
@@ -250,21 +244,30 @@ export class MembershipService {
         throw new NotFoundException('Organization not found');
       }
 
-      const membership = await this.membershipRepo.findOne({
-        where: {
-          user: { id: userId },
-          organization: { id: organization.id },
-          isActive: true,
-        },
-      });
+      if (!currentUser?.role?.isSuperAdmin) {
+        const membership = await this.membershipRepo.findOne({
+          where: {
+            user: { id: currentUser?.userId },
+            organization: { id: organization.id },
+            isActive: true,
+          },
+          relations: ['role', 'role.permissions'],
+        });
 
-      if (!membership) {
-        throw new ForbiddenException(
-          'User does not belong to this organization',
-        );
+        if (
+          !membership ||
+          !this.membershipHasPermission(
+            membership,
+            PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+          )
+        ) {
+          throw new ForbiddenException(
+            'User does not belong to this organization',
+          );
+        }
       }
 
-      return this.findByOrganization(organization.id);
+      return this.findByOrganization(organization.id, currentUser);
     } finally {
       console.timeEnd(timer);
     }
@@ -337,13 +340,14 @@ export class MembershipService {
       if (!organization) {
         throw new NotFoundException('Organization not found');
       }
+      await this.assertCanManageOrganization(organization.id, currentUser);
       membership.organization = organization;
     }
 
     if (updateMembershipDto.roleId) {
       const role = await this.roleRepo.findOne({
         where: { id: updateMembershipDto.roleId, deletedAt: IsNull() },
-        relations: ['organization'],
+        relations: ['organization', 'permissions'],
       });
       if (!role) {
         throw new NotFoundException('Role not found');
@@ -359,6 +363,7 @@ export class MembershipService {
           'Role does not belong to this organization',
         );
       }
+      await this.assertRoleAssignmentAllowed(role, targetOrgId, currentUser);
       membership.role = role;
     }
 
@@ -437,7 +442,7 @@ export class MembershipService {
         id: updateMembershipRoleDto.roleId,
         deletedAt: IsNull(),
       },
-      relations: ['organization'],
+      relations: ['organization', 'permissions'],
     });
 
     if (!role) {
@@ -454,6 +459,11 @@ export class MembershipService {
         'Role does not belong to this organization',
       );
     }
+    await this.assertRoleAssignmentAllowed(
+      role,
+      membership.organization.id,
+      currentUser,
+    );
 
     membership.role = role;
     const savedMembership = await this.membershipRepo.save(membership);
@@ -523,8 +533,12 @@ export class MembershipService {
   private async getAccessibleOrganizationIds(
     currentUser?: any,
   ): Promise<string[] | null> {
-    if (!currentUser || currentUser.role?.isSuperAdmin) {
+    if (currentUser?.role?.isSuperAdmin) {
       return null;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
     }
 
     const memberships = await this.membershipRepo.find({
@@ -532,16 +546,16 @@ export class MembershipService {
         user: { id: currentUser.userId },
         isActive: true,
       },
-      relations: ['organization'],
-      select: {
-        id: true,
-        organization: {
-          id: true,
-        },
-      },
+      relations: ['organization', 'role', 'role.permissions'],
     });
 
     return memberships
+      .filter((membership) =>
+        this.membershipHasPermission(
+          membership,
+          PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+        ),
+      )
       .map((membership) => membership.organization?.id)
       .filter((id): id is string => Boolean(id));
   }
@@ -550,12 +564,12 @@ export class MembershipService {
     orgId: string,
     currentUser?: any,
   ): Promise<void> {
-    if (!currentUser) {
+    if (currentUser?.role?.isSuperAdmin) {
       return;
     }
 
-    if (currentUser.role?.isSuperAdmin) {
-      return;
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
     }
 
     const membership = await this.membershipRepo.findOne({
@@ -564,10 +578,78 @@ export class MembershipService {
         organization: { id: orgId },
         isActive: true,
       },
+      relations: ['role', 'role.permissions'],
     });
 
     if (!membership) {
       throw new ForbiddenException('User does not belong to this organization');
     }
+
+    if (
+      !this.membershipHasPermission(
+        membership,
+        PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+      )
+    ) {
+      throw new ForbiddenException('Insufficient organization permission');
+    }
+  }
+
+  private async assertRoleAssignmentAllowed(
+    targetRole: Role,
+    orgId: string | undefined,
+    currentUser?: any,
+  ): Promise<void> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+
+    if (!orgId) {
+      throw new ForbiddenException('ORGANIZATION_SCOPE_REQUIRED');
+    }
+
+    const managerMembership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser?.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+      relations: ['role', 'role.permissions'],
+    });
+
+    if (!managerMembership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    const managerPermissionCodes = new Set(
+      managerMembership.role?.permissions?.map(
+        (permission) => permission.permission_code,
+      ) || [],
+    );
+    const targetPermissionCodes =
+      targetRole.permissions?.map((permission) => permission.permission_code) ||
+      [];
+    const exceedsCurrentUserPermissions = targetPermissionCodes.some(
+      (permissionCode) => !managerPermissionCodes.has(permissionCode),
+    );
+
+    if (exceedsCurrentUserPermissions) {
+      throw new ForbiddenException('Cannot assign role beyond current permissions');
+    }
+  }
+
+  private membershipHasPermission(
+    membership: Membership,
+    permissionCode: PermissionCodeValue,
+  ): boolean {
+    return Boolean(
+      membership.role?.permissions?.some(
+        (permission) => permission.permission_code === permissionCode,
+      ),
+    );
   }
 }
