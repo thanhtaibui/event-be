@@ -100,7 +100,6 @@ describe('permission normalization', () => {
     expect(memberManagePermission).toEqual({
       code: PermissionCode.ORGANIZATION_MEMBER_MANAGE,
       name: 'Organization Member Manage',
-      description: 'Allow managing organization members and their roles.',
     });
     expect(ROLE_PERMISSION_CODES.OWNER).toContain(
       PermissionCode.ORGANIZATION_MEMBER_MANAGE,
