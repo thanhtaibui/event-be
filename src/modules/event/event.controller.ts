@@ -29,12 +29,12 @@ import { Permissions } from 'src/common/decorators/permissions.decorator';
 import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @ApiBearerAuth('access-token')
-@UseGuards(JwtGuard, PermissionsGuard)
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) { }
 
   @Post()
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_CREATE)
   async create(
     @Body() createEventDto: CreateEventDto,
@@ -55,12 +55,30 @@ export class EventController {
     },
   })
   @ApiOperation({ operationId: 'getEvents' })
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async findAll(
     @Paginate() query: PaginateQuery,
     @Req() req: any,
   ): Promise<ApiResponse<PaginationResult<EventDto>>> {
     return await this.eventService.findAll(query, req.user);
+  }
+
+  @Get('public')
+  @ApiPaginationQuery({
+    sortableColumns: ['title', 'capacity', 'startDateTime', 'createdAt'],
+    searchableColumns: ['title', 'place', 'organization.name', 'categories.name'],
+    filterableColumns: {
+      place: [FilterOperator.EQ],
+      'categories.id': [FilterOperator.EQ],
+      'categories.name': [FilterOperator.EQ],
+    },
+  })
+  @ApiOperation({ operationId: 'getPublicEvents' })
+  async findPublicEvents(
+    @Paginate() query: PaginateQuery,
+  ): Promise<ApiResponse<{ items: EventDto[]; meta: any }>> {
+    return await this.eventService.findPublicEvents(query);
   }
 
   @Get('org/:slug')
@@ -75,6 +93,7 @@ export class EventController {
     },
   })
   @ApiOperation({ operationId: 'getEventsByOrgSlug' })
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT)
   async findAllByOrgSlug(
     @Param('slug') slug: string,
@@ -90,6 +109,7 @@ export class EventController {
 
   @Patch('/cancelled')
   @ApiOperation({ operationId: 'cancelled' })
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_DELETE)
   deleteSort(
     @Body() cancelledDto: CancelledDto,
@@ -99,6 +119,7 @@ export class EventController {
   }
 
   @Get(':id')
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -106,6 +127,7 @@ export class EventController {
     return this.eventService.findOne(id);
   }
   @Get(':id/ticket-types')
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async getTicketTypes(
     @Param('id', ParseUUIDPipe) id: string,
@@ -113,6 +135,7 @@ export class EventController {
     return this.eventService.getTicketTypes(id);
   }
   @Get(':id/invites')
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_VIEW)
   async getInvites(
     @Param('id', ParseUUIDPipe) id: string,
@@ -121,6 +144,7 @@ export class EventController {
     return this.eventService.getInvites(id, req.user);
   }
   @Patch(':id')
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_UPDATE)
   update(
     @Param('id') id: string,
@@ -131,6 +155,7 @@ export class EventController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_DELETE)
   remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.eventService.remove(id, req.user);

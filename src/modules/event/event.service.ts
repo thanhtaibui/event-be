@@ -11,7 +11,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Event } from './entities/event.entity';
 import { In, IsNull, Repository } from 'typeorm';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
-import { EventStatus, InvitationStatus } from 'src/shared/enum/enum';
+import {
+  EventStatus,
+  InvitationStatus,
+  OrganizationStatus,
+} from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
 import { plainToInstance } from 'class-transformer';
 import { CancelledDto } from './dto/cancelled-event.dto';
@@ -179,6 +183,77 @@ export class EventService {
       });
     } finally {
       console.timeEnd('GET_EVENTS');
+    }
+  }
+
+  async findPublicEvents(
+    query: PaginateQuery,
+  ): Promise<ApiResponse<{ items: EventDto[]; meta: any }>> {
+    console.time('GET_PUBLIC_EVENTS');
+    try {
+      await this.syncEventStatuses();
+
+      const publicStatuses = [
+        EventStatus.PUBLISHED,
+        EventStatus.UPCOMING,
+        EventStatus.ONGOING,
+      ];
+      const eventQuery = this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoinAndSelect('event.organization', 'organization')
+        .leftJoinAndSelect('event.categories', 'categories')
+        .where('event.isPublic = :isPublic', { isPublic: true })
+        .andWhere('event.status IN (:...statuses)', {
+          statuses: publicStatuses,
+        })
+        .andWhere('organization.id IS NOT NULL')
+        .andWhere('organization.isActive = :organizationActive', {
+          organizationActive: true,
+        })
+        .andWhere('organization.status = :organizationStatus', {
+          organizationStatus: OrganizationStatus.ACTIVE,
+        });
+
+      const result = await paginate(query, eventQuery, {
+        sortableColumns: ['title', 'capacity', 'startDateTime', 'createdAt'],
+        searchableColumns: [
+          'title',
+          'place',
+          'organization.name',
+          'categories.name',
+        ],
+        filterableColumns: {
+          place: [FilterOperator.EQ],
+          'categories.id': [FilterOperator.EQ],
+          'categories.name': [FilterOperator.EQ],
+        },
+        defaultSortBy: [['startDateTime', 'ASC']],
+        defaultLimit: 10,
+      });
+
+      const eventIds = result.data.map((event) => event.id);
+      const soldMapById = await this.getSoldTicketsMap(eventIds);
+      const items = plainToInstance(
+        EventDto,
+        result.data.map((event) => ({
+          ...event,
+          eventPoster: event.eventBanner ?? event.eventPoster,
+          soldTickets: soldMapById[event.id] ?? 0,
+        })),
+        { excludeExtraneousValues: true },
+      );
+
+      return Response(200, 'Get public events successfully', {
+        items,
+        meta: {
+          page: result.meta.currentPage ?? 1,
+          limit: result.meta.itemsPerPage,
+          total: result.meta.totalItems ?? 0,
+          totalPages: result.meta.totalPages ?? 0,
+        },
+      });
+    } finally {
+      console.timeEnd('GET_PUBLIC_EVENTS');
     }
   }
 
@@ -513,6 +588,32 @@ export class EventService {
     }
 
     return categories;
+  }
+
+  private async getSoldTicketsMap(
+    eventIds: string[],
+  ): Promise<Record<string, number>> {
+    const soldMapById: Record<string, number> = {};
+
+    if (eventIds.length === 0) {
+      return soldMapById;
+    }
+
+    const soldMap = await this.eventRepo
+      .createQueryBuilder('event')
+      .leftJoin('event.ticketTypes', 'ticketType')
+      .leftJoin('ticketType.tickets', 'ticket')
+      .select('event.id', 'eventId')
+      .addSelect('COUNT(ticket.id)', 'soldTickets')
+      .where('event.id IN (:...ids)', { ids: eventIds })
+      .groupBy('event.id')
+      .getRawMany();
+
+    soldMap.forEach((row) => {
+      soldMapById[row.eventId] = Number(row.soldTickets);
+    });
+
+    return soldMapById;
   }
 
   private async getEventListOrganizationScope(

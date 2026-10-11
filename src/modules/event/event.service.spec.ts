@@ -1,7 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { paginate } from 'nestjs-paginate';
 import { EventService } from './event.service';
-import { EventStatus } from 'src/shared/enum/enum';
+import { EventStatus, OrganizationStatus } from 'src/shared/enum/enum';
 
 jest.mock('nestjs-paginate', () => ({
   paginate: jest.fn(),
@@ -220,6 +220,60 @@ describe('EventService create', () => {
       totalPages: 0,
     });
     expect(paginate).not.toHaveBeenCalled();
+  });
+
+  it('GET PUBLIC returns only public discovery events without user scope', async () => {
+    const { service, eventRepo, membershipRepo, queryBuilders } = createService();
+    const publicEvent = {
+      ...draftEvent,
+      status: EventStatus.UPCOMING,
+      isPublic: true,
+      eventBanner: 'https://cdn.example.com/banner.jpg',
+    };
+    mockPaginateResult([publicEvent]);
+
+    const result = await service.findPublicEvents({
+      path: '/events/public',
+      page: 1,
+      limit: 10,
+      search: 'Green Life',
+    } as any);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.message).toBe('Get public events successfully');
+    expect(result.data?.items).toHaveLength(1);
+    expect(result.data?.items[0].title).toBe(publicEvent.title);
+    expect(result.data?.items[0].eventPoster).toBe(publicEvent.eventBanner);
+    expect(result.data?.meta).toEqual({
+      page: 1,
+      limit: 10,
+      total: 1,
+      totalPages: 1,
+    });
+    expect(membershipRepo.find).not.toHaveBeenCalled();
+    expect(queryBuilders[0].where).toHaveBeenCalledWith(
+      'event.isPublic = :isPublic',
+      { isPublic: true },
+    );
+    expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
+      'event.status IN (:...statuses)',
+      {
+        statuses: [
+          EventStatus.PUBLISHED,
+          EventStatus.UPCOMING,
+          EventStatus.ONGOING,
+        ],
+      },
+    );
+    expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
+      'organization.isActive = :organizationActive',
+      { organizationActive: true },
+    );
+    expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
+      'organization.status = :organizationStatus',
+      { organizationStatus: OrganizationStatus.ACTIVE },
+    );
+    expect(eventRepo.query).toHaveBeenCalled();
   });
 
   function createService() {
