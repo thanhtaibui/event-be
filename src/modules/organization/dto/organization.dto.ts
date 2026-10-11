@@ -1,4 +1,5 @@
 import { Expose, Type } from 'class-transformer';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { OrganizationStatus } from 'src/shared/enum/enum';
 
 export class OwnerResponseDto {
@@ -46,4 +47,19 @@ export class OrganizationDto {
 
   @Expose()
   totalEvents?: number;
+}
+
+export class OrganizationMembersQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
 }

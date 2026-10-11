@@ -25,7 +25,10 @@ import {
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
 import { Query } from '@nestjs/common';
-import { OrganizationDto } from './dto/organization.dto';
+import {
+  OrganizationDto,
+  OrganizationMembersQueryDto,
+} from './dto/organization.dto';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { RoleService } from '../role/role.service';
 import { RoleOrgDto } from '../role/dto/role-org.dto';
@@ -101,9 +104,32 @@ export class OrganizationController {
   @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   findMembers(
     @Param('id') id: string,
+    @Query() query: OrganizationMembersQueryDto,
     @Req() req: any,
-  ): Promise<ApiResponse<OrganizationDto>> {
-    return this.organizationService.GetMembersByOrgId(id, req.user);
+  ): Promise<ApiResponse<any>> {
+    return this.organizationService.GetMembersByOrgId(id, query, req.user);
+  }
+
+  @Get(':id/members/summary')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  getMemberSummary(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<any>> {
+    return this.organizationService.getMemberSummary(id, req.user);
+  }
+
+  @Get(':id/overview')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  getOverview(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<any>> {
+    return this.organizationService.getOverview(id, req.user);
   }
   @Get(':id')
   @ApiBearerAuth('access-token')

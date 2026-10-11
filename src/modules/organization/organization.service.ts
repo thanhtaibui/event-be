@@ -14,7 +14,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import { Organization } from './entities/organization.entity';
 import { OrganizationDto } from './dto/organization.dto';
 import { Membership } from '../membership/entities/membership.entity';
-import { OrganizationStatus } from 'src/shared/enum/enum';
+import { EventStatus, OrganizationStatus } from 'src/shared/enum/enum';
 import { User } from '../user/entities/user.entity';
 import { Role } from '../role/entities/role.entity';
 import { SwitchOrgDto } from './dto/switch-org.dto';
@@ -24,6 +24,9 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UpdateBannerDto } from './dto/update-banner.dto';
 import { paginate, FilterOperator, type PaginateQuery } from 'nestjs-paginate';
 import { plainToInstance } from 'class-transformer';
+import { Event } from '../event/entities/event.entity';
+import { PermissionCode } from 'src/common/constants/permission-codes';
+import { OrganizationMembersQueryDto } from './dto/organization.dto';
 
 @Injectable()
 export class OrganizationService {
@@ -34,6 +37,7 @@ export class OrganizationService {
     @InjectRepository(Membership) private memberRepo: Repository<Membership>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Role) private roleRepo: Repository<Role>,
+    @InjectRepository(Event) private eventRepo: Repository<Event>,
   ) {}
 
   async create(
@@ -191,53 +195,173 @@ export class OrganizationService {
 
   async GetMembersByOrgId(
     orgId: string,
+    query: OrganizationMembersQueryDto = {},
     currentUser?: any,
   ): Promise<ApiResponse<any>> {
     console.time('GET_ORG_MEMBERS');
     try {
-      await this.assertCanAccessOrganization(orgId, currentUser);
-      // 1. Tìm Org và join sâu xuống User và Role
-      const org = await this.organizationRepo.findOne({
-        where: { id: orgId },
-        relations: ['memberships', 'memberships.user', 'memberships.role'],
+      await this.ensureOrganizationExists(orgId);
+      await this.assertCanManageOrganizationMembers(orgId, currentUser);
+
+      const page = Math.max(Number(query.page ?? 1), 1);
+      const limit = Math.min(Math.max(Number(query.limit ?? 10), 1), 100);
+      const offset = (page - 1) * limit;
+
+      const memberQuery = this.memberRepo
+        .createQueryBuilder('membership')
+        .leftJoin('membership.user', 'user')
+        .leftJoin('membership.role', 'role')
+        .where('membership.organizationId = :orgId', { orgId })
+        .andWhere('user.id IS NOT NULL')
+        .select([
+          'membership.id AS "membershipId"',
+          'membership.createdAt AS "createdAt"',
+          'membership.isActive AS "isActive"',
+          'user.id AS "userId"',
+          'user.fullName AS "fullName"',
+          'user.email AS "email"',
+          'user.phoneNumber AS "phoneNumber"',
+          'role.id AS "roleId"',
+          'role.role_name AS "roleName"',
+          'role.role_code AS "roleCode"',
+          'role.colorKey AS "roleColor"',
+        ])
+        .orderBy('membership.createdAt', 'DESC')
+        .offset(offset)
+        .limit(limit);
+
+      const [rows, total] = await Promise.all([
+        memberQuery.getRawMany(),
+        this.memberRepo
+          .createQueryBuilder('membership')
+          .leftJoin('membership.user', 'user')
+          .where('membership.organizationId = :orgId', { orgId })
+          .andWhere('user.id IS NOT NULL')
+          .getCount(),
+      ]);
+
+      const items = rows.map((member) => ({
+        membershipId: member.membershipId,
+        userId: member.userId,
+        fullName: member.fullName,
+        email: member.email,
+        phoneNumber: member.phoneNumber,
+        isActive: member.isActive,
+        createdAt: member.createdAt,
+        role: member.roleId
+          ? {
+              id: member.roleId,
+              name: member.roleName,
+              code: member.roleCode,
+              color: member.roleColor,
+            }
+          : null,
+      }));
+
+      return Response(200, 'Get organization members successfully', {
+        items,
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       });
-
-      if (!org) {
-        throw new BadRequestException('Organization not found');
-      }
-
-      // 2. Map lại dữ liệu để trả về danh sách Member (Phẳng hóa)
-      const members = (org.memberships || [])
-        .filter((m) => m.user !== null) // Loại bỏ nếu user không tồn tại
-        .map((m) => ({
-          membershipId: m.id,
-          userId: m.user.id,
-          fullName: m.user.fullName,
-          email: m.user.email,
-          phoneNumber: m.user.phoneNumber,
-          isActive: m.isActive, // Trạng thái của user trong Org này
-          role: m.role
-            ? {
-                id: m.role.id,
-                name: m.role.role_name,
-                color: m.role.colorKey,
-              }
-            : null,
-        }));
-
-      // 3. Trả về thông tin Org kèm danh sách members đã làm sạch
-      const result = {
-        id: org.id,
-        name: org.name,
-        isVerified: org.isVerified,
-        status: org.status,
-        totalMembers: members.length,
-        members: members, // Đây là mảng đã được phẳng hóa
-      };
-
-      return Response(200, 'Get members of organization successfully', result);
     } finally {
       console.timeEnd('GET_ORG_MEMBERS');
+    }
+  }
+
+  async getMemberSummary(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<any>> {
+    console.time('GET_ORG_MEMBER_SUMMARY');
+    try {
+      await this.ensureOrganizationExists(orgId);
+      await this.assertCanManageOrganizationMembers(orgId, currentUser);
+
+      const [totalMembers, activeMembers, inactiveMembers] = await Promise.all([
+        this.memberRepo.count({
+          where: {
+            organization: { id: orgId },
+          },
+        }),
+        this.memberRepo.count({
+          where: {
+            organization: { id: orgId },
+            isActive: true,
+          },
+        }),
+        this.memberRepo.count({
+          where: {
+            organization: { id: orgId },
+            isActive: false,
+          },
+        }),
+      ]);
+
+      return Response(200, 'Get organization member summary successfully', {
+        totalMembers,
+        activeMembers,
+        inactiveMembers,
+      });
+    } finally {
+      console.timeEnd('GET_ORG_MEMBER_SUMMARY');
+    }
+  }
+
+  async getOverview(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<any>> {
+    console.time('GET_ORG_OVERVIEW');
+    try {
+      await this.ensureOrganizationExists(orgId);
+      await this.assertCanManageOrganizationMembers(orgId, currentUser);
+
+      const [totalMembers, activeMembers, totalEvents, activeEvents] =
+        await Promise.all([
+          this.memberRepo.count({
+            where: {
+              organization: { id: orgId },
+            },
+          }),
+          this.memberRepo.count({
+            where: {
+              organization: { id: orgId },
+              isActive: true,
+            },
+          }),
+          this.eventRepo.count({
+            where: {
+              organization: { id: orgId },
+            },
+          }),
+          this.eventRepo.count({
+            where: {
+              organization: { id: orgId },
+              status: In([
+                EventStatus.PUBLISHED,
+                EventStatus.UPCOMING,
+                EventStatus.ONGOING,
+              ]),
+            },
+          }),
+        ]);
+
+      return Response(200, 'Get organization overview successfully', {
+        members: {
+          total: totalMembers,
+          active: activeMembers,
+        },
+        events: {
+          total: totalEvents,
+          active: activeEvents,
+        },
+      });
+    } finally {
+      console.timeEnd('GET_ORG_OVERVIEW');
     }
   }
 
@@ -446,6 +570,52 @@ export class OrganizationService {
     }
 
     return ownerRole;
+  }
+
+  private async ensureOrganizationExists(orgId: string): Promise<void> {
+    const organization = await this.organizationRepo.findOne({
+      where: { id: orgId },
+      select: { id: true },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+  }
+
+  private async assertCanManageOrganizationMembers(
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+
+    const membership = await this.memberRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+      relations: ['role', 'role.permissions'],
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('User does not belong to this organization');
+    }
+
+    const hasPermission = membership.role?.permissions?.some(
+      (permission) =>
+        permission.permission_code === PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    );
+
+    if (!hasPermission) {
+      throw new ForbiddenException('Insufficient organization permission');
+    }
   }
 
   private async assertCanAccessOrganization(

@@ -1,0 +1,208 @@
+import { ForbiddenException } from '@nestjs/common';
+import { PermissionCode } from 'src/common/constants/permission-codes';
+import { OrganizationService } from './organization.service';
+
+describe('OrganizationService membership data', () => {
+  const orgId = 'org-1';
+  const currentUser = { userId: 'manager-1', role: { isSuperAdmin: false } };
+  const managerMembership = {
+    id: 'membership-manager',
+    role: {
+      permissions: [
+        { permission_code: PermissionCode.ORGANIZATION_MEMBER_MANAGE },
+      ],
+    },
+  };
+
+  it('returns paginated organization members for scoped member manager', async () => {
+    const { service, memberRepo } = createService({
+      managerMembership,
+      memberRows: [
+        {
+          membershipId: 'membership-1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          isActive: true,
+          userId: 'user-1',
+          fullName: 'Member One',
+          email: 'member@example.com',
+          phoneNumber: '0900000000',
+          roleId: 'role-1',
+          roleName: 'Owner',
+          roleCode: 'OWNER',
+          roleColor: 'red',
+        },
+      ],
+      memberTotal: 1,
+    });
+
+    const result = await service.GetMembersByOrgId(
+      orgId,
+      { page: 1, limit: 10 },
+      currentUser,
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(result.message).toBe('Get organization members successfully');
+    expect(result.data.meta).toEqual({
+      page: 1,
+      limit: 10,
+      total: 1,
+      totalPages: 1,
+    });
+    expect(result.data.items).toEqual([
+      {
+        membershipId: 'membership-1',
+        userId: 'user-1',
+        fullName: 'Member One',
+        email: 'member@example.com',
+        phoneNumber: '0900000000',
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        role: {
+          id: 'role-1',
+          name: 'Owner',
+          code: 'OWNER',
+          color: 'red',
+        },
+      },
+    ]);
+    expect(memberRepo.findOne).toHaveBeenCalledWith({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+      relations: ['role', 'role.permissions'],
+    });
+  });
+
+  it('blocks organization member without manage permission', async () => {
+    const { service, memberRepo } = createService({
+      managerMembership: {
+        id: 'membership-regular',
+        role: {
+          permissions: [{ permission_code: PermissionCode.EVENT_VIEW }],
+        },
+      },
+    });
+
+    await expect(
+      service.GetMembersByOrgId(orgId, { page: 1, limit: 10 }, currentUser),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(memberRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('returns organization member summary with organization scope validation', async () => {
+    const { service, memberRepo } = createService({
+      managerMembership,
+      memberCounts: [10, 8, 2],
+    });
+
+    const result = await service.getMemberSummary(orgId, currentUser);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual({
+      totalMembers: 10,
+      activeMembers: 8,
+      inactiveMembers: 2,
+    });
+    expect(memberRepo.count).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns organization overview using shared scoped checks', async () => {
+    const { service, eventRepo } = createService({
+      managerMembership,
+      memberCounts: [10, 8],
+      eventCounts: [5, 3],
+    });
+
+    const result = await service.getOverview(orgId, currentUser);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual({
+      members: {
+        total: 10,
+        active: 8,
+      },
+      events: {
+        total: 5,
+        active: 3,
+      },
+    });
+    expect(eventRepo.count).toHaveBeenCalledTimes(2);
+    expect(eventRepo.count.mock.calls[1][0].where.organization).toEqual({
+      id: orgId,
+    });
+    expect(eventRepo.count.mock.calls[1][0].where.status).toBeDefined();
+  });
+
+  function createService(options: {
+    managerMembership?: any;
+    memberRows?: any[];
+    memberTotal?: number;
+    memberCounts?: number[];
+    eventCounts?: number[];
+  }) {
+    const listQueryBuilder = createMemberListQueryBuilder(
+      options.memberRows ?? [],
+    );
+    const countQueryBuilder = createMemberCountQueryBuilder(
+      options.memberTotal ?? 0,
+    );
+    const memberRepo = {
+      findOne: jest.fn().mockResolvedValue(options.managerMembership),
+      count: jest
+        .fn()
+        .mockImplementation(async () => (options.memberCounts ?? []).shift()),
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValueOnce(listQueryBuilder)
+        .mockReturnValueOnce(countQueryBuilder),
+    };
+    const organizationRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: orgId }),
+    };
+    const eventRepo = {
+      count: jest
+        .fn()
+        .mockImplementation(async () => (options.eventCounts ?? []).shift()),
+    };
+    const service = new OrganizationService(
+      organizationRepo as any,
+      {} as any,
+      memberRepo as any,
+      {} as any,
+      {} as any,
+      eventRepo as any,
+    );
+
+    return {
+      service,
+      memberRepo,
+      organizationRepo,
+      eventRepo,
+    };
+  }
+
+  function createMemberListQueryBuilder(rows: any[]) {
+    return {
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      offset: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rows),
+    };
+  }
+
+  function createMemberCountQueryBuilder(total: number) {
+    return {
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(total),
+    };
+  }
+});

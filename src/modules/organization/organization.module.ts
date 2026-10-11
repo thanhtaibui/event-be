@@ -9,6 +9,7 @@ import { Role } from '../role/entities/role.entity';
 import { RoleService } from '../role/role.service';
 import { Permission } from '../permission/entities/permission.entity';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { Event } from '../event/entities/event.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -17,6 +18,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
       User,
       Role,
       Permission,
+      Event,
     ]),
   ],
   controllers: [OrganizationController],
