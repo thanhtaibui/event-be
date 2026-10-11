@@ -18,7 +18,11 @@ import {
   PermissionCode,
   PermissionCodeValue,
 } from 'src/common/constants/permission-codes';
-import { MembershipDto, OrganizationMembershipDto } from './dto/membership.dto';
+import {
+  LookupMembershipUserDto,
+  MembershipDto,
+  OrganizationMembershipDto,
+} from './dto/membership.dto';
 import { Role } from '../role/entities/role.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { User } from '../user/entities/user.entity';
@@ -165,6 +169,39 @@ export class MembershipService {
     } finally {
       console.timeEnd('GET_MEMBERSHIPS');
     }
+  }
+
+  async lookupUserByEmail(
+    email: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<LookupMembershipUserDto>> {
+    const normalizedEmail = email?.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const orgIds = await this.getAccessibleOrganizationIds(currentUser);
+    if (orgIds && orgIds.length === 0) {
+      throw new ForbiddenException('Insufficient organization permission');
+    }
+
+    const user = await this.userRepo
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.email', 'user.fullName'])
+      .where('LOWER(user.email) = :email', { email: normalizedEmail })
+      .andWhere('user.isDelete = :isDelete', { isDelete: false })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return Response(200, 'Lookup user by email successfully', {
+      id: user.id,
+      email: user.email,
+      name: user.fullName,
+    });
   }
 
   async findUserOrganizations(

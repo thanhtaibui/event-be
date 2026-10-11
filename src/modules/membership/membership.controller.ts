@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { Permissions } from 'src/common/decorators/permissions.decorator';
 import { PermissionCode } from 'src/common/constants/permission-codes';
+import { LookupMembershipUserQueryDto } from './dto/membership.dto';
 
 @ApiBearerAuth('access-token')
 @UseGuards(JwtGuard, PermissionsGuard)
@@ -39,6 +41,15 @@ export class MembershipController {
   @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
   findAll(@Req() req: any) {
     return this.membershipService.findAll(req.user);
+  }
+
+  @Get('users/lookup')
+  @Permissions(PermissionCode.ORGANIZATION_MEMBER_MANAGE)
+  lookupUserByEmail(
+    @Query() query: LookupMembershipUserQueryDto,
+    @Req() req: any,
+  ) {
+    return this.membershipService.lookupUserByEmail(query.email, req.user);
   }
 
   @Get('organization/:orgId')

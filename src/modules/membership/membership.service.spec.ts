@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PermissionCode } from 'src/common/constants/permission-codes';
 import { MembershipService } from './membership.service';
 
@@ -208,6 +212,77 @@ describe('MembershipService RBAC', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('allows organization member manager to lookup existing user by email', async () => {
+    const { service, userRepo } = createLookupService({
+      accessibleMemberships: [
+        {
+          id: 'owner-membership',
+          role: ownerRole,
+          organization: orgA,
+          isActive: true,
+        },
+      ],
+      lookupUser: {
+        id: 'lookup-user',
+        email: 'Target@Example.com',
+        fullName: 'Lookup User',
+      },
+    });
+
+    const result = await service.lookupUserByEmail(
+      '  TARGET@example.COM  ',
+      ownerUser,
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual({
+      id: 'lookup-user',
+      email: 'Target@Example.com',
+      name: 'Lookup User',
+    });
+    expect(userRepo.createQueryBuilder().where).toHaveBeenCalledWith(
+      'LOWER(user.email) = :email',
+      { email: 'target@example.com' },
+    );
+  });
+
+  it('blocks user without organization member manage permission from lookup', async () => {
+    const { service, userRepo } = createLookupService({
+      accessibleMemberships: [
+        {
+          id: 'regular-membership',
+          role: regularRole,
+          organization: orgA,
+          isActive: true,
+        },
+      ],
+      lookupUser: targetUser,
+    });
+
+    await expect(
+      service.lookupUserByEmail('target@example.com', regularUser),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(userRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('returns not found when lookup email does not exist', async () => {
+    const { service } = createLookupService({
+      accessibleMemberships: [
+        {
+          id: 'owner-membership',
+          role: ownerRole,
+          organization: orgA,
+          isActive: true,
+        },
+      ],
+      lookupUser: null,
+    });
+
+    await expect(
+      service.lookupUserByEmail('missing@example.com', ownerUser),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   function createService(options: {
     organization: any;
     managerMembership: any;
@@ -250,6 +325,49 @@ describe('MembershipService RBAC', () => {
       roleRepo,
       organizationRepo,
       userRepo,
+    };
+  }
+
+  function createLookupService(options: {
+    accessibleMemberships: any[];
+    lookupUser: any;
+  }) {
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(options.lookupUser),
+    };
+    const membershipRepo = {
+      find: jest.fn().mockResolvedValue(options.accessibleMemberships),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+    const roleRepo = {
+      findOne: jest.fn(),
+    };
+    const organizationRepo = {
+      findOne: jest.fn(),
+    };
+    const userRepo = {
+      findOne: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    const service = new MembershipService(
+      membershipRepo as any,
+      roleRepo as any,
+      organizationRepo as any,
+      userRepo as any,
+    );
+
+    return {
+      service,
+      membershipRepo,
+      roleRepo,
+      organizationRepo,
+      userRepo,
+      queryBuilder,
     };
   }
 });
