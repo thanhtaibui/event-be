@@ -27,7 +27,7 @@ export class ItemController {
 
   @Post()
   @ApiOperation({ operationId: 'createItem' })
-  @Permissions(PermissionCode.EVENT_MANAGE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_MANAGE)
   async create(
     @Body() createItemDto: CreateItemDto,
   ): Promise<ApiResponse<CreateItemDto>> {
@@ -36,20 +36,20 @@ export class ItemController {
 
   @Get()
   @ApiOperation({ operationId: 'GetItems' })
-  @Permissions(PermissionCode.EVENT_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async findAll(): Promise<ApiResponse<ItemDto[]>> {
     return this.itemService.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ operationId: 'GetItemsOfEvent' })
-  @Permissions(PermissionCode.EVENT_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async findOne(@Param('id') id: string): Promise<ApiResponse<ItemDto[]>> {
     return this.itemService.findOne(id);
   }
 
   @Patch(':id')
-  @Permissions(PermissionCode.EVENT_MANAGE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_MANAGE)
   async update(
     @Param('id') id: string,
     @Body() updateItemDto: UpdateItemDto,
@@ -58,7 +58,7 @@ export class ItemController {
   }
 
   @Delete(':id')
-  @Permissions(PermissionCode.EVENT_MANAGE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_MANAGE)
   remove(@Param('id') id: string) {
     return this.itemService.remove(id);
   }

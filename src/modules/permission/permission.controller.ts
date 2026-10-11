@@ -23,7 +23,12 @@ export class PermissionController {
 
   @Get('owner')
   @ApiOperation({ operationId: 'GetOwnerPermissions' })
-  @Permissions(PermissionCode.PERMISSION_OWNER)
+  @Permissions(
+    PermissionCode.ROLE,
+    PermissionCode.ROLE_CREATE,
+    PermissionCode.ROLE_UPDATE,
+    PermissionCode.PERMISSION_OWNER,
+  )
   findOwnerPermissions(): Promise<ApiResponse<PermissionTreeDto[]>> {
     return this.permissionService.findOwnerPermissions();
   }

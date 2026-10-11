@@ -29,19 +29,19 @@ export class TicketTypeController {
 
   @Post()
   @ApiOperation({ operationId: 'createTicketType' })
-  @Permissions(PermissionCode.TICKET_MANAGE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.TICKET_MANAGE)
   create(@Body() createTicketTypeDto: CreateTicketTypeDto, @Req() req: any) {
     return this.ticketTypeService.create(createTicketTypeDto, req.user);
   }
 
   @Get()
-  @Permissions(PermissionCode.TICKET_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.TICKET_VIEW)
   findAll() {
     return this.ticketTypeService.findAll();
   }
 
   @Get(':id')
-  @Permissions(PermissionCode.TICKET_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.TICKET_VIEW)
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ApiResponse<TicketTypeDto>> {
@@ -49,7 +49,11 @@ export class TicketTypeController {
   }
 
   @Patch(':id')
-  @Permissions(PermissionCode.TICKET_UPDATE)
+  @Permissions(
+    PermissionCode.EVENT,
+    PermissionCode.TICKET_UPDATE,
+    PermissionCode.TICKET_MANAGE,
+  )
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateTicketTypeDto: UpdateTicketTypeDto,
@@ -59,7 +63,7 @@ export class TicketTypeController {
   }
 
   @Delete(':id')
-  @Permissions(PermissionCode.TICKET_MANAGE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.TICKET_MANAGE)
   remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.ticketTypeService.remove(id, req.user);
   }

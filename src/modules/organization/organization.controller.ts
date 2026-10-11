@@ -92,7 +92,12 @@ export class OrganizationController {
   @Get('/switch-org')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.ORGANIZATION_VIEW)
+  @Permissions(
+    PermissionCode.EVENT,
+    PermissionCode.EVENT_CREATE,
+    PermissionCode.EVENT_UPDATE,
+    PermissionCode.ORGANIZATION_VIEW,
+  )
   @ApiOperation({ operationId: 'SwitchOrg' })
   async SwitchOrg(@Req() req: any): Promise<ApiResponse<SwitchOrgDto[]>> {
     return this.organizationService.SwitchOrg(req.user);
@@ -153,6 +158,15 @@ export class OrganizationController {
     return this.organizationService.updateBanner(id, updateBannerDto, req.user);
   }
   @Get('detail/:slug')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(
+    PermissionCode.ORGANIZATION_VIEW,
+    PermissionCode.EVENT,
+    PermissionCode.EVENT_CREATE,
+    PermissionCode.ROLE,
+    PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+  )
   findOrgBySlug(
     @Param('slug') slug: string,
   ): Promise<ApiResponse<OrganizationResDto>> {
@@ -161,7 +175,11 @@ export class OrganizationController {
   @Get(':orgId/roles')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.ROLE_VIEW)
+  @Permissions(
+    PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    PermissionCode.ROLE,
+    PermissionCode.ROLE_VIEW,
+  )
   @ApiOperation({ operationId: 'getRoleOrg' })
   async getRolesByOrg(
     @Req() req: any,

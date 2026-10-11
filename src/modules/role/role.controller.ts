@@ -40,7 +40,7 @@ export class RoleController {
   }
 
   @Post()
-  @Permissions(PermissionCode.ROLE_CREATE)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_CREATE)
   async create(
     @Body() createRoleDto: CreateRoleDto,
     @Req() req: any,
@@ -54,7 +54,7 @@ export class RoleController {
     // filterableColumns: { status: [FilterOperator.EQ] },
   })
   @ApiOperation({ operationId: 'GetRoles' })
-  @Permissions(PermissionCode.ROLE_VIEW)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_VIEW)
   async findAll(
     @Req() req: any,
     @Paginate() query: PaginateQuery,
@@ -67,7 +67,11 @@ export class RoleController {
     sortableColumns: ['role_name', 'role_code', 'organization.name'],
   })
   @ApiOperation({ operationId: 'GetRolesByOrgSlug' })
-  @Permissions(PermissionCode.ROLE_VIEW)
+  @Permissions(
+    PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+    PermissionCode.ROLE,
+    PermissionCode.ROLE_VIEW,
+  )
   async findAllByOrgSlug(
     @Param('slug') slug: string,
     @Req() req: any,
@@ -78,7 +82,7 @@ export class RoleController {
 
   @Patch('/delete')
   @ApiOperation({ operationId: 'deleteSort' })
-  @Permissions(PermissionCode.ROLE_DELETE)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_DELETE)
   deleteSort(
     @Body() deleteSort: DeleteSort,
     @Req() req: any,
@@ -88,7 +92,12 @@ export class RoleController {
 
   @Get(':id/permissions')
   @ApiOperation({ operationId: 'GetRolePermissions' })
-  @Permissions(PermissionCode.ROLE_VIEW)
+  @Permissions(
+    PermissionCode.ROLE,
+    PermissionCode.ROLE_CREATE,
+    PermissionCode.ROLE_UPDATE,
+    PermissionCode.ROLE_VIEW,
+  )
   getRolePermissions(
     @Param('id') id: string,
     @Req() req: any,
@@ -97,7 +106,7 @@ export class RoleController {
   }
 
   @Get(':id')
-  @Permissions(PermissionCode.ROLE_VIEW)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_VIEW)
   GetRoleById(
     @Param('id') id: string,
     @Req() req: any,
@@ -106,7 +115,7 @@ export class RoleController {
   }
 
   @Patch(':id')
-  @Permissions(PermissionCode.ROLE_UPDATE)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_UPDATE)
   update(
     @Param('id') id: string,
     @Body() updateRoleDto: UpdateRoleDto,
@@ -116,7 +125,7 @@ export class RoleController {
   }
 
   @Delete(':id')
-  @Permissions(PermissionCode.ROLE_DELETE)
+  @Permissions(PermissionCode.ROLE, PermissionCode.ROLE_DELETE)
   remove(@Param('id') id: string, @Req() req: any) {
     return this.roleService.remove(id, req.user);
   }

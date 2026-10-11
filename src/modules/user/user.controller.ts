@@ -89,6 +89,13 @@ export class UserController {
   }
   @Get(':userId/organizations')
   @ApiOperation({ operationId: 'getMemberOfUser' })
+  @Permissions(
+    PermissionCode.ORGANIZATION_VIEW,
+    PermissionCode.EVENT,
+    PermissionCode.EVENT_CREATE,
+    PermissionCode.ROLE,
+    PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+  )
   getUserOrgs(
     @Req() req: any,
     @Param('userId') userId: string,

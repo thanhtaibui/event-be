@@ -33,7 +33,7 @@ export class InviteController {
 
   @Post()
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_CREATE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_CREATE)
   @ApiOperation({ operationId: 'createInvite' })
   create(@Body() createInviteDto: CreateInviteDto, @Req() req: any): Promise<
     ApiResponse<
@@ -48,21 +48,21 @@ export class InviteController {
 
   @Get()
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_VIEW)
   findAll(@Req() req: any) {
     return this.inviteService.findAll(req.user);
   }
 
   @Get(':id')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_VIEW)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_VIEW)
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.inviteService.findOne(id, req.user);
   }
 
   @Patch(':id')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_UPDATE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_UPDATE)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateInviteDto: UpdateInviteDto,
@@ -82,7 +82,7 @@ export class InviteController {
 
   @Post('check-email')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_CREATE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_CREATE)
   @ApiOperation({ operationId: 'checkEmail' })
   async sendInvitations(
     @Body() dto: checkEmailDto,
@@ -93,7 +93,7 @@ export class InviteController {
 
   @Delete(':id')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.INVITATION_DELETE)
+  @Permissions(PermissionCode.EVENT, PermissionCode.INVITATION_DELETE)
   remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.inviteService.remove(id, req.user);
   }
