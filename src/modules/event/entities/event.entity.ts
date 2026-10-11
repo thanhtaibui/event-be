@@ -13,6 +13,7 @@ import { TicketType } from '../../ticket-type/entities/ticket-type.entity';
 import { Invite } from '../../invite/entities/invite.entity';
 import { Item } from 'src/modules/item/entities/item.entity';
 import { Category } from 'src/modules/category/entities/category.entity';
+import { Feedback } from 'src/modules/feedback/entities/feedback.entity';
 @Entity('events')
 export class Event extends BaseEntity {
   @Column()
@@ -73,4 +74,7 @@ export class Event extends BaseEntity {
 
   @OneToMany(() => Item, (item) => item.event)
   items: Item[];
+
+  @OneToMany(() => Feedback, (feedback) => feedback.event)
+  feedbacks: Feedback[];
 }
