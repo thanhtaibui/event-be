@@ -257,7 +257,6 @@ CREATE TABLE public.organizations (
     "updatedAt" timestamp without time zone DEFAULT now() NOT NULL,
     name character varying NOT NULL,
     bio character varying,
-    "isActive" boolean DEFAULT true NOT NULL,
     "ownerId" uuid,
     slug character varying,
     status public.organizations_status_enum DEFAULT 'PENDING'::public.organizations_status_enum NOT NULL,
@@ -498,14 +497,14 @@ COPY public.org_verifications (id, "createdAt", "updatedAt", "organizationId", "
 -- Data for Name: organizations; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.organizations (id, "createdAt", "updatedAt", name, bio, "isActive", "ownerId", slug, status, "logoUrl", "bannerUrl", industry, email, phone, website, address, "isVerified", "verifiedAt", "legalName") FROM stdin;
-12809cb8-049f-4dc9-b6a7-54c00b898108	2026-04-29 07:47:26.494315	2026-05-04 13:19:34.019373	Google Vietnam	Leading technology company in Southeast Asia	t	18d91b19-c519-4d5c-bebd-176f5538baa2	google-vietnam	PENDING	\N	\N	Technology	contact@google.com.vn	+84901234567	https://google.com.vn	123 District 1, Ho Chi Minh City, Vietnam	f	\N	Google Vietnam Company Limited
-dbcc3d57-9fc7-4e36-b283-76e4e6cc32a6	2026-04-18 09:17:01.281853	2026-05-04 13:19:34.743187	Cty 666	string	t	54666d85-c528-4bfd-b3f0-f87d803be0f4	cty-666	ARCHIVED	\N	\N	1	\N	\N	\N	\N	f	\N	\N
-e951c81b-7e94-49ec-a969-666dd0d127e8	2026-04-18 15:46:25.121601	2026-05-04 13:19:35.154317	123 	123	t	18d91b19-c519-4d5c-bebd-176f5538baa2	123	ARCHIVED	\N	\N	1	\N	\N	\N	\N	f	\N	\N
-b38fdd70-b0fa-4f3f-926d-33b7809ff325	2026-04-12 14:46:02.079516	2026-05-04 13:19:35.940715	CTY taibui	\N	t	dba8e9b6-1486-43f8-92d1-225c269c5d62	cty-taibui	PENDING	\N	\N	1	\N	\N	\N	\N	f	\N	\N
-b46ed74d-4a79-40a7-a2a1-723be34d951b	2026-04-16 16:29:58.918883	2026-05-04 13:19:36.267348	CtyTest	\N	t	c6a3f782-1142-4288-b81d-a02aa0c0dee3	ctytest	PENDING	\N	https://res.cloudinary.com/dt3crglba/image/upload/v1777797031/banner/fcbp9zvtmbjqb7pfjokw.jpg	1	\N	\N	\N	\N	f	\N	\N
-0606f661-48e9-49b0-a96f-e352b99fae29	2026-04-29 13:59:31.708571	2026-05-25 04:43:56.077067	FPT Software AcademyFPT Software Academy	Hệ thống đào tạo lập trình viên chuyên nghiệp theo chuẩn quốc tế, cung cấp nguồn nhân lực chất lượng cao cho tập đoàn FPT.	t	5d6279ed-bc18-4cac-a9a4-11b871c06876	fpt-software-academyfpt-software-academy	PENDING	\N	https://res.cloudinary.com/dt3crglba/image/upload/v1778391087/banner/g9fvgwvqykvgvhpvhmwd.jpg	Education & Technology	hr@fpt-software.com	02437689048	https://fpt-software.com	Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội	f	\N	Công ty TNHH Phần mềm FPT (FPT Software)
-17becdc3-ba9d-435d-ab56-98fed868d69b	2026-04-27 13:58:48.060056	2026-05-04 13:19:33.524802	cty tester	\N	t	c6a3f782-1142-4288-b81d-a02aa0c0dee3	cty-tester	PENDING	\N	\N	1	\N	\N	\N	\N	f	\N	\N
+COPY public.organizations (id, "createdAt", "updatedAt", name, bio, "ownerId", slug, status, "logoUrl", "bannerUrl", industry, email, phone, website, address, "isVerified", "verifiedAt", "legalName") FROM stdin;
+12809cb8-049f-4dc9-b6a7-54c00b898108	2026-04-29 07:47:26.494315	2026-05-04 13:19:34.019373	Google Vietnam	Leading technology company in Southeast Asia	18d91b19-c519-4d5c-bebd-176f5538baa2	google-vietnam	PENDING	\N	\N	Technology	contact@google.com.vn	+84901234567	https://google.com.vn	123 District 1, Ho Chi Minh City, Vietnam	f	\N	Google Vietnam Company Limited
+dbcc3d57-9fc7-4e36-b283-76e4e6cc32a6	2026-04-18 09:17:01.281853	2026-05-04 13:19:34.743187	Cty 666	string	54666d85-c528-4bfd-b3f0-f87d803be0f4	cty-666	ARCHIVED	\N	\N	1	\N	\N	\N	\N	f	\N	\N
+e951c81b-7e94-49ec-a969-666dd0d127e8	2026-04-18 15:46:25.121601	2026-05-04 13:19:35.154317	123 	123	18d91b19-c519-4d5c-bebd-176f5538baa2	123	ARCHIVED	\N	\N	1	\N	\N	\N	\N	f	\N	\N
+b38fdd70-b0fa-4f3f-926d-33b7809ff325	2026-04-12 14:46:02.079516	2026-05-04 13:19:35.940715	CTY taibui	\N	dba8e9b6-1486-43f8-92d1-225c269c5d62	cty-taibui	PENDING	\N	\N	1	\N	\N	\N	\N	f	\N	\N
+b46ed74d-4a79-40a7-a2a1-723be34d951b	2026-04-16 16:29:58.918883	2026-05-04 13:19:36.267348	CtyTest	\N	c6a3f782-1142-4288-b81d-a02aa0c0dee3	ctytest	PENDING	\N	https://res.cloudinary.com/dt3crglba/image/upload/v1777797031/banner/fcbp9zvtmbjqb7pfjokw.jpg	1	\N	\N	\N	\N	f	\N	\N
+0606f661-48e9-49b0-a96f-e352b99fae29	2026-04-29 13:59:31.708571	2026-05-25 04:43:56.077067	FPT Software AcademyFPT Software Academy	Hệ thống đào tạo lập trình viên chuyên nghiệp theo chuẩn quốc tế, cung cấp nguồn nhân lực chất lượng cao cho tập đoàn FPT.	5d6279ed-bc18-4cac-a9a4-11b871c06876	fpt-software-academyfpt-software-academy	PENDING	\N	https://res.cloudinary.com/dt3crglba/image/upload/v1778391087/banner/g9fvgwvqykvgvhpvhmwd.jpg	Education & Technology	hr@fpt-software.com	02437689048	https://fpt-software.com	Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội	f	\N	Công ty TNHH Phần mềm FPT (FPT Software)
+17becdc3-ba9d-435d-ab56-98fed868d69b	2026-04-27 13:58:48.060056	2026-05-04 13:19:33.524802	cty tester	\N	c6a3f782-1142-4288-b81d-a02aa0c0dee3	cty-tester	PENDING	\N	\N	1	\N	\N	\N	\N	f	\N	\N
 \.
 
 

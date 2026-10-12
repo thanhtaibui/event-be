@@ -266,10 +266,6 @@ describe('EventService create', () => {
       },
     );
     expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
-      'organization.isActive = :organizationActive',
-      { organizationActive: true },
-    );
-    expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
       'organization.status = :organizationStatus',
       { organizationStatus: OrganizationStatus.ACTIVE },
     );

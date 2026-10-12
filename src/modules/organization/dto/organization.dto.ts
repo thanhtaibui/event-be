@@ -27,9 +27,6 @@ export class OrganizationDto {
   slug: string;
 
   @Expose()
-  isActive: boolean;
-
-  @Expose()
   isVerified: boolean;
 
   @Expose()

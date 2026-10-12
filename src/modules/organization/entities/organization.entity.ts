@@ -59,9 +59,6 @@ export class Organization extends BaseEntity {
   @OneToMany(() => Membership, (membership) => membership.organization)
   memberships: Membership[];
 
-  @Column({ default: true })
-  isActive: boolean;
-
   @ManyToOne(() => User, { nullable: true })
   owner: User;
 

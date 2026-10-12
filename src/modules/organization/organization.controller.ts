@@ -78,7 +78,6 @@ export class OrganizationController {
     searchableColumns: ['name', 'email', 'owner.fullName'],
     sortableColumns: ['name', 'email', 'owner.fullName'],
     filterableColumns: {
-      isActive: [FilterOperator.EQ],
       status: [FilterOperator.EQ],
     },
   })

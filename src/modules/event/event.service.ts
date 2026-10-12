@@ -230,9 +230,6 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
           statuses: publicStatuses,
         })
         .andWhere('organization.id IS NOT NULL')
-        .andWhere('organization.isActive = :organizationActive', {
-          organizationActive: true,
-        })
         .andWhere('organization.status = :organizationStatus', {
           organizationStatus: OrganizationStatus.ACTIVE,
         });

@@ -4,7 +4,11 @@ import { User } from '../user/entities/user.entity';
 import { Between, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { DashboardDto } from './dto/dashboard.dto';
-import { EventStatus, ReportStatus } from 'src/shared/enum/enum';
+import {
+  EventStatus,
+  OrganizationStatus,
+  ReportStatus,
+} from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
@@ -69,17 +73,19 @@ export class DashboardService {
       ] = await Promise.all([
         this.OrganizationRepo.count({
           where: {
-            isActive: true,
+            status: OrganizationStatus.ACTIVE,
             createdAt: MoreThanOrEqual(startOfThisMonth),
           },
         }),
         this.OrganizationRepo.count({
           where: {
-            isActive: true,
+            status: OrganizationStatus.ACTIVE,
             createdAt: Between(startOfLastMonth, endOfLastMonth),
           },
         }),
-        this.OrganizationRepo.count({ where: { isActive: true } }),
+        this.OrganizationRepo.count({
+          where: { status: OrganizationStatus.ACTIVE },
+        }),
         this.eventRepo.count({
           where: { createdAt: MoreThanOrEqual(startOfThisMonth) },
         }),

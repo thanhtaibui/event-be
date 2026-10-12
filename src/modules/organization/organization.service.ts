@@ -94,7 +94,6 @@ export class OrganizationService {
       phone: createOrganizationDto.phone,
       website: createOrganizationDto.website,
       address: createOrganizationDto.address,
-      isActive: false,
       isVerified: false,
     });
     const saveOrg = await this.organizationRepo.save(newOrg);
@@ -168,7 +167,6 @@ export class OrganizationService {
         searchableColumns: ['name', 'email', 'owner.fullName'],
         sortableColumns: ['name', 'email', 'owner.fullName'],
         filterableColumns: {
-          isActive: [FilterOperator.EQ],
           status: [FilterOperator.EQ],
         },
         where: orgIds ? { id: In(orgIds) } : undefined,
@@ -471,7 +469,7 @@ export class OrganizationService {
 
   async updateActive(
     id: string,
-    isActive: boolean,
+    active: boolean,
     currentUser?: any,
   ): Promise<ApiResponse<OrganizationResDto>> {
     await this.assertCanAccessOrganization(id, currentUser);
@@ -479,9 +477,11 @@ export class OrganizationService {
     if (!org) {
       throw new NotFoundException('Organization not exist');
     }
-    org.isActive = isActive;
+    org.status = active
+      ? OrganizationStatus.ACTIVE
+      : OrganizationStatus.SUSPENDED;
     const savedUser = await this.organizationRepo.save(org);
-    return Response(200, 'Organization updated Active successfully', savedUser);
+    return Response(200, 'Organization status updated successfully', savedUser);
   }
 
   async approve(
@@ -499,7 +499,6 @@ export class OrganizationService {
     }
 
     org.status = OrganizationStatus.ACTIVE;
-    org.isActive = true;
 
     const savedOrg = await this.organizationRepo.save(org);
     return Response(200, 'Organization approved successfully', savedOrg);

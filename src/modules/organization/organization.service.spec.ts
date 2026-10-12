@@ -139,7 +139,7 @@ describe('OrganizationService membership data', () => {
     expect(eventRepo.count.mock.calls[1][0].where.status).toBeDefined();
   });
 
-  it('creates organization as pending inactive and unverified', async () => {
+  it('creates organization as pending and unverified', async () => {
     const { service, organizationRepo, memberRepo } = createService({
       user: { id: ownerId },
       ownerRole: { id: 'owner-role', role_code: 'OWNER' },
@@ -162,18 +162,16 @@ describe('OrganizationService membership data', () => {
     expect(organizationRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         status: OrganizationStatus.PENDING,
-        isActive: false,
         isVerified: false,
       }),
     );
     expect(memberRepo.save).toHaveBeenCalled();
   });
 
-  it('approves organization by activating lifecycle without verifying identity', async () => {
+  it('approves organization lifecycle without verifying identity', async () => {
     const organization = {
       id: orgId,
       status: OrganizationStatus.PENDING,
-      isActive: false,
       isVerified: false,
     };
     const { service, organizationRepo } = createService({
@@ -186,7 +184,6 @@ describe('OrganizationService membership data', () => {
     expect(organizationRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         status: OrganizationStatus.ACTIVE,
-        isActive: true,
         isVerified: false,
       }),
     );
