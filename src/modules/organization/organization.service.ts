@@ -412,12 +412,26 @@ export class OrganizationService {
       if (!org) {
         throw new BadRequestException('Organization not found');
       }
+      const [totalMembers, totalEvents] = await Promise.all([
+        this.memberRepo.count({
+          where: {
+            organization: { id: org.id },
+            isActive: true,
+          },
+        }),
+        this.eventRepo.count({
+          where: {
+            organization: { id: org.id },
+          },
+        }),
+      ]);
       const result = {
         id: org.id,
         name: org.name,
         bio: org.bio,
         owner: org.owner,
         slug: org.slug,
+        status: org.status,
         isVerified: org.isVerified,
         legalName: org.legalName,
         industry: org.industry,
@@ -428,6 +442,10 @@ export class OrganizationService {
         createdAt: org.createdAt,
         bannerUrl: org.bannerUrl,
         logoUrl: org.logoUrl,
+        stats: {
+          totalMembers,
+          totalEvents,
+        },
       };
 
       return Response(200, 'Get Organization By Id Successfully', result);

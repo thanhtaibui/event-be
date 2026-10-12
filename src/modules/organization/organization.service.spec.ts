@@ -189,6 +189,64 @@ describe('OrganizationService membership data', () => {
     );
   });
 
+  it('returns organization detail by slug with lifecycle status and stats', async () => {
+    const organization = {
+      id: orgId,
+      name: 'Green Future Community',
+      bio: 'Green community',
+      owner: {
+        id: ownerId,
+        fullName: 'Owner User',
+        email: 'owner@example.com',
+      },
+      slug: 'green-future-community',
+      status: OrganizationStatus.ACTIVE,
+      isVerified: true,
+      legalName: 'Green Future Community',
+      industry: 'Environment',
+      email: 'green@example.com',
+      phone: '0900000000',
+      website: 'https://green.example.com',
+      address: 'Ho Chi Minh City',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      bannerUrl: 'https://cdn.example.com/banner.jpg',
+      logoUrl: 'https://cdn.example.com/logo.jpg',
+    };
+    const { service, memberRepo, eventRepo } = createService({
+      existingSlugOrganization: organization,
+      memberCounts: [10],
+      eventCounts: [5],
+    });
+
+    const result = await service.GetOrgBySlug(' green-future-community ');
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        id: orgId,
+        name: organization.name,
+        slug: organization.slug,
+        status: OrganizationStatus.ACTIVE,
+        isVerified: true,
+        stats: {
+          totalMembers: 10,
+          totalEvents: 5,
+        },
+      }),
+    );
+    expect(memberRepo.count).toHaveBeenCalledWith({
+      where: {
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+    expect(eventRepo.count).toHaveBeenCalledWith({
+      where: {
+        organization: { id: orgId },
+      },
+    });
+  });
+
   function createService(options: {
     managerMembership?: any;
     memberRows?: any[];
@@ -196,6 +254,7 @@ describe('OrganizationService membership data', () => {
     memberCounts?: number[];
     eventCounts?: number[];
     organization?: any;
+    existingSlugOrganization?: any;
     user?: any;
     ownerRole?: any;
   }) {
@@ -228,7 +287,7 @@ describe('OrganizationService membership data', () => {
       ),
       findOne: jest.fn().mockImplementation(async (args?: any) => {
         if (args?.where?.slug) {
-          return null;
+          return options.existingSlugOrganization ?? null;
         }
 
         return options.organization ?? { id: orgId };

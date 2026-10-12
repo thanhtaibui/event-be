@@ -1,4 +1,11 @@
 import { OwnerResponseDto } from './organization.dto';
+import { OrganizationStatus } from 'src/shared/enum/enum';
+
+export class OrganizationStatsDto {
+  totalMembers: number;
+
+  totalEvents: number;
+}
 
 export class OrganizationResDto {
   id: string;
@@ -10,6 +17,8 @@ export class OrganizationResDto {
   owner: OwnerResponseDto;
 
   slug: string;
+
+  status?: OrganizationStatus;
 
   isVerified: boolean;
 
@@ -28,4 +37,6 @@ export class OrganizationResDto {
   bannerUrl?: string;
 
   logoUrl?: string;
+
+  stats?: OrganizationStatsDto;
 }
