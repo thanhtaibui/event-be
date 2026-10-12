@@ -94,7 +94,7 @@ export class OrganizationService {
       phone: createOrganizationDto.phone,
       website: createOrganizationDto.website,
       address: createOrganizationDto.address,
-      isActive: true,
+      isActive: false,
       isVerified: false,
     });
     const saveOrg = await this.organizationRepo.save(newOrg);
@@ -483,6 +483,28 @@ export class OrganizationService {
     const savedUser = await this.organizationRepo.save(org);
     return Response(200, 'Organization updated Active successfully', savedUser);
   }
+
+  async approve(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<OrganizationResDto>> {
+    this.assertSuperAdmin(currentUser);
+    const org = await this.organizationRepo.findOne({
+      where: { id },
+      relations: ['owner'],
+    });
+
+    if (!org) {
+      throw new NotFoundException('Organization not exist');
+    }
+
+    org.status = OrganizationStatus.ACTIVE;
+    org.isActive = true;
+
+    const savedOrg = await this.organizationRepo.save(org);
+    return Response(200, 'Organization approved successfully', savedOrg);
+  }
+
   async updateBanner(
     id: string,
     updateBannerDto: UpdateBannerDto,
@@ -636,6 +658,12 @@ export class OrganizationService {
 
     if (!membership) {
       throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private assertSuperAdmin(currentUser?: any): void {
+    if (!currentUser?.role?.isSuperAdmin) {
+      throw new ForbiddenException('SUPER_ADMIN_REQUIRED');
     }
   }
 

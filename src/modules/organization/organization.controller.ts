@@ -223,6 +223,18 @@ export class OrganizationController {
     return this.organizationService.updateActive(id, updateActiveDto.active, req.user);
   }
 
+  @Patch(':id/approve')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.ORGANIZATION_UPDATE)
+  @ApiOperation({ operationId: 'approveOrganization' })
+  approve(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ApiResponse<OrganizationResDto>> {
+    return this.organizationService.approve(id, req.user);
+  }
+
   // @Delete(':id')
   // remove(@Param('id') id: string) {
   //   return this.organizationService.remove(+id);

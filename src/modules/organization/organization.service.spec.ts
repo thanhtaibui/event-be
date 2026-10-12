@@ -1,10 +1,13 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PermissionCode } from 'src/common/constants/permission-codes';
+import { OrganizationStatus } from 'src/shared/enum/enum';
 import { OrganizationService } from './organization.service';
 
 describe('OrganizationService membership data', () => {
   const orgId = 'org-1';
+  const ownerId = 'owner-1';
   const currentUser = { userId: 'manager-1', role: { isSuperAdmin: false } };
+  const superAdminUser = { userId: 'super-admin', role: { isSuperAdmin: true } };
   const managerMembership = {
     id: 'membership-manager',
     role: {
@@ -136,12 +139,68 @@ describe('OrganizationService membership data', () => {
     expect(eventRepo.count.mock.calls[1][0].where.status).toBeDefined();
   });
 
+  it('creates organization as pending inactive and unverified', async () => {
+    const { service, organizationRepo, memberRepo } = createService({
+      user: { id: ownerId },
+      ownerRole: { id: 'owner-role', role_code: 'OWNER' },
+    });
+
+    const result = await service.create({
+      name: 'Green Future Community',
+      slug: 'green-future-community',
+      ownerId,
+      bio: 'Green community',
+      legalName: 'Green Future Community',
+      industry: 'Environment',
+      email: 'green@example.com',
+      phone: '0900000000',
+      website: 'https://green.example.com',
+      address: 'Ho Chi Minh City',
+    });
+
+    expect(result.statusCode).toBe(201);
+    expect(organizationRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: OrganizationStatus.PENDING,
+        isActive: false,
+        isVerified: false,
+      }),
+    );
+    expect(memberRepo.save).toHaveBeenCalled();
+  });
+
+  it('approves organization by activating lifecycle without verifying identity', async () => {
+    const organization = {
+      id: orgId,
+      status: OrganizationStatus.PENDING,
+      isActive: false,
+      isVerified: false,
+    };
+    const { service, organizationRepo } = createService({
+      organization,
+    });
+
+    const result = await service.approve(orgId, superAdminUser);
+
+    expect(result.statusCode).toBe(200);
+    expect(organizationRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: OrganizationStatus.ACTIVE,
+        isActive: true,
+        isVerified: false,
+      }),
+    );
+  });
+
   function createService(options: {
     managerMembership?: any;
     memberRows?: any[];
     memberTotal?: number;
     memberCounts?: number[];
     eventCounts?: number[];
+    organization?: any;
+    user?: any;
+    ownerRole?: any;
   }) {
     const listQueryBuilder = createMemberListQueryBuilder(
       options.memberRows ?? [],
@@ -151,6 +210,8 @@ describe('OrganizationService membership data', () => {
     );
     const memberRepo = {
       findOne: jest.fn().mockResolvedValue(options.managerMembership),
+      create: jest.fn((value) => value),
+      save: jest.fn((value) => Promise.resolve(value)),
       count: jest
         .fn()
         .mockImplementation(async () => (options.memberCounts ?? []).shift()),
@@ -160,7 +221,27 @@ describe('OrganizationService membership data', () => {
         .mockReturnValueOnce(countQueryBuilder),
     };
     const organizationRepo = {
-      findOne: jest.fn().mockResolvedValue({ id: orgId }),
+      create: jest.fn((value) => value),
+      save: jest.fn((value) =>
+        Promise.resolve({
+          id: orgId,
+          owner: { id: ownerId },
+          ...value,
+        }),
+      ),
+      findOne: jest.fn().mockImplementation(async (args?: any) => {
+        if (args?.where?.slug) {
+          return null;
+        }
+
+        return options.organization ?? { id: orgId };
+      }),
+    };
+    const userRepo = {
+      findOne: jest.fn().mockResolvedValue(options.user ?? null),
+    };
+    const roleRepo = {
+      findOne: jest.fn().mockResolvedValue(options.ownerRole ?? null),
     };
     const eventRepo = {
       count: jest
@@ -171,8 +252,8 @@ describe('OrganizationService membership data', () => {
       organizationRepo as any,
       {} as any,
       memberRepo as any,
-      {} as any,
-      {} as any,
+      userRepo as any,
+      roleRepo as any,
       eventRepo as any,
     );
 
@@ -180,6 +261,8 @@ describe('OrganizationService membership data', () => {
       service,
       memberRepo,
       organizationRepo,
+      userRepo,
+      roleRepo,
       eventRepo,
     };
   }
