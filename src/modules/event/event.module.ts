@@ -7,10 +7,12 @@ import { Organization } from '../organization/entities/organization.entity';
 import { UploadService } from '../upload/upload.service';
 import { Membership } from '../membership/entities/membership.entity';
 import { Category } from '../category/entities/category.entity';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Event, Organization, Membership, Category]),
+    NotificationModule,
   ],
   controllers: [EventController],
   providers: [EventService, UploadService],

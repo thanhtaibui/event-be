@@ -13,7 +13,12 @@ jest.mock('nestjs-paginate', () => ({
 }));
 
 describe('EventService create', () => {
-  const organization = { id: 'org-1', name: 'Green Future Community' };
+  const organizationOwner = { id: 'owner-1', fullName: 'Owner User' };
+  const organization = {
+    id: 'org-1',
+    name: 'Green Future Community',
+    owner: organizationOwner,
+  };
   const category = {
     id: 'category-1',
     name: 'Lễ hội',
@@ -273,7 +278,105 @@ describe('EventService create', () => {
       'organization.status = :organizationStatus',
       { organizationStatus: OrganizationStatus.ACTIVE },
     );
-    expect(eventRepo.query).toHaveBeenCalled();
+    expect(eventRepo.find).toHaveBeenCalled();
+  });
+
+  it('publishes a draft event successfully', async () => {
+    const { service, eventRepo } = createService();
+    eventRepo.findOne.mockResolvedValueOnce({ ...draftEvent });
+
+    const result = await service.publish(draftEvent.id, ownerUser);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.message).toBe('Publish Event Successfully');
+    expect(eventRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: EventStatus.PUBLISHED }),
+    );
+  });
+
+  it('rejects publishing a cancelled event', async () => {
+    const { service, eventRepo } = createService();
+    eventRepo.findOne.mockResolvedValueOnce({
+      ...draftEvent,
+      status: EventStatus.CANCELLED,
+    });
+
+    await expect(service.publish(draftEvent.id, ownerUser)).rejects.toMatchObject({
+      response: { message: 'ONLY_DRAFT_EVENT_CAN_BE_PUBLISHED' },
+    });
+    expect(eventRepo.save).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: EventStatus.PUBLISHED }),
+    );
+  });
+
+  it('scheduler changes published events to upcoming and notifies owner', async () => {
+    const { service, eventRepo, notificationService } = createService();
+    const event = {
+      ...draftEvent,
+      status: EventStatus.PUBLISHED,
+      startDateTime: new Date(Date.now() + 60 * 60 * 1000),
+      endDateTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    };
+    eventRepo.find.mockResolvedValueOnce([event]);
+
+    await service.syncEventStatuses();
+
+    expect(eventRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: EventStatus.UPCOMING }),
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: organizationOwner.id,
+        title: 'Event status updated',
+        message: `${event.title} is now ${EventStatus.UPCOMING}`,
+      }),
+    );
+  });
+
+  it('scheduler changes upcoming events to ongoing and notifies owner', async () => {
+    const { service, eventRepo, notificationService } = createService();
+    const event = {
+      ...draftEvent,
+      status: EventStatus.UPCOMING,
+      startDateTime: new Date(Date.now() - 60 * 1000),
+      endDateTime: new Date(Date.now() + 60 * 60 * 1000),
+    };
+    eventRepo.find.mockResolvedValueOnce([event]);
+
+    await service.syncEventStatuses();
+
+    expect(eventRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: EventStatus.ONGOING }),
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: organizationOwner.id,
+        message: `${event.title} is now ${EventStatus.ONGOING}`,
+      }),
+    );
+  });
+
+  it('scheduler changes ongoing events to ended and notifies owner', async () => {
+    const { service, eventRepo, notificationService } = createService();
+    const event = {
+      ...draftEvent,
+      status: EventStatus.ONGOING,
+      startDateTime: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      endDateTime: new Date(Date.now() - 60 * 1000),
+    };
+    eventRepo.find.mockResolvedValueOnce([event]);
+
+    await service.syncEventStatuses();
+
+    expect(eventRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: EventStatus.ENDED }),
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: organizationOwner.id,
+        message: `${event.title} is now ${EventStatus.ENDED}`,
+      }),
+    );
   });
 
   function createService() {
@@ -300,7 +403,8 @@ describe('EventService create', () => {
           ...value,
         }),
       ),
-      query: jest.fn().mockResolvedValue(undefined),
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(draftEvent),
       createQueryBuilder: jest.fn(createQueryBuilder),
     };
     const organizationRepo = {
@@ -318,6 +422,9 @@ describe('EventService create', () => {
     const categoryRepo = {
       find: jest.fn().mockResolvedValue([category]),
     };
+    const notificationService = {
+      create: jest.fn().mockResolvedValue({ statusCode: 201 }),
+    };
 
     const service = new EventService(
       eventRepo as any,
@@ -325,6 +432,7 @@ describe('EventService create', () => {
       membershipRepo as any,
       categoryRepo as any,
       {} as any,
+      notificationService as any,
     );
 
     return {
@@ -333,6 +441,7 @@ describe('EventService create', () => {
       organizationRepo,
       membershipRepo,
       categoryRepo,
+      notificationService,
       queryBuilders,
     };
   }

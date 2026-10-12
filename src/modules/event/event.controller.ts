@@ -118,6 +118,17 @@ export class EventController {
     return this.eventService.cancelled(cancelledDto, req.user);
   }
 
+  @Patch(':id/publish')
+  @ApiOperation({ operationId: 'publishEvent' })
+  @UseGuards(JwtGuard, PermissionsGuard)
+  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_UPDATE)
+  publish(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+  ): Promise<ApiResponse<EventDto>> {
+    return this.eventService.publish(id, req.user);
+  }
+
   @Get(':id')
   @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)

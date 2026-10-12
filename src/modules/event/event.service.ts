@@ -2,6 +2,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -14,6 +17,7 @@ import { PaginationResult } from 'src/common/dtos/pagination.type';
 import {
   EventStatus,
   InvitationStatus,
+  NotificationType,
   OrganizationStatus,
 } from 'src/shared/enum/enum';
 import { FilterOperator, paginate, PaginateQuery } from 'nestjs-paginate';
@@ -27,9 +31,13 @@ import { InviteDashboardDto } from '../invite/dto/invites-dashboard';
 import { UploadService } from '../upload/upload.service';
 import { Membership } from '../membership/entities/membership.entity';
 import { Category } from '../category/entities/category.entity';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
-export class EventService {
+export class EventService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(EventService.name);
+  private statusSyncTimer?: ReturnType<typeof setInterval>;
+
   constructor(
     @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
     @InjectRepository(Organization)
@@ -41,7 +49,23 @@ export class EventService {
     // @InjectRepository(TicketType) private ticketTypeRepo: Repository<TicketType>,
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
     private readonly uploadService: UploadService,
+    private readonly notificationService: NotificationService,
   ) {}
+
+  onModuleInit(): void {
+    const intervalMs = Number(process.env.EVENT_STATUS_SYNC_INTERVAL_MS) || 60000;
+    this.statusSyncTimer = setInterval(() => {
+      this.syncEventStatuses().catch((error) => {
+        this.logger.error('EVENT_STATUS_SYNC_FAILED', error?.stack || error);
+      });
+    }, intervalMs);
+  }
+
+  onModuleDestroy(): void {
+    if (this.statusSyncTimer) {
+      clearInterval(this.statusSyncTimer);
+    }
+  }
 
   async create(
     createEventDto: CreateEventDto,
@@ -383,6 +407,40 @@ export class EventService {
     return Response(200, `Cancelled successfully`, cancelled);
   }
 
+  async publish(
+    id: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<EventDto>> {
+    const event = await this.eventRepo.findOne({
+      where: { id },
+      relations: ['organization'],
+    });
+
+    if (!event) {
+      throw new BadRequestException('Event not found');
+    }
+
+    await this.assertUserCanManageOrganization(
+      event.organization.id,
+      currentUser,
+    );
+
+    if (event.status !== EventStatus.DRAFT) {
+      throw new BadRequestException('ONLY_DRAFT_EVENT_CAN_BE_PUBLISHED');
+    }
+
+    event.status = EventStatus.PUBLISHED;
+    const saved = await this.eventRepo.save(event);
+
+    return Response(
+      200,
+      'Publish Event Successfully',
+      plainToInstance(EventDto, saved, {
+        excludeExtraneousValues: true,
+      }),
+    );
+  }
+
   async findOne(id: string): Promise<ApiResponse<EventDto>> {
     console.time('GET_EVENT_BY_ID');
     try {
@@ -704,49 +762,94 @@ export class EventService {
     return date;
   }
 
-  private async syncEventStatuses(eventIds?: string[]): Promise<void> {
+  async syncEventStatuses(eventIds?: string[]): Promise<void> {
     const now = new Date();
-    const lockedStatuses = [
-      EventStatus.CANCELLED,
-      EventStatus.POSTPONED,
-      EventStatus.DRAFT,
-    ];
-    const params: any[] = [
-      now,
-      EventStatus.ENDED,
-      EventStatus.ONGOING,
-      EventStatus.UPCOMING,
-      ...lockedStatuses,
-    ];
-    const idFilter = eventIds?.length
-      ? `AND id = ANY($${params.length + 1}::uuid[])`
-      : '';
+    const where: any = {
+      status: In([
+        EventStatus.PUBLISHED,
+        EventStatus.UPCOMING,
+        EventStatus.ONGOING,
+      ]),
+    };
 
     if (eventIds?.length) {
-      params.push(eventIds);
+      where.id = In(eventIds);
     }
 
-    await this.eventRepo.query(
-      `
-        UPDATE events
-        SET
-          status = CASE
-            WHEN "endDateTime" <= $1 THEN $2
-            WHEN "startDateTime" <= $1 AND "endDateTime" > $1 THEN $3
-            WHEN "startDateTime" > $1 THEN $4
-            ELSE status
-          END,
-          "updatedAt" = NOW()
-        WHERE status NOT IN ($5, $6, $7)
-          ${idFilter}
-          AND (
-            (status != $2 AND "endDateTime" <= $1)
-            OR (status != $3 AND "startDateTime" <= $1 AND "endDateTime" > $1)
-            OR (status != $4 AND "startDateTime" > $1)
-          )
-      `,
-      params,
-    );
+    const events = await this.eventRepo.find({
+      where,
+      relations: ['organization', 'organization.owner'],
+    });
+
+    for (const event of events) {
+      const previousStatus = event.status;
+      const nextStatus = this.resolveNextLifecycleStatus(event, now);
+
+      if (!nextStatus || nextStatus === previousStatus) {
+        continue;
+      }
+
+      event.status = nextStatus;
+      await this.eventRepo.save(event);
+      await this.notifyEventStatusChanged(event, previousStatus, nextStatus);
+    }
+  }
+
+  private resolveNextLifecycleStatus(
+    event: Event,
+    now: Date,
+  ): EventStatus | null {
+    const startDateTime = new Date(event.startDateTime);
+    const endDateTime = new Date(event.endDateTime);
+
+    if (endDateTime < now) {
+      return EventStatus.ENDED;
+    }
+
+    if (startDateTime <= now && endDateTime >= now) {
+      return EventStatus.ONGOING;
+    }
+
+    if (event.status === EventStatus.PUBLISHED && startDateTime > now) {
+      return EventStatus.UPCOMING;
+    }
+
+    return null;
+  }
+
+  private async notifyEventStatusChanged(
+    event: Event,
+    previousStatus: EventStatus,
+    nextStatus: EventStatus,
+  ): Promise<void> {
+    const owner = event.organization?.owner;
+
+    if (!owner?.id) {
+      this.logger.warn(
+        `EVENT_STATUS_NOTIFICATION_SKIPPED owner missing for event ${event.id}`,
+      );
+      return;
+    }
+
+    try {
+      await this.notificationService.create({
+        userId: owner.id,
+        organizationId: event.organization.id,
+        title: 'Event status updated',
+        message: `${event.title} is now ${nextStatus}`,
+        type: NotificationType.EVENT,
+        metadata: {
+          eventId: event.id,
+          previousStatus,
+          nextStatus,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `EVENT_STATUS_NOTIFICATION_FAILED eventId=${event.id}`,
+        error?.stack || error,
+      );
+    }
   }
 
   private async assertUserCanManageOrganization(
