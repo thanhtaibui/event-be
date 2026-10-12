@@ -226,8 +226,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
         .createQueryBuilder('event')
         .leftJoinAndSelect('event.organization', 'organization')
         .leftJoinAndSelect('event.categories', 'categories')
-        .where('event.isPublic = :isPublic', { isPublic: true })
-        .andWhere('event.status IN (:...statuses)', {
+        .where('event.status IN (:...statuses)', {
           statuses: publicStatuses,
         })
         .andWhere('organization.id IS NOT NULL')
@@ -802,15 +801,19 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     const startDateTime = new Date(event.startDateTime);
     const endDateTime = new Date(event.endDateTime);
 
-    if (endDateTime < now) {
+    if (event.status === EventStatus.ONGOING && endDateTime < now) {
       return EventStatus.ENDED;
     }
 
-    if (startDateTime <= now && endDateTime >= now) {
+    if (
+      event.status === EventStatus.UPCOMING &&
+      startDateTime <= now &&
+      endDateTime > now
+    ) {
       return EventStatus.ONGOING;
     }
 
-    if (event.status === EventStatus.PUBLISHED && startDateTime > now) {
+    if (event.status === EventStatus.PUBLISHED && startDateTime <= now) {
       return EventStatus.UPCOMING;
     }
 

@@ -40,7 +40,6 @@ export class EventDto {
   @Expose()
   soldTickets?: number;
 
-  // isPublic: boolean;
   @Expose()
   status: EventStatus;
 

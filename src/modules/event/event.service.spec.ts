@@ -231,8 +231,7 @@ describe('EventService create', () => {
     const { service, eventRepo, membershipRepo, queryBuilders } = createService();
     const publicEvent = {
       ...draftEvent,
-      status: EventStatus.UPCOMING,
-      isPublic: true,
+      status: EventStatus.PUBLISHED,
       eventBanner: 'https://cdn.example.com/banner.jpg',
     };
     mockPaginateResult([publicEvent]);
@@ -257,10 +256,6 @@ describe('EventService create', () => {
     });
     expect(membershipRepo.find).not.toHaveBeenCalled();
     expect(queryBuilders[0].where).toHaveBeenCalledWith(
-      'event.isPublic = :isPublic',
-      { isPublic: true },
-    );
-    expect(queryBuilders[0].andWhere).toHaveBeenCalledWith(
       'event.status IN (:...statuses)',
       {
         statuses: [
@@ -314,7 +309,7 @@ describe('EventService create', () => {
     const event = {
       ...draftEvent,
       status: EventStatus.PUBLISHED,
-      startDateTime: new Date(Date.now() + 60 * 60 * 1000),
+      startDateTime: new Date(Date.now() - 60 * 1000),
       endDateTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
     };
     eventRepo.find.mockResolvedValueOnce([event]);
@@ -331,6 +326,23 @@ describe('EventService create', () => {
         message: `${event.title} is now ${EventStatus.UPCOMING}`,
       }),
     );
+  });
+
+  it('scheduler keeps future published events as published', async () => {
+    const { service, eventRepo, notificationService } = createService();
+    const event = {
+      ...draftEvent,
+      status: EventStatus.PUBLISHED,
+      startDateTime: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000),
+      endDateTime: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000),
+    };
+    eventRepo.find.mockResolvedValueOnce([event]);
+
+    await service.syncEventStatuses();
+
+    expect(eventRepo.save).not.toHaveBeenCalled();
+    expect(notificationService.create).not.toHaveBeenCalled();
+    expect(event.status).toBe(EventStatus.PUBLISHED);
   });
 
   it('scheduler changes upcoming events to ongoing and notifies owner', async () => {

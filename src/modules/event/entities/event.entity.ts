@@ -46,9 +46,6 @@ export class Event extends BaseEntity {
   // @Column()
   // price: number;
 
-  @Column({ default: false })
-  isPublic: boolean;
-
   @Column({
     type: 'enum',
     enum: EventStatus,
