@@ -372,6 +372,7 @@ export class UserService {
             ? {
                 id: ticket.ticketType.event.id,
                 title: ticket.ticketType.event.title,
+                bannerUrl: ticket.ticketType.event.eventBanner ?? null,
                 startDateTime: ticket.ticketType.event.startDateTime,
                 endDateTime: ticket.ticketType.event.endDateTime,
                 place: ticket.ticketType.event.place,
