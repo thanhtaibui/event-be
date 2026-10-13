@@ -76,17 +76,12 @@ export class AiChatResponseDto {
     | 'chat'
     | 'image_prompt_ready'
     | 'need_more_information'
-    | 'image_prompt_collecting';
+    | 'image_prompt_collecting'
+    | 'image_type_selecting';
   locale?: 'vi' | 'en';
   language?: 'vi' | 'en';
-  summary?: {
-    eventName?: string;
-    organization?: string;
-    theme?: string;
-    audience?: string;
-    style?: string;
-    colors?: string;
-  };
+  imageIntent?: 'EVENT_BANNER' | 'ORG_COVER' | 'SQUARE_POST' | 'POSTER_STORY';
+  summary?: Record<string, string | undefined>;
   prompt?: string;
   imagePrompt?: string;
   negativePrompt?: string;
@@ -99,5 +94,9 @@ export class AiChatResponseDto {
   canUseForCreate?: boolean;
   questions?: string[];
   missingFields?: string[];
+  options?: Array<{
+    label: string;
+    value: 'EVENT_BANNER' | 'ORG_COVER' | 'SQUARE_POST' | 'POSTER_STORY';
+  }>;
   actions?: Array<'COPY_PROMPT' | 'USE_IN_CREATE'>;
 }

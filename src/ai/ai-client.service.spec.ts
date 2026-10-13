@@ -304,30 +304,53 @@ describe('AiClientService', () => {
     expect(global.fetch).toHaveBeenCalledTimes(20);
   });
 
-  it('asks for missing information in image_prompt_builder mode', async () => {
+  it('asks for image type before collecting prompt details', async () => {
     const service = new AiClientService();
     const result = await service.chat(
-      'I need a banner for agriculture event',
+      'Tôi muốn tạo mẫu ảnh',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_type_selecting');
+    expect(result.canUseForCreate).toBe(false);
+    expect(result.content).toContain(
+      'Bạn muốn tạo loại ảnh nào?',
+    );
+    expect(result.language).toBe('vi');
+    expect(result.options).toEqual([
+      { label: 'Banner sự kiện', value: 'EVENT_BANNER' },
+      { label: 'Cover tổ chức', value: 'ORG_COVER' },
+      { label: 'Bài đăng vuông', value: 'SQUARE_POST' },
+      { label: 'Poster / Story', value: 'POSTER_STORY' },
+    ]);
+    expect(result.missingFields).toEqual(['imageIntent']);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('asks event banner schema questions after user chooses banner type', async () => {
+    const service = new AiClientService();
+    const result = await service.chat(
+      'Banner sự kiện',
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.imageIntent).toBe('EVENT_BANNER');
     expect(result.canUseForCreate).toBe(false);
     expect(result.content).toContain(
-      'I need some more information to create your event image:',
+      'Mình cần thêm một vài thông tin để tạo hình ảnh sự kiện:',
     );
-    expect(result.language).toBe('en');
-    expect(result.message).toContain(
-      'I need some more information to create your event image:',
-    );
+    expect(result.language).toBe('vi');
     expect(result.questions).toEqual([
-      'Event name?',
-      'Organization?',
-      'Theme?',
-      'Target audience?',
-      'Preferred style?',
+      'Tên sự kiện là gì?',
+      'Đơn vị tổ chức là ai?',
+      'Chủ đề chính của sự kiện là gì?',
+      'Thời gian diễn ra là khi nào?',
+      'Địa điểm tổ chức ở đâu?',
     ]);
     expect(result.missingFields).toContain('eventName');
+    expect(result.missingFields).toContain('dateTime');
+    expect(result.missingFields).toContain('location');
     expect(result.missingFields).toContain('colors');
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -361,6 +384,8 @@ describe('AiClientService', () => {
     const service = new AiClientService();
     const result = await service.chat(
       [
+        'Event banner',
+        '',
         'Event name:',
         'Green Future Agriculture Expo 2026',
         '',
@@ -369,6 +394,12 @@ describe('AiClientService', () => {
         '',
         'Theme:',
         'Smart agriculture, IoT and sustainable development',
+        '',
+        'Date/time:',
+        'Jun 21, 2026',
+        '',
+        'Location:',
+        'Ho Chi Minh City',
         '',
         'Target audience:',
         'Agricultural businesses, investors, technology experts',
@@ -386,6 +417,7 @@ describe('AiClientService', () => {
     expect(result.canUseForCreate).toBe(true);
     expect(result.locale).toBe('en');
     expect(result.language).toBe('en');
+    expect(result.imageIntent).toBe('EVENT_BANNER');
     expect(result.actions).toEqual(['COPY_PROMPT', 'USE_IN_CREATE']);
     expect(result.summary?.eventName).toBe(
       'Green Future Agriculture Expo 2026',
@@ -437,9 +469,12 @@ describe('AiClientService', () => {
     const service = new AiClientService();
     const result = await service.chat(
       [
+        'Banner sự kiện',
         'Tên sự kiện: Green Future Agriculture Expo 2026',
         'Tổ chức: GreenFarm Vietnam',
         'Chủ đề: Nông nghiệp thông minh, IoT và phát triển bền vững',
+        'Thời gian: 21/06/2026',
+        'Địa điểm: TP.HCM',
         'Đối tượng: Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
         'Phong cách: Natural premium, environmental technology',
         'Màu chủ đạo: Xanh lá, trắng',
@@ -480,9 +515,12 @@ describe('AiClientService', () => {
     const service = new AiClientService();
     const result = await service.chat(
       [
+        'Banner sự kiện',
         'Tên sự kiện: Green Life Festival 2026',
         'Đơn vị tổ chức: Green Future Community',
         'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+        'Thời gian: 20/10/2026',
+        'Địa điểm: Công viên trung tâm',
         'Đối tượng tham gia: Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
         'Phong cách: Natural, fresh, eco-friendly',
         'Màu chủ đạo: Xanh lá, trắng, be',
@@ -493,8 +531,10 @@ describe('AiClientService', () => {
     expect(result.mode).toBe('image_prompt_ready');
     expect(result.summary).toEqual({
       eventName: 'Green Life Festival 2026',
-      organization: 'Green Future Community',
+      organizer: 'Green Future Community',
       theme: 'Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+      dateTime: '20/10/2026',
+      location: 'Công viên trung tâm',
       audience:
         'Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
       style: 'Natural, fresh, eco-friendly',
@@ -503,7 +543,29 @@ describe('AiClientService', () => {
     expect(result.missingFields).toBeUndefined();
   });
 
-  it('normalizes Vietnamese natural image prompt input to fixed English schema', async () => {
+  it('collects only missing event banner fields from schema', async () => {
+    const service = new AiClientService();
+    const result = await service.chat(
+      [
+        'Banner sự kiện',
+        'Tên sự kiện: Green Life Festival 2026',
+        'Đơn vị tổ chức: Green Future Community',
+        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
+        'Thời gian: 20/10/2026',
+        'Địa điểm: Công viên trung tâm',
+        'Đối tượng tham gia: Gia đình, học sinh, sinh viên',
+        'Phong cách: Natural, fresh, eco-friendly',
+      ].join('\n'),
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.imageIntent).toBe('EVENT_BANNER');
+    expect(result.missingFields).toEqual(['colors']);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('normalizes organization cover prompt input by schema', async () => {
     mockFetchResponse(200, {
       choices: [
         {
@@ -520,44 +582,30 @@ describe('AiClientService', () => {
     const service = new AiClientService();
     const result = await service.chat(
       [
-        'Sự kiện của tôi là Green Life Festival 2026.',
-        'Green Future Community tổ chức.',
-        'Chủ đề về sống xanh và trồng cây.',
-        'Khách chính là gia đình và sinh viên.',
-        'Muốn phong cách tự nhiên, thân thiện môi trường.',
-        'Màu xanh lá và be.',
+        'Cover tổ chức',
+        'Tên tổ chức: Green Future Community',
+        'Lĩnh vực: Môi trường và giáo dục cộng đồng',
+        'Slogan: Grow green together',
+        'Thông điệp thương hiệu: Truyền cảm hứng sống xanh',
+        'Đối tượng: Gia đình và sinh viên',
+        'Màu thương hiệu: Xanh lá và be',
+        'Phong cách hình ảnh: Tự nhiên, thân thiện môi trường',
       ].join('\n'),
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_prompt_ready');
+    expect(result.imageIntent).toBe('ORG_COVER');
     expect(result.summary).toEqual({
-      eventName: 'Green Life Festival 2026',
-      organization: 'Green Future Community',
-      theme: 'sống xanh và trồng cây',
-      audience: 'gia đình và sinh viên',
-      style: 'tự nhiên, thân thiện môi trường',
-      colors: 'xanh lá và be',
+      organizationName: 'Green Future Community',
+      industry: 'Môi trường và giáo dục cộng đồng',
+      slogan: 'Grow green together',
+      brandMessage: 'Truyền cảm hứng sống xanh',
+      targetAudience: 'Gia đình và sinh viên',
+      brandColors: 'Xanh lá và be',
+      visualStyle: 'Tự nhiên, thân thiện môi trường',
     });
     expect(result.missingFields).toBeUndefined();
-  });
-
-  it('returns only colors as missing when image prompt input lacks colors', async () => {
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Tên sự kiện: Green Life Festival 2026',
-        'Đơn vị tổ chức: Green Future Community',
-        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
-        'Đối tượng tham gia: Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
-        'Phong cách: Natural, fresh, eco-friendly',
-      ].join('\n'),
-      AiChatMode.IMAGE_PROMPT_BUILDER,
-    );
-
-    expect(result.mode).toBe('image_prompt_collecting');
-    expect(result.missingFields).toEqual(['colors']);
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('falls back to structured prompt when image provider returns wrong mode', async () => {
@@ -577,9 +625,12 @@ describe('AiClientService', () => {
     const service = new AiClientService();
     const result = await service.chat(
       [
+        'Event banner',
         'Event name: Green Future Agriculture Expo 2026',
-        'Organization: GreenFarm Vietnam',
+        'Organizer: GreenFarm Vietnam',
         'Theme: Smart agriculture and IoT',
+        'Date/time: Jun 21, 2026',
+        'Location: Ho Chi Minh City',
         'Audience: Agricultural businesses',
         'Style: Natural premium',
         'Colors: Green and white',

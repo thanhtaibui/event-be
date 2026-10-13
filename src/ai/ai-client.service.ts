@@ -47,13 +47,241 @@ type GroqMessage = {
   content: string;
 };
 
-type ImageCreationInfo = {
-  eventName?: string;
-  organization?: string;
-  theme?: string;
-  audience?: string;
-  style?: string;
-  colors?: string;
+type ImageIntent =
+  | 'EVENT_BANNER'
+  | 'ORG_COVER'
+  | 'SQUARE_POST'
+  | 'POSTER_STORY';
+
+type ImagePromptInfo = Record<string, string | undefined>;
+
+type ImagePromptField = {
+  key: string;
+  labels: string[];
+  question: Record<ResponseLanguage, string>;
+  promptLabel: Record<ResponseLanguage, string>;
+};
+
+type ImagePromptSchema = {
+  intent: ImageIntent;
+  label: Record<ResponseLanguage, string>;
+  promptSubject: Record<ResponseLanguage, string>;
+  fields: ImagePromptField[];
+};
+
+const IMAGE_PROMPT_SCHEMAS: Record<ImageIntent, ImagePromptSchema> = {
+  EVENT_BANNER: {
+    intent: 'EVENT_BANNER',
+    label: {
+      vi: 'Banner sự kiện',
+      en: 'Event banner',
+    },
+    promptSubject: {
+      vi: 'banner sự kiện khổ ngang chuyên nghiệp',
+      en: 'professional horizontal event banner',
+    },
+    fields: [
+      {
+        key: 'eventName',
+        labels: ['event name', 'tên sự kiện', 'sự kiện'],
+        question: { vi: 'Tên sự kiện là gì?', en: 'Event name?' },
+        promptLabel: { vi: 'Tên sự kiện', en: 'Event name' },
+      },
+      {
+        key: 'organizer',
+        labels: ['organizer', 'organization', 'tổ chức', 'đơn vị tổ chức'],
+        question: { vi: 'Đơn vị tổ chức là ai?', en: 'Organizer?' },
+        promptLabel: { vi: 'Đơn vị tổ chức', en: 'Organizer' },
+      },
+      {
+        key: 'theme',
+        labels: ['theme', 'chủ đề', 'chủ đề chính'],
+        question: { vi: 'Chủ đề chính của sự kiện là gì?', en: 'Theme?' },
+        promptLabel: { vi: 'Chủ đề', en: 'Theme' },
+      },
+      {
+        key: 'dateTime',
+        labels: ['date/time', 'datetime', 'date time', 'thời gian', 'ngày giờ'],
+        question: { vi: 'Thời gian diễn ra là khi nào?', en: 'Date/time?' },
+        promptLabel: { vi: 'Thời gian', en: 'Date/time' },
+      },
+      {
+        key: 'location',
+        labels: ['location', 'venue', 'địa điểm', 'nơi tổ chức'],
+        question: { vi: 'Địa điểm tổ chức ở đâu?', en: 'Location?' },
+        promptLabel: { vi: 'Địa điểm', en: 'Location' },
+      },
+      {
+        key: 'audience',
+        labels: [
+          'target audience',
+          'audience',
+          'đối tượng',
+          'đối tượng tham gia',
+          'khán giả',
+          'khách chính',
+        ],
+        question: { vi: 'Đối tượng tham gia là ai?', en: 'Target audience?' },
+        promptLabel: { vi: 'Đối tượng', en: 'Audience' },
+      },
+      {
+        key: 'style',
+        labels: ['preferred style', 'style', 'phong cách'],
+        question: { vi: 'Phong cách mong muốn là gì?', en: 'Preferred style?' },
+        promptLabel: { vi: 'Phong cách', en: 'Style' },
+      },
+      {
+        key: 'colors',
+        labels: ['preferred colors', 'color', 'colors', 'màu', 'màu sắc', 'màu chủ đạo'],
+        question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Preferred colors?' },
+        promptLabel: { vi: 'Màu sắc', en: 'Colors' },
+      },
+    ],
+  },
+  ORG_COVER: {
+    intent: 'ORG_COVER',
+    label: { vi: 'Cover tổ chức', en: 'Organization cover' },
+    promptSubject: {
+      vi: 'ảnh cover tổ chức chuyên nghiệp',
+      en: 'professional organization cover image',
+    },
+    fields: [
+      {
+        key: 'organizationName',
+        labels: ['organization name', 'organization', 'tên tổ chức', 'tổ chức'],
+        question: { vi: 'Tên tổ chức là gì?', en: 'Organization name?' },
+        promptLabel: { vi: 'Tên tổ chức', en: 'Organization name' },
+      },
+      {
+        key: 'industry',
+        labels: ['industry', 'lĩnh vực', 'ngành'],
+        question: { vi: 'Tổ chức thuộc lĩnh vực nào?', en: 'Industry?' },
+        promptLabel: { vi: 'Lĩnh vực', en: 'Industry' },
+      },
+      {
+        key: 'slogan',
+        labels: ['slogan', 'tagline', 'khẩu hiệu'],
+        question: { vi: 'Slogan hoặc tagline là gì?', en: 'Slogan/tagline?' },
+        promptLabel: { vi: 'Slogan', en: 'Slogan' },
+      },
+      {
+        key: 'brandMessage',
+        labels: ['brand message', 'message', 'thông điệp thương hiệu', 'thông điệp'],
+        question: { vi: 'Thông điệp thương hiệu muốn truyền tải là gì?', en: 'Brand message?' },
+        promptLabel: { vi: 'Thông điệp thương hiệu', en: 'Brand message' },
+      },
+      {
+        key: 'targetAudience',
+        labels: ['target audience', 'audience', 'đối tượng', 'khách hàng mục tiêu'],
+        question: { vi: 'Đối tượng mục tiêu của tổ chức là ai?', en: 'Target audience?' },
+        promptLabel: { vi: 'Đối tượng mục tiêu', en: 'Target audience' },
+      },
+      {
+        key: 'brandColors',
+        labels: ['brand colors', 'colors', 'màu thương hiệu', 'màu chủ đạo'],
+        question: { vi: 'Màu thương hiệu là gì?', en: 'Brand colors?' },
+        promptLabel: { vi: 'Màu thương hiệu', en: 'Brand colors' },
+      },
+      {
+        key: 'visualStyle',
+        labels: ['visual style', 'style', 'phong cách hình ảnh', 'phong cách'],
+        question: { vi: 'Phong cách hình ảnh mong muốn là gì?', en: 'Visual style?' },
+        promptLabel: { vi: 'Phong cách hình ảnh', en: 'Visual style' },
+      },
+    ],
+  },
+  SQUARE_POST: {
+    intent: 'SQUARE_POST',
+    label: { vi: 'Bài đăng vuông', en: 'Square post' },
+    promptSubject: {
+      vi: 'bài đăng vuông chuyên nghiệp cho mạng xã hội',
+      en: 'professional square social media post',
+    },
+    fields: [
+      {
+        key: 'postPurpose',
+        labels: ['post purpose', 'purpose', 'mục đích bài đăng', 'mục đích'],
+        question: { vi: 'Mục đích bài đăng là gì?', en: 'Post purpose?' },
+        promptLabel: { vi: 'Mục đích bài đăng', en: 'Post purpose' },
+      },
+      {
+        key: 'headline',
+        labels: ['headline', 'title', 'tiêu đề'],
+        question: { vi: 'Tiêu đề chính là gì?', en: 'Headline?' },
+        promptLabel: { vi: 'Tiêu đề', en: 'Headline' },
+      },
+      {
+        key: 'content',
+        labels: ['content', 'body', 'nội dung'],
+        question: { vi: 'Nội dung chính muốn truyền tải là gì?', en: 'Content?' },
+        promptLabel: { vi: 'Nội dung', en: 'Content' },
+      },
+      {
+        key: 'cta',
+        labels: ['cta', 'call to action', 'kêu gọi hành động'],
+        question: { vi: 'CTA/kêu gọi hành động là gì?', en: 'CTA?' },
+        promptLabel: { vi: 'CTA', en: 'CTA' },
+      },
+      {
+        key: 'style',
+        labels: ['style', 'phong cách'],
+        question: { vi: 'Phong cách mong muốn là gì?', en: 'Style?' },
+        promptLabel: { vi: 'Phong cách', en: 'Style' },
+      },
+      {
+        key: 'colors',
+        labels: ['colors', 'color', 'màu', 'màu sắc', 'màu chủ đạo'],
+        question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Colors?' },
+        promptLabel: { vi: 'Màu sắc', en: 'Colors' },
+      },
+    ],
+  },
+  POSTER_STORY: {
+    intent: 'POSTER_STORY',
+    label: { vi: 'Poster / Story', en: 'Poster / Story' },
+    promptSubject: {
+      vi: 'poster hoặc story dọc chuyên nghiệp',
+      en: 'professional vertical poster or story visual',
+    },
+    fields: [
+      {
+        key: 'title',
+        labels: ['title', 'headline', 'tiêu đề'],
+        question: { vi: 'Tiêu đề chính là gì?', en: 'Title?' },
+        promptLabel: { vi: 'Tiêu đề', en: 'Title' },
+      },
+      {
+        key: 'mainMessage',
+        labels: ['main message', 'message', 'thông điệp chính', 'thông điệp'],
+        question: { vi: 'Thông điệp chính là gì?', en: 'Main message?' },
+        promptLabel: { vi: 'Thông điệp chính', en: 'Main message' },
+      },
+      {
+        key: 'cta',
+        labels: ['cta', 'call to action', 'kêu gọi hành động'],
+        question: { vi: 'CTA/kêu gọi hành động là gì?', en: 'CTA?' },
+        promptLabel: { vi: 'CTA', en: 'CTA' },
+      },
+      {
+        key: 'audience',
+        labels: ['audience', 'target audience', 'đối tượng', 'khán giả'],
+        question: { vi: 'Đối tượng hướng tới là ai?', en: 'Audience?' },
+        promptLabel: { vi: 'Đối tượng', en: 'Audience' },
+      },
+      {
+        key: 'style',
+        labels: ['style', 'phong cách'],
+        question: { vi: 'Phong cách mong muốn là gì?', en: 'Style?' },
+        promptLabel: { vi: 'Phong cách', en: 'Style' },
+      },
+      {
+        key: 'colors',
+        labels: ['colors', 'color', 'màu', 'màu sắc', 'màu chủ đạo'],
+        question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Colors?' },
+        promptLabel: { vi: 'Màu sắc', en: 'Colors' },
+      },
+    ],
+  },
 };
 
 @Injectable()
@@ -112,14 +340,27 @@ export class AiClientService {
     language: ResponseLanguage,
     history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
-    const imageCreationInfo = this.extractImageCreationInfo(message);
-    const missingImageInfo =
-      this.getMissingImageCreationFields(imageCreationInfo);
+    const imageIntent = this.resolveImageIntent(message, history);
+    if (!imageIntent) {
+      return this.buildImageTypeSelectionResponse(language);
+    }
+
+    const schema = IMAGE_PROMPT_SCHEMAS[imageIntent];
+    const conversationText = this.buildConversationText(message, history);
+    const imageCreationInfo = this.extractImageCreationInfo(
+      conversationText,
+      schema,
+    );
+    const missingImageInfo = this.getMissingImageCreationFields(
+      imageCreationInfo,
+      schema,
+    );
 
     if (missingImageInfo.length > 0) {
       return this.buildNeedMoreInformationResponse(
-        this.getImageCreationQuestions(missingImageInfo, language),
+        this.getImageCreationQuestions(missingImageInfo, schema, language),
         missingImageInfo,
+        imageIntent,
         language,
       );
     }
@@ -127,12 +368,17 @@ export class AiClientService {
     const reply = await this.callGroq({
       message,
       history,
-      systemPrompt: this.getImagePromptBuilderSystemPrompt(language),
+      systemPrompt: this.getImagePromptBuilderSystemPrompt(language, schema),
       temperature: 0.2,
       logScope: 'image_prompt_builder',
     });
 
-    return this.normalizeImagePromptReply(reply, imageCreationInfo, language);
+    return this.normalizeImagePromptReply(
+      reply,
+      imageCreationInfo,
+      schema,
+      language,
+    );
   }
 
   private async callGroq(params: {
@@ -409,20 +655,24 @@ export class AiClientService {
 
   private getImagePromptBuilderSystemPrompt(
     language: ResponseLanguage,
+    schema: ImagePromptSchema,
   ): string {
     return [
       'You are Eventix AI Creative Assistant.',
       'Mode: IMAGE_PROMPT_BUILDER.',
+      `Image intent: ${schema.intent} (${schema.label.en}).`,
       'Your job is to create production-ready image prompts, not tutorials or design lessons.',
       'Use the design guide below as private system knowledge only. Do not send it to the image model as a separate document.',
       '',
       'Required output must be compact valid JSON only:',
-      '{"mode":"image_prompt_ready","summary":{"eventName":"","organization":"","theme":"","audience":"","style":"","colors":""},"prompt":"","negativePrompt":""}',
+      `{"mode":"image_prompt_ready","imageIntent":"${schema.intent}","summary":{},"prompt":"","negativePrompt":""}`,
       '',
       'Rules:',
       `- prompt and negativePrompt must be written in ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
       '- prompt must be directly usable by image generation.',
-      '- prompt must include image type, event name, organization, theme, audience, style, colors, visual direction, composition, and quality requirements.',
+      `- prompt must be for ${schema.promptSubject.en}.`,
+      `- summary must include these keys: ${schema.fields.map((field) => field.key).join(', ')}.`,
+      '- prompt must include image type, all collected information, visual direction, composition, and quality requirements.',
       '- negativePrompt must be short, clear, and aligned with the same language.',
       '- Do not return markdown tables.',
       '- Do not return tutorials.',
@@ -472,6 +722,77 @@ export class AiClientService {
     ].join('\n');
   }
 
+  private resolveImageIntent(
+    message: string,
+    history: AiChatHistoryMessageDto[] = [],
+  ): ImageIntent | undefined {
+    const conversation = this.buildConversationText(message, history);
+    const normalized = conversation.toLowerCase();
+
+    if (
+      normalized.includes('event_banner') ||
+      normalized.includes('banner sự kiện') ||
+      normalized.includes('event banner') ||
+      normalized.includes('banner event')
+    ) {
+      return 'EVENT_BANNER';
+    }
+
+    if (
+      normalized.includes('org_cover') ||
+      normalized.includes('cover tổ chức') ||
+      normalized.includes('organization cover') ||
+      normalized.includes('ảnh bìa tổ chức') ||
+      normalized.includes('anh bia to chuc')
+    ) {
+      return 'ORG_COVER';
+    }
+
+    if (
+      normalized.includes('square_post') ||
+      normalized.includes('bài đăng vuông') ||
+      normalized.includes('bai dang vuong') ||
+      normalized.includes('square post') ||
+      normalized.includes('post vuông') ||
+      normalized.includes('post vuong')
+    ) {
+      return 'SQUARE_POST';
+    }
+
+    if (
+      normalized.includes('poster_story') ||
+      normalized.includes('poster / story') ||
+      normalized.includes('poster') ||
+      normalized.includes('story')
+    ) {
+      return 'POSTER_STORY';
+    }
+
+    return undefined;
+  }
+
+  private buildConversationText(
+    message: string,
+    history: AiChatHistoryMessageDto[] = [],
+  ): string {
+    return [
+      ...history
+        .filter((item) => item.role === 'user')
+        .map((item) => item.content),
+      message,
+    ].join('\n');
+  }
+
+  private getImageIntentOptions(language: ResponseLanguage): Array<{
+    label: string;
+    value: ImageIntent;
+  }> {
+    return Object.values(IMAGE_PROMPT_SCHEMAS).map((schema) => ({
+      label: schema.label[language],
+      value: schema.intent,
+    }));
+  }
+
   private getImageDesignGuide(): string {
     if (this.imageDesignGuide !== undefined) {
       return this.imageDesignGuide;
@@ -490,24 +811,31 @@ export class AiClientService {
 
   private normalizeImagePromptReply(
     reply: string,
-    imageCreationInfo: ImageCreationInfo,
+    imageCreationInfo: ImagePromptInfo,
+    schema: ImagePromptSchema,
     language: ResponseLanguage,
   ): AiChatResponseDto {
     const parsed = this.tryParseJson(reply);
     if (!parsed || parsed.mode !== 'image_prompt_ready') {
       return this.buildImagePromptReadyResponseFromInfo(
         imageCreationInfo,
+        schema,
         language,
       );
     }
 
-    const summary = this.normalizeSummary(parsed.summary, imageCreationInfo);
+    const summary = this.normalizeSummary(
+      parsed.summary,
+      imageCreationInfo,
+      schema,
+    );
     const imagePrompt = String(parsed.prompt || parsed.imagePrompt || '').trim();
     const negativePrompt = String(parsed.negativePrompt || '').trim();
 
     if (!imagePrompt) {
       return this.buildImagePromptReadyResponseFromInfo(
         imageCreationInfo,
+        schema,
         language,
       );
     }
@@ -517,6 +845,7 @@ export class AiClientService {
       mode: 'image_prompt_ready',
       locale: language,
       language,
+      imageIntent: schema.intent,
       summary,
       prompt: imagePrompt,
       imagePrompt,
@@ -530,66 +859,28 @@ export class AiClientService {
         imagePrompt,
         negativePrompt || this.getDefaultNegativePrompt(language),
         language,
+        schema,
       ),
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
         negativePrompt || this.getDefaultNegativePrompt(language),
         language,
+        schema,
       ),
     };
   }
 
-  private extractImageCreationInfo(message: string): ImageCreationInfo {
-    const info = {
-      eventName: this.extractFieldValueByLabels(message, [
-        'event name',
-        'tên sự kiện',
-        'sự kiện',
-      ]),
-      organization: this.extractFieldValueByLabels(message, [
-        'organization',
-        'organizer',
-        'tổ chức',
-        'đơn vị tổ chức',
-      ]),
-      theme: this.extractFieldValueByLabels(message, [
-        'theme',
-        'chủ đề',
-        'chủ đề chính',
-      ]),
-      audience: this.extractFieldValueByLabels(message, [
-        'target audience',
-        'audience',
-        'đối tượng',
-        'đối tượng tham gia',
-        'khán giả',
-        'khách chính',
-      ]),
-      style: this.extractFieldValueByLabels(message, [
-        'preferred style',
-        'style',
-        'phong cách',
-      ]),
-      colors: this.extractFieldValueByLabels(message, [
-        'preferred colors',
-        'color',
-        'colors',
-        'màu',
-        'màu sắc',
-        'màu chủ đạo',
-      ]),
-    };
-
-    return this.normalizeImageCreationInfo({
-      eventName: info.eventName || this.extractNaturalField(message, 'eventName'),
-      organization:
-        info.organization || this.extractNaturalField(message, 'organization'),
-      theme: info.theme || this.extractNaturalField(message, 'theme'),
-      audience: info.audience || this.extractNaturalField(message, 'audience'),
-      style: info.style || this.extractNaturalField(message, 'style'),
-      colors: info.colors || this.extractNaturalField(message, 'colors'),
-    });
+  private extractImageCreationInfo(
+    message: string,
+    schema: ImagePromptSchema,
+  ): ImagePromptInfo {
+    return schema.fields.reduce<ImagePromptInfo>((info, field) => {
+      info[field.key] = this.cleanExtractedValue(
+        this.extractFieldValueByLabels(message, field.labels),
+      );
+      return info;
+    }, {});
   }
 
   private extractFieldValueByLabels(
@@ -625,61 +916,6 @@ export class AiClientService {
     return undefined;
   }
 
-  private extractNaturalField(
-    message: string,
-    field: keyof ImageCreationInfo,
-  ): string | undefined {
-    const patternsByField: Record<keyof ImageCreationInfo, RegExp[]> = {
-      eventName: [
-        /(?:tên\s+)?sự kiện(?:\s+của tôi)?\s+(?:là|tên là)\s+([^.\n]+)/i,
-        /(?:my\s+)?event(?:\s+name)?\s+(?:is|called)\s+([^.\n]+)/i,
-      ],
-      organization: [
-        /([^.\n]+?)\s+(?:tổ chức|là đơn vị tổ chức)(?:[.\n]|$)/i,
-        /(?:đơn vị tổ chức|tổ chức)\s+(?:là|:)?\s*([^.\n]+)/i,
-        /([^.\n]+?)\s+(?:organizes|is organizing|is the organizer)(?:[.\n]|$)/i,
-        /(?:organization|organizer)\s+(?:is|:)?\s*([^.\n]+)/i,
-      ],
-      theme: [
-        /(?:chủ đề|chủ đề chính)\s+(?:về|là|:)\s*([^.\n]+)/i,
-        /theme\s+(?:is|about|:)\s*([^.\n]+)/i,
-      ],
-      audience: [
-        /(?:khách chính|đối tượng(?: tham gia)?|khán giả)\s+(?:là|:)\s*([^.\n]+)/i,
-        /(?:target audience|audience)\s+(?:is|are|:)\s*([^.\n]+)/i,
-      ],
-      style: [
-        /(?:muốn|mong muốn)?\s*phong cách\s+(?:là|:)?\s*([^.\n]+)/i,
-        /style\s+(?:is|:)\s*([^.\n]+)/i,
-      ],
-      colors: [
-        /(?:màu|màu sắc|màu chủ đạo)\s+(?:là|:)?\s*([^.\n]+)/i,
-        /colors?\s+(?:is|are|:)\s*([^.\n]+)/i,
-      ],
-    };
-
-    for (const pattern of patternsByField[field]) {
-      const match = message.match(pattern);
-      const value = this.cleanExtractedValue(match?.[1]);
-      if (value) {
-        return value;
-      }
-    }
-
-    return undefined;
-  }
-
-  private normalizeImageCreationInfo(info: ImageCreationInfo): ImageCreationInfo {
-    return {
-      eventName: this.cleanExtractedValue(info.eventName),
-      organization: this.cleanExtractedValue(info.organization),
-      theme: this.cleanExtractedValue(info.theme),
-      audience: this.cleanExtractedValue(info.audience),
-      style: this.cleanExtractedValue(info.style),
-      colors: this.cleanExtractedValue(info.colors),
-    };
-  }
-
   private cleanExtractedValue(value?: string): string | undefined {
     const normalized = value
       ?.trim()
@@ -704,51 +940,34 @@ export class AiClientService {
     return undefined;
   }
 
-  private getMissingImageCreationFields(info: ImageCreationInfo): string[] {
-    const checks: Array<[string, string | undefined]> = [
-      ['eventName', info.eventName],
-      ['organization', info.organization],
-      ['theme', info.theme],
-      ['audience', info.audience],
-      ['style', info.style],
-      ['colors', info.colors],
-    ];
-
-    return checks.filter(([, value]) => !value).map(([field]) => field);
+  private getMissingImageCreationFields(
+    info: ImagePromptInfo,
+    schema: ImagePromptSchema,
+  ): string[] {
+    return schema.fields
+      .filter((field) => !info[field.key])
+      .map((field) => field.key);
   }
 
   private getImageCreationQuestions(
     missingFields: string[],
+    schema: ImagePromptSchema,
     language: ResponseLanguage,
   ): string[] {
-    const englishQuestionByField: Record<string, string> = {
-      eventName: 'Event name?',
-      organization: 'Organization?',
-      theme: 'Theme?',
-      audience: 'Target audience?',
-      style: 'Preferred style?',
-      colors: 'Preferred colors?',
-    };
-    const vietnameseQuestionByField: Record<string, string> = {
-      eventName: 'Tên sự kiện là gì?',
-      organization: 'Đơn vị tổ chức là ai?',
-      theme: 'Chủ đề chính của sự kiện là gì?',
-      audience: 'Đối tượng tham gia là ai?',
-      style: 'Phong cách mong muốn là gì?',
-      colors: 'Màu chủ đạo mong muốn là gì?',
-    };
-    const questionByField =
-      language === 'vi' ? vietnameseQuestionByField : englishQuestionByField;
-
     return missingFields
-      .map((field) => questionByField[field])
-      .filter(Boolean)
+      .map(
+        (field) =>
+          schema.fields.find((schemaField) => schemaField.key === field)
+            ?.question[language],
+      )
+      .filter((question): question is string => Boolean(question))
       .slice(0, 5);
   }
 
   private buildNeedMoreInformationResponse(
     questions: string[],
     missingFields: string[],
+    imageIntent: ImageIntent,
     language: ResponseLanguage,
   ): AiChatResponseDto {
     const intro =
@@ -761,6 +980,7 @@ export class AiClientService {
       mode: 'image_prompt_collecting',
       locale: language,
       language,
+      imageIntent,
       canUseForCreate: false,
       questions,
       missingFields,
@@ -773,19 +993,44 @@ export class AiClientService {
     };
   }
 
-  private buildImagePromptReadyResponseFromInfo(
-    info: ImageCreationInfo,
+  private buildImageTypeSelectionResponse(
     language: ResponseLanguage,
   ): AiChatResponseDto {
-    const summary = {
-      eventName: info.eventName,
-      organization: info.organization,
-      theme: info.theme,
-      audience: info.audience,
-      style: info.style,
-      colors: info.colors,
+    const options = this.getImageIntentOptions(language);
+    const intro =
+      language === 'vi'
+        ? 'Bạn muốn tạo loại ảnh nào?'
+        : 'Which image type do you want to create?';
+
+    return {
+      type: 'text',
+      mode: 'image_type_selecting',
+      locale: language,
+      language,
+      canUseForCreate: false,
+      questions: [intro],
+      missingFields: ['imageIntent'],
+      options,
+      content: [intro, ...options.map((option) => `- ${option.label}`)].join(
+        '\n',
+      ),
+      message: [intro, ...options.map((option) => `- ${option.label}`)].join(
+        '\n',
+      ),
     };
-    const imagePrompt = this.buildLocalizedFallbackPrompt(info, language);
+  }
+
+  private buildImagePromptReadyResponseFromInfo(
+    info: ImagePromptInfo,
+    schema: ImagePromptSchema,
+    language: ResponseLanguage,
+  ): AiChatResponseDto {
+    const summary = this.normalizeSummary(info, info, schema);
+    const imagePrompt = this.buildLocalizedFallbackPrompt(
+      info,
+      schema,
+      language,
+    );
     const negativePrompt = this.getDefaultNegativePrompt(language);
 
     return {
@@ -793,6 +1038,7 @@ export class AiClientService {
       mode: 'image_prompt_ready',
       locale: language,
       language,
+      imageIntent: schema.intent,
       summary,
       prompt: imagePrompt,
       imagePrompt,
@@ -805,12 +1051,14 @@ export class AiClientService {
         imagePrompt,
         negativePrompt,
         language,
+        schema,
       ),
       message: this.buildImagePromptReadyMessage(
         summary,
         imagePrompt,
         negativePrompt,
         language,
+        schema,
       ),
     };
   }
@@ -829,20 +1077,20 @@ export class AiClientService {
 
   private normalizeSummary(
     summary: unknown,
-    fallback: ImageCreationInfo,
+    fallback: ImagePromptInfo,
+    schema: ImagePromptSchema,
   ): AiChatResponseDto['summary'] {
     const value = summary && typeof summary === 'object' ? summary : {};
     const source = value as Record<string, unknown>;
 
-    return {
-      eventName: this.asOptionalString(source.eventName) || fallback.eventName,
-      organization:
-        this.asOptionalString(source.organization) || fallback.organization,
-      theme: this.asOptionalString(source.theme) || fallback.theme,
-      audience: this.asOptionalString(source.audience) || fallback.audience,
-      style: this.asOptionalString(source.style) || fallback.style,
-      colors: this.asOptionalString(source.colors) || fallback.colors,
-    };
+    return schema.fields.reduce<Record<string, string | undefined>>(
+      (normalized, field) => {
+        normalized[field.key] =
+          this.asOptionalString(source[field.key]) || fallback[field.key];
+        return normalized;
+      },
+      {},
+    );
   }
 
   private buildImagePromptReadyMessage(
@@ -850,35 +1098,18 @@ export class AiClientService {
     imagePrompt: string,
     negativePrompt: string,
     language: ResponseLanguage,
+    schema?: ImagePromptSchema,
   ): string {
     const display = this.getImagePromptDisplay(language);
-    const labels =
-      language === 'vi'
-        ? {
-            eventName: 'Tên sự kiện',
-            organization: 'Đơn vị tổ chức',
-            theme: 'Chủ đề',
-            audience: 'Đối tượng',
-            style: 'Phong cách',
-            colors: 'Màu sắc',
-          }
-        : {
-            eventName: 'Event name',
-            organization: 'Organization',
-            theme: 'Theme',
-            audience: 'Audience',
-            style: 'Style',
-            colors: 'Colors',
-          };
+    const fields = schema?.fields || [];
+    const summaryLines = fields.map((field) => {
+      const label = field.promptLabel[language];
+      return `- ${label}: ${summary?.[field.key] || 'N/A'}`;
+    });
 
     return [
       `${display.summaryTitle}:`,
-      `- ${labels.eventName}: ${summary?.eventName || 'N/A'}`,
-      `- ${labels.organization}: ${summary?.organization || 'N/A'}`,
-      `- ${labels.theme}: ${summary?.theme || 'N/A'}`,
-      `- ${labels.audience}: ${summary?.audience || 'N/A'}`,
-      `- ${labels.style}: ${summary?.style || 'N/A'}`,
-      `- ${labels.colors}: ${summary?.colors || 'N/A'}`,
+      ...summaryLines,
       '',
       `${display.promptTitle}:`,
       imagePrompt,
@@ -959,30 +1190,29 @@ export class AiClientService {
   }
 
   private buildLocalizedFallbackPrompt(
-    info: ImageCreationInfo,
+    info: ImagePromptInfo,
+    schema: ImagePromptSchema,
     language: ResponseLanguage,
   ): string {
+    const fieldLines = schema.fields.map(
+      (field) => `${field.promptLabel[language]}: ${info[field.key]}.`,
+    );
+
     if (language === 'vi') {
       return [
-        `Tạo banner sự kiện khổ ngang chuyên nghiệp cho "${info.eventName}" do "${info.organization}" tổ chức.`,
-        `Chủ đề: ${info.theme}.`,
-        `Đối tượng mục tiêu: ${info.audience}.`,
-        `Phong cách: ${info.style}.`,
-        `Màu sắc: ${info.colors}.`,
-        'Định hướng hình ảnh: không khí sự kiện cao cấp, chuyên nghiệp, chân thực, bố cục rõ ràng, phù hợp cho truyền thông sự kiện.',
-        'Bố cục: banner ngang, có khoảng trống sạch để đặt tiêu đề, ánh sáng cân bằng, chủ thể chính nổi bật và bối cảnh liên quan đến sự kiện.',
+        `Tạo ${schema.promptSubject.vi}.`,
+        ...fieldLines,
+        'Định hướng hình ảnh: chuyên nghiệp, chân thực, bố cục rõ ràng, phù hợp cho mục tiêu truyền thông.',
+        'Bố cục: có khoảng trống sạch để đặt tiêu đề hoặc nội dung chính, ánh sáng cân bằng, chủ thể nổi bật và bối cảnh liên quan.',
         'Yêu cầu chất lượng: hình ảnh sắc nét, hiện đại, đáng tin cậy, không giống ảnh mẫu đại trà, không thêm chữ giả khó đọc trong ảnh.',
       ].join('\n');
     }
 
     return [
-      `Create a professional horizontal event banner for "${info.eventName}" organized by "${info.organization}".`,
-      `Theme: ${info.theme}.`,
-      `Target audience: ${info.audience}.`,
-      `Style direction: ${info.style}.`,
-      `Color palette: ${info.colors}.`,
-      'Visual direction: premium, professional, realistic event atmosphere with clear hierarchy and strong marketing quality.',
-      'Composition: wide banner layout with clean space for title overlay, balanced lighting, a strong main subject, and a relevant event environment.',
+      `Create a ${schema.promptSubject.en}.`,
+      ...fieldLines,
+      'Visual direction: premium, professional, realistic visual atmosphere with clear hierarchy and strong marketing quality.',
+      'Composition: clean layout with space for title or key message, balanced lighting, a strong main subject, and relevant context.',
       'Quality requirements: sharp, modern, trustworthy, non-generic, no unreadable fake text inside the image.',
     ].join('\n');
   }
