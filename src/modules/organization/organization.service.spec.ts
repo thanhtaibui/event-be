@@ -292,6 +292,77 @@ describe('OrganizationService membership data', () => {
     });
   });
 
+  it('returns public organization detail without owner or private fields', async () => {
+    const organization = {
+      id: orgId,
+      name: 'Green Future Community',
+      bio: 'Green community',
+      owner: {
+        id: ownerId,
+        email: 'owner@example.com',
+        password: 'secret',
+      },
+      slug: 'green-future-community',
+      status: OrganizationStatus.ACTIVE,
+      isVerified: true,
+      industry: 'Environment',
+      email: 'green@example.com',
+      phone: '0900000000',
+      website: 'https://green.example.com',
+      address: 'Ho Chi Minh City',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      bannerUrl: 'https://cdn.example.com/banner.jpg',
+      logoUrl: 'https://cdn.example.com/logo.jpg',
+    };
+    const { service, organizationRepo, memberRepo, eventRepo } = createService({
+      existingPublicSlugOrganization: organization,
+      memberCounts: [8],
+      eventCounts: [5],
+    });
+
+    const result = await service.GetPublicOrgBySlug(' green-future-community ');
+
+    expect(result.statusCode).toBe(200);
+    expect(result.message).toBe('Get public organization detail successfully');
+    expect(result.data).toEqual({
+      id: orgId,
+      slug: organization.slug,
+      name: organization.name,
+      logoUrl: organization.logoUrl,
+      bannerUrl: organization.bannerUrl,
+      bio: organization.bio,
+      industry: organization.industry,
+      website: organization.website,
+      email: organization.email,
+      address: organization.address,
+      createdAt: organization.createdAt,
+      isVerified: true,
+      stats: {
+        totalMembers: 8,
+        totalEvents: 5,
+      },
+    });
+    expect(result.data.owner).toBeUndefined();
+    expect(result.data.phone).toBeUndefined();
+    expect(organizationRepo.findOne).toHaveBeenCalledWith({
+      where: {
+        slug: 'green-future-community',
+        status: OrganizationStatus.ACTIVE,
+      },
+    });
+    expect(memberRepo.count).toHaveBeenCalledWith({
+      where: {
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+    expect(eventRepo.count).toHaveBeenCalledWith({
+      where: {
+        organization: { id: orgId },
+      },
+    });
+  });
+
   function createService(options: {
     managerMembership?: any;
     memberRows?: any[];
@@ -300,6 +371,7 @@ describe('OrganizationService membership data', () => {
     eventCounts?: number[];
     organization?: any;
     existingSlugOrganization?: any;
+    existingPublicSlugOrganization?: any;
     publicOrganizations?: any[];
     user?: any;
     ownerRole?: any;
@@ -332,6 +404,10 @@ describe('OrganizationService membership data', () => {
         }),
       ),
       findOne: jest.fn().mockImplementation(async (args?: any) => {
+        if (args?.where?.slug && args?.where?.status) {
+          return options.existingPublicSlugOrganization ?? null;
+        }
+
         if (args?.where?.slug) {
           return options.existingSlugOrganization ?? null;
         }

@@ -95,6 +95,12 @@ export class OrganizationController {
     return this.organizationService.findAll(query, req.user);
   }
 
+  @Get('public-detail/:slug')
+  @ApiOperation({ operationId: 'getPublicOrganizationDetail' })
+  findPublicOrgBySlug(@Param('slug') slug: string): Promise<ApiResponse<any>> {
+    return this.organizationService.GetPublicOrgBySlug(slug);
+  }
+
   @Get('/switch-org')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)

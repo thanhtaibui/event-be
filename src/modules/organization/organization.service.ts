@@ -491,6 +491,57 @@ export class OrganizationService {
     }
   }
 
+  async GetPublicOrgBySlug(slug: string): Promise<ApiResponse<any>> {
+    console.time('GET_PUBLIC_ORG_BY_SLUG');
+    try {
+      const org = await this.organizationRepo.findOne({
+        where: {
+          slug: slug.trim(),
+          status: OrganizationStatus.ACTIVE,
+        },
+      });
+
+      if (!org) {
+        throw new BadRequestException('Organization not found');
+      }
+
+      const [totalMembers, totalEvents] = await Promise.all([
+        this.memberRepo.count({
+          where: {
+            organization: { id: org.id },
+            isActive: true,
+          },
+        }),
+        this.eventRepo.count({
+          where: {
+            organization: { id: org.id },
+          },
+        }),
+      ]);
+
+      return Response(200, 'Get public organization detail successfully', {
+        id: org.id,
+        slug: org.slug,
+        name: org.name,
+        logoUrl: org.logoUrl ?? null,
+        bannerUrl: org.bannerUrl ?? null,
+        bio: org.bio ?? null,
+        industry: org.industry ?? null,
+        website: org.website ?? null,
+        email: org.email ?? null,
+        address: org.address ?? null,
+        createdAt: org.createdAt,
+        isVerified: org.isVerified,
+        stats: {
+          totalMembers,
+          totalEvents,
+        },
+      });
+    } finally {
+      console.timeEnd('GET_PUBLIC_ORG_BY_SLUG');
+    }
+  }
+
   findOne(id: number) {
     return `This action returns a #${id} organization`;
   }
