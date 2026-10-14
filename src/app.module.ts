@@ -31,6 +31,7 @@ import { AiModule } from './ai/ai.module';
 import { AiImageModule } from './ai-image/ai-image.module';
 import { PerformanceLoggingInterceptor } from './common/interceptors/performance-logging.interceptor';
 import { CategoryModule } from './modules/category/category.module';
+import { OrganizationInvitationModule } from './modules/organization-invitation/organization-invitation.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -76,6 +77,7 @@ import { CategoryModule } from './modules/category/category.module';
     AiModule,
     AiImageModule,
     CategoryModule,
+    OrganizationInvitationModule,
   ],
   controllers: [AppController],
   providers: [

@@ -20,6 +20,12 @@ export enum InvitationStatus {
   ACCEPTED = 'accepted',
   REJECTED = 'rejected',
 }
+export enum OrganizationInvitationStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired',
+}
 export enum RoleUser {
   USER = 'user',
   MEMBERSHIP = 'membership',
