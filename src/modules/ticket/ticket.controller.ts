@@ -37,10 +37,28 @@ export class TicketController {
     return this.ticketService.findAll();
   }
 
+  @Get('check/:ticketId')
+  @Permissions(PermissionCode.TICKET_MANAGE)
+  verifyTicket(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Req() req: any,
+  ) {
+    return this.ticketService.verifyTicket(ticketId, req.user);
+  }
+
   @Get(':id')
   @Permissions(PermissionCode.TICKET_VIEW)
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     return this.ticketService.findOne(id, req.user);
+  }
+
+  @Patch(':ticketId/check-in')
+  @Permissions(PermissionCode.TICKET_MANAGE)
+  checkInTicket(
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Req() req: any,
+  ) {
+    return this.ticketService.checkInTicket(ticketId, req.user);
   }
 
   @Patch(':id')

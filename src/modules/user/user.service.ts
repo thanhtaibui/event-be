@@ -363,6 +363,8 @@ export class UserService {
         tickets.map((ticket) => ({
           id: ticket.id,
           createdAt: ticket.createdAt,
+          status: ticket.status,
+          usedAt: ticket.usedAt ?? null,
           ticketType: {
             id: ticket.ticketType?.id,
             name: ticket.ticketType?.name,

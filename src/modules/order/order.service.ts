@@ -13,7 +13,7 @@ import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
-import { EventStatus } from 'src/shared/enum/enum';
+import { EventStatus, TicketStatus } from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 
 const PURCHASABLE_EVENT_STATUSES = [
@@ -123,6 +123,8 @@ export class OrderService {
             user,
             ticketType,
             order: savedOrder,
+            status: TicketStatus.VALID,
+            usedAt: null,
           }),
         );
       });
@@ -218,6 +220,8 @@ export class OrderService {
       tickets: (order.tickets || []).map((ticket) => ({
         id: ticket.id,
         createdAt: ticket.createdAt,
+        status: ticket.status,
+        usedAt: ticket.usedAt ?? null,
         ticketType: {
           id: ticket.ticketType?.id,
           name: ticket.ticketType?.name,

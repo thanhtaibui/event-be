@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +13,7 @@ import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { Membership } from '../membership/entities/membership.entity';
+import { TicketStatus } from 'src/shared/enum/enum';
 
 @Injectable()
 export class TicketService {
@@ -43,6 +49,8 @@ export class TicketService {
     const ticket = this.ticketRepo.create({
       user,
       ticketType,
+      status: TicketStatus.VALID,
+      usedAt: null,
     });
 
     const savedTicket = await this.ticketRepo.save(ticket);
@@ -81,6 +89,69 @@ export class TicketService {
     }
   }
 
+  async verifyTicket(ticketId: string, currentUser?: any) {
+    const ticket = await this.findTicketEntityById(ticketId);
+    await this.assertCanManageTicketEvent(ticket, currentUser);
+
+    if (ticket.status === TicketStatus.USED) {
+      return {
+        success: false,
+        message: 'Ticket already used',
+        status: TicketStatus.USED,
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        ticketId: ticket.id,
+        status: ticket.status,
+        event: ticket.ticketType?.event
+          ? {
+              id: ticket.ticketType.event.id,
+              title: ticket.ticketType.event.title,
+            }
+          : null,
+        ticketType: {
+          name: ticket.ticketType?.name,
+          price: ticket.ticketType?.price,
+        },
+        owner: {
+          id: ticket.user?.id,
+          fullName: ticket.user?.fullName,
+          email: ticket.user?.email,
+        },
+      },
+    };
+  }
+
+  async checkInTicket(ticketId: string, currentUser?: any) {
+    const ticket = await this.findTicketEntityById(ticketId);
+    await this.assertCanManageTicketEvent(ticket, currentUser);
+
+    if (ticket.status === TicketStatus.USED) {
+      throw new BadRequestException('Ticket already used');
+    }
+
+    if (ticket.status === TicketStatus.CANCELLED) {
+      throw new BadRequestException('Ticket is cancelled');
+    }
+
+    ticket.status = TicketStatus.USED;
+    ticket.usedAt = new Date();
+
+    const saved = await this.ticketRepo.save(ticket);
+
+    return {
+      message: 'Check-in successful',
+      data: {
+        ticketId: saved.id,
+        status: saved.status,
+        usedAt: saved.usedAt,
+      },
+    };
+  }
+
   update(id: number, updateTicketDto: UpdateTicketDto) {
     return `This action updates a #${id} ticket`;
   }
@@ -111,6 +182,8 @@ export class TicketService {
     return {
       id: ticket.id,
       createdAt: ticket.createdAt,
+      status: ticket.status,
+      usedAt: ticket.usedAt ?? null,
       user: {
         id: ticket.user?.id,
         fullName: ticket.user?.fullName,
@@ -161,5 +234,37 @@ export class TicketService {
     }
 
     throw new ForbiddenException('You do not have permission to access ticket');
+  }
+
+  private async assertCanManageTicketEvent(
+    ticket: Ticket,
+    currentUser?: any,
+  ): Promise<void> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (!currentUser) {
+      throw new ForbiddenException('You do not have permission to check in ticket');
+    }
+
+    const orgId = ticket.ticketType?.event?.organization?.id;
+    if (!orgId) {
+      throw new ForbiddenException('Ticket event organization not found');
+    }
+
+    const membership = await this.membershipRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'You do not have permission to check in ticket',
+      );
+    }
   }
 }

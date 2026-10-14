@@ -49,3 +49,9 @@ export enum NotificationType {
   REPORT = 'REPORT',
   VERIFICATION = 'VERIFICATION',
 }
+
+export enum TicketStatus {
+  VALID = 'VALID',
+  USED = 'USED',
+  CANCELLED = 'CANCELLED',
+}
