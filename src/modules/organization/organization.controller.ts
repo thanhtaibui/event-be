@@ -72,8 +72,10 @@ export class OrganizationController {
 
   @Get()
   @ApiOperation({ operationId: 'getPublicOrganizations' })
-  async findPublicOrganizations(): Promise<ApiResponse<any[]>> {
-    return this.organizationService.findPublicOrganizations();
+  async findPublicOrganizations(
+    @Query('search') search?: string,
+  ): Promise<ApiResponse<any[]>> {
+    return this.organizationService.findPublicOrganizations(search);
   }
 
   @Get('management')

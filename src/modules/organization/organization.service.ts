@@ -191,31 +191,62 @@ export class OrganizationService {
     }
   }
 
-  async findPublicOrganizations(): Promise<ApiResponse<any[]>> {
+  async findPublicOrganizations(search?: string): Promise<ApiResponse<any[]>> {
     console.time('GET_PUBLIC_ORGS');
     try {
-      const organizations = await this.organizationRepo.find({
-        where: {
+      const normalizedSearch = search?.trim();
+      const queryBuilder = this.organizationRepo
+        .createQueryBuilder('organization')
+        .leftJoin('organization.events', 'event')
+        .where('organization.status = :status', {
           status: OrganizationStatus.ACTIVE,
-        },
-        select: {
-          id: true,
-          name: true,
-          logoUrl: true,
-          bio: true,
-          createdAt: true,
-        },
-        order: {
-          createdAt: 'DESC',
-        },
-      });
+        })
+        .select('organization.id', 'id')
+        .addSelect('organization.name', 'name')
+        .addSelect('organization.logoUrl', 'logoUrl')
+        .addSelect('organization.bio', 'description')
+        .addSelect('organization.industry', 'industry')
+        .addSelect('organization.isVerified', 'isVerified')
+        .addSelect('organization.createdAt', 'createdAt')
+        .addSelect('COUNT(event.id)', 'totalEvents')
+        .groupBy('organization.id')
+        .addGroupBy('organization.name')
+        .addGroupBy('organization.logoUrl')
+        .addGroupBy('organization.bio')
+        .addGroupBy('organization.industry')
+        .addGroupBy('organization.isVerified')
+        .addGroupBy('organization.createdAt')
+        .orderBy('organization.createdAt', 'DESC');
+
+      if (normalizedSearch) {
+        queryBuilder.andWhere('organization.name ILIKE :search', {
+          search: `%${normalizedSearch}%`,
+        });
+      }
+
+      const organizations = await queryBuilder.getRawMany<{
+        id: string;
+        name: string;
+        logoUrl: string | null;
+        description: string | null;
+        industry: string | null;
+        isVerified: boolean;
+        createdAt: Date;
+        totalEvents: string;
+      }>();
 
       const result = organizations.map((organization) => ({
         id: organization.id,
         name: organization.name,
         logo: organization.logoUrl ?? null,
-        description: organization.bio ?? null,
+        logoUrl: organization.logoUrl ?? null,
+        description: organization.description ?? null,
+        industry: organization.industry ?? null,
+        isVerified: organization.isVerified,
         createdAt: organization.createdAt,
+        stats: {
+          totalEvents: Number(organization.totalEvents) || 0,
+        },
       }));
 
       return Response(

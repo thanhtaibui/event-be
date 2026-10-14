@@ -249,16 +249,17 @@ describe('OrganizationService membership data', () => {
 
   it('returns public organization discovery data only', async () => {
     const createdAt = new Date('2026-01-01T00:00:00.000Z');
-    const { service, organizationRepo } = createService({
-      publicOrganizations: [
+    const { service, organizationPublicQueryBuilder } = createService({
+      publicOrganizationRows: [
         {
           id: orgId,
           name: 'Green Future Community',
           logoUrl: 'https://cdn.example.com/logo.jpg',
-          bio: 'Green community',
+          description: 'Green community',
+          industry: 'Environment',
+          isVerified: true,
           createdAt,
-          email: 'private@example.com',
-          owner: { id: ownerId },
+          totalEvents: '5',
         },
       ],
     });
@@ -271,25 +272,38 @@ describe('OrganizationService membership data', () => {
         id: orgId,
         name: 'Green Future Community',
         logo: 'https://cdn.example.com/logo.jpg',
+        logoUrl: 'https://cdn.example.com/logo.jpg',
         description: 'Green community',
+        industry: 'Environment',
+        isVerified: true,
         createdAt,
+        stats: {
+          totalEvents: 5,
+        },
       },
     ]);
-    expect(organizationRepo.find).toHaveBeenCalledWith({
-      where: {
+    expect(organizationPublicQueryBuilder.where).toHaveBeenCalledWith(
+      'organization.status = :status',
+      {
         status: OrganizationStatus.ACTIVE,
       },
-      select: {
-        id: true,
-        name: true,
-        logoUrl: true,
-        bio: true,
-        createdAt: true,
-      },
-      order: {
-        createdAt: 'DESC',
-      },
+    );
+    expect(organizationPublicQueryBuilder.andWhere).not.toHaveBeenCalled();
+  });
+
+  it('searches public organizations by active organization name only', async () => {
+    const { service, organizationPublicQueryBuilder } = createService({
+      publicOrganizationRows: [],
     });
+
+    await service.findPublicOrganizations(' green ');
+
+    expect(organizationPublicQueryBuilder.andWhere).toHaveBeenCalledWith(
+      'organization.name ILIKE :search',
+      {
+        search: '%green%',
+      },
+    );
   });
 
   it('returns public organization detail without owner or private fields', async () => {
@@ -372,7 +386,7 @@ describe('OrganizationService membership data', () => {
     organization?: any;
     existingSlugOrganization?: any;
     existingPublicSlugOrganization?: any;
-    publicOrganizations?: any[];
+    publicOrganizationRows?: any[];
     user?: any;
     ownerRole?: any;
   }) {
@@ -381,6 +395,9 @@ describe('OrganizationService membership data', () => {
     );
     const countQueryBuilder = createMemberCountQueryBuilder(
       options.memberTotal ?? 0,
+    );
+    const organizationPublicQueryBuilder = createPublicOrganizationQueryBuilder(
+      options.publicOrganizationRows ?? [],
     );
     const memberRepo = {
       findOne: jest.fn().mockResolvedValue(options.managerMembership),
@@ -414,7 +431,7 @@ describe('OrganizationService membership data', () => {
 
         return options.organization ?? { id: orgId };
       }),
-      find: jest.fn().mockResolvedValue(options.publicOrganizations ?? []),
+      createQueryBuilder: jest.fn().mockReturnValue(organizationPublicQueryBuilder),
     };
     const userRepo = {
       findOne: jest.fn().mockResolvedValue(options.user ?? null),
@@ -443,6 +460,21 @@ describe('OrganizationService membership data', () => {
       userRepo,
       roleRepo,
       eventRepo,
+      organizationPublicQueryBuilder,
+    };
+  }
+
+  function createPublicOrganizationQueryBuilder(rows: any[]) {
+    return {
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rows),
     };
   }
 
