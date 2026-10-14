@@ -191,6 +191,43 @@ export class OrganizationService {
     }
   }
 
+  async findPublicOrganizations(): Promise<ApiResponse<any[]>> {
+    console.time('GET_PUBLIC_ORGS');
+    try {
+      const organizations = await this.organizationRepo.find({
+        where: {
+          status: OrganizationStatus.ACTIVE,
+        },
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          bio: true,
+          createdAt: true,
+        },
+        order: {
+          createdAt: 'DESC',
+        },
+      });
+
+      const result = organizations.map((organization) => ({
+        id: organization.id,
+        name: organization.name,
+        logo: organization.logoUrl ?? null,
+        description: organization.bio ?? null,
+        createdAt: organization.createdAt,
+      }));
+
+      return Response(
+        200,
+        'Get public organizations successfully',
+        result,
+      );
+    } finally {
+      console.timeEnd('GET_PUBLIC_ORGS');
+    }
+  }
+
   async GetMembersByOrgId(
     orgId: string,
     query: OrganizationMembersQueryDto = {},

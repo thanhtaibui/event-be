@@ -247,6 +247,51 @@ describe('OrganizationService membership data', () => {
     });
   });
 
+  it('returns public organization discovery data only', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    const { service, organizationRepo } = createService({
+      publicOrganizations: [
+        {
+          id: orgId,
+          name: 'Green Future Community',
+          logoUrl: 'https://cdn.example.com/logo.jpg',
+          bio: 'Green community',
+          createdAt,
+          email: 'private@example.com',
+          owner: { id: ownerId },
+        },
+      ],
+    });
+
+    const result = await service.findPublicOrganizations();
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual([
+      {
+        id: orgId,
+        name: 'Green Future Community',
+        logo: 'https://cdn.example.com/logo.jpg',
+        description: 'Green community',
+        createdAt,
+      },
+    ]);
+    expect(organizationRepo.find).toHaveBeenCalledWith({
+      where: {
+        status: OrganizationStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        bio: true,
+        createdAt: true,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  });
+
   function createService(options: {
     managerMembership?: any;
     memberRows?: any[];
@@ -255,6 +300,7 @@ describe('OrganizationService membership data', () => {
     eventCounts?: number[];
     organization?: any;
     existingSlugOrganization?: any;
+    publicOrganizations?: any[];
     user?: any;
     ownerRole?: any;
   }) {
@@ -292,6 +338,7 @@ describe('OrganizationService membership data', () => {
 
         return options.organization ?? { id: orgId };
       }),
+      find: jest.fn().mockResolvedValue(options.publicOrganizations ?? []),
     };
     const userRepo = {
       findOne: jest.fn().mockResolvedValue(options.user ?? null),

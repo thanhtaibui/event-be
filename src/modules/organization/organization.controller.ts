@@ -69,11 +69,18 @@ export class OrganizationController {
   ) {
     return await this.organizationService.create(createDto, file);
   }
+
   @Get()
+  @ApiOperation({ operationId: 'getPublicOrganizations' })
+  async findPublicOrganizations(): Promise<ApiResponse<any[]>> {
+    return this.organizationService.findPublicOrganizations();
+  }
+
+  @Get('management')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)
   @Permissions(PermissionCode.ORGANIZATION_VIEW)
-  @ApiOperation({ operationId: 'getOrgs' })
+  @ApiOperation({ operationId: 'getManagementOrgs' })
   @ApiPaginationQuery({
     searchableColumns: ['name', 'email', 'owner.fullName'],
     sortableColumns: ['name', 'email', 'owner.fullName'],
