@@ -22,9 +22,9 @@ import { PermissionCode } from 'src/common/constants/permission-codes';
 import { CategoryOptionDto } from './category.service';
 
 @ApiTags('category')
-@Controller(['category', 'categories'])
+@Controller(['categories'])
 export class CategoryController {
-  constructor(private readonly categoryService: CategoryService) {}
+  constructor(private readonly categoryService: CategoryService) { }
 
   @Post()
   @UseGuards(JwtGuard, PermissionsGuard)
@@ -40,12 +40,12 @@ export class CategoryController {
 
   @Get()
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(
-    PermissionCode.EVENT,
-    PermissionCode.EVENT_CREATE,
-    PermissionCode.EVENT_UPDATE,
-    PermissionCode.CATEGORY_VIEW,
-  )
+  // @Permissions(
+  //   PermissionCode.EVENT,
+  //   PermissionCode.EVENT_CREATE,
+  //   PermissionCode.EVENT_UPDATE,
+  //   PermissionCode.CATEGORY_VIEW,
+  // )
   @ApiOperation({ operationId: 'getCategories' })
   @ApiResponse({
     status: 200,
