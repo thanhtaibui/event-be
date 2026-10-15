@@ -11,10 +11,6 @@ import {
 } from 'class-validator';
 
 export class CreateOrganizationDto {
-  @ApiProperty({
-    example: 'uuid',
-  })
-  id: string;
 
   @IsNotEmpty()
   @IsString()
@@ -88,5 +84,37 @@ export class CreateOrganizationDto {
   @ApiProperty({
     example: 'google-vietnam',
   })
+  slug: string;
+}
+export class CreateOrganizationResponseDto {
+
+  id: string;
+  name: string;
+
+
+  bio?: string;
+
+
+  legalName?: string;
+
+
+  industry: string;
+
+
+  address?: string;
+
+
+  email?: string;
+
+
+  phone?: string;
+
+
+  website?: string;
+
+
+  ownerId: string;
+
+
   slug: string;
 }

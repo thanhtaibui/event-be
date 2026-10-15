@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateOrganizationDto } from './dto/create-organization.dto';
+import { CreateOrganizationDto, CreateOrganizationResponseDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 import { PaginationResult } from 'src/common/dtos/pagination.type';
@@ -43,7 +43,7 @@ export class OrganizationService {
   async create(
     createOrganizationDto: CreateOrganizationDto,
     file?: Express.Multer.File, // File logo từ Controller truyền xuống
-  ): Promise<ApiResponse<CreateOrganizationDto>> {
+  ): Promise<ApiResponse<CreateOrganizationResponseDto>> {
     // 1. Kiểm tra xem Slug đã tồn tại chưa (Tránh lỗi Duplicate Entry)
     const existingOrg = await this.organizationRepo.findOne({
       where: { slug: createOrganizationDto.slug },
@@ -99,7 +99,7 @@ export class OrganizationService {
     const saveOrg = await this.organizationRepo.save(newOrg);
     await this.createOwnerMembershipIfMissing(user, saveOrg, ownerRole);
     // 4. Lưu vào Database
-    const result: CreateOrganizationDto = {
+    const result: CreateOrganizationResponseDto = {
       id: saveOrg.id,
       name: saveOrg.name,
       bio: saveOrg.bio,
