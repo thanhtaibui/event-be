@@ -11,6 +11,9 @@ import {
 } from 'class-validator';
 
 export class CreateOrganizationDto {
+
+  id: string;
+
   @IsNotEmpty()
   @IsString()
   @MaxLength(255)

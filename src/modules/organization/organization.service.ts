@@ -38,7 +38,7 @@ export class OrganizationService {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(Event) private eventRepo: Repository<Event>,
-  ) {}
+  ) { }
 
   async create(
     createOrganizationDto: CreateOrganizationDto,
@@ -100,6 +100,7 @@ export class OrganizationService {
     await this.createOwnerMembershipIfMissing(user, saveOrg, ownerRole);
     // 4. Lưu vào Database
     const result: CreateOrganizationDto = {
+      id: saveOrg.id,
       name: saveOrg.name,
       bio: saveOrg.bio,
       slug: saveOrg.slug,
@@ -131,8 +132,8 @@ export class OrganizationService {
       const orgs = await this.organizationRepo.find({
         where: orgIds
           ? {
-              id: In(orgIds),
-            }
+            id: In(orgIds),
+          }
           : undefined,
       });
       const result = orgs.map((org) => ({
@@ -316,11 +317,11 @@ export class OrganizationService {
         createdAt: member.createdAt,
         role: member.roleId
           ? {
-              id: member.roleId,
-              name: member.roleName,
-              code: member.roleCode,
-              color: member.roleColor,
-            }
+            id: member.roleId,
+            name: member.roleName,
+            code: member.roleCode,
+            color: member.roleColor,
+          }
           : null,
       }));
 
