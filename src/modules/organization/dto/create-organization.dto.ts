@@ -11,7 +11,9 @@ import {
 } from 'class-validator';
 
 export class CreateOrganizationDto {
-
+  @ApiProperty({
+    example: 'uuid',
+  })
   id: string;
 
   @IsNotEmpty()
