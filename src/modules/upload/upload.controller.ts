@@ -27,15 +27,15 @@ import { PermissionCode } from 'src/common/constants/permission-codes';
 @UseGuards(JwtGuard, PermissionsGuard)
 @Controller('upload')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(private readonly uploadService: UploadService) { }
 
   @Post('image')
-  @Permissions(
-    PermissionCode.EVENT,
-    PermissionCode.EVENT_CREATE,
-    PermissionCode.EVENT_UPDATE,
-    PermissionCode.UPLOAD_CREATE,
-  )
+  // @Permissions(
+  //   PermissionCode.EVENT,
+  //   PermissionCode.EVENT_CREATE,
+  //   PermissionCode.EVENT_UPDATE,
+  //   PermissionCode.UPLOAD_CREATE,
+  // )
   @ApiOperation({ summary: 'Upload file lên AWS S3' })
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
