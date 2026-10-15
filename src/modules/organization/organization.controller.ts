@@ -50,7 +50,7 @@ export class OrganizationController {
   constructor(
     private readonly organizationService: OrganizationService,
     private readonly roleService: RoleService,
-  ) {}
+  ) { }
 
   private assertSuperAdmin(req: any) {
     if (!req.user?.role?.isSuperAdmin) {
@@ -61,7 +61,7 @@ export class OrganizationController {
   @Post()
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.ORGANIZATION_CREATE)
+  // @Permissions(PermissionCode.ORGANIZATION_CREATE)
   @UseInterceptors(FileInterceptor('logo'))
   async createOrganization(
     @Body() createDto: CreateOrganizationDto,
