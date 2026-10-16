@@ -130,8 +130,8 @@ export class EventController {
   }
 
   @Get(':id')
-  @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
+  @UseGuards(JwtGuard)
+  // @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ApiResponse<EventDto>> {
