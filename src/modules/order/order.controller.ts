@@ -23,10 +23,10 @@ import { PermissionCode } from 'src/common/constants/permission-codes';
 @UseGuards(JwtGuard, PermissionsGuard)
 @Controller('order')
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(private readonly orderService: OrderService) { }
 
   @Post()
-  @Permissions(PermissionCode.TICKET_CREATE)
+  // @Permissions(PermissionCode.TICKET_CREATE)
   create(@Body() createOrderDto: CreateOrderDto, @Req() req: any) {
     return this.orderService.create(createOrderDto, req.user.userId);
   }
