@@ -23,7 +23,9 @@ const GROQ_CHAT_TIMEOUT_MS = Math.max(
   Number(process.env.GROQ_CHAT_TIMEOUT_MS ?? 30000),
   30000,
 );
-const GROQ_MAX_OUTPUT_TOKENS = Number(process.env.GROQ_MAX_OUTPUT_TOKENS ?? 1200);
+const GROQ_MAX_OUTPUT_TOKENS = Number(
+  process.env.GROQ_MAX_OUTPUT_TOKENS ?? 1200,
+);
 const IMAGE_DESIGN_GUIDE_PATH = 'AI_EVENT_IMAGE_DESIGN_EXPERT_GUIDE.md';
 const GROQ_MAX_RETRIES = 2;
 const GROQ_RETRY_DELAY_MS = 1000;
@@ -55,9 +57,14 @@ type ImageIntent =
 
 type ImagePromptInfo = Record<string, string | undefined>;
 
+type ImageSemanticResult = {
+  intent: 'IMAGE_CREATION' | 'UNKNOWN';
+  imageType?: ImageIntent;
+  extractedData: ImagePromptInfo;
+};
+
 type ImagePromptField = {
   key: string;
-  labels: string[];
   question: Record<ResponseLanguage, string>;
   promptLabel: Record<ResponseLanguage, string>;
 };
@@ -83,57 +90,45 @@ const IMAGE_PROMPT_SCHEMAS: Record<ImageIntent, ImagePromptSchema> = {
     fields: [
       {
         key: 'eventName',
-        labels: ['event name', 'tên sự kiện', 'sự kiện'],
         question: { vi: 'Tên sự kiện là gì?', en: 'Event name?' },
         promptLabel: { vi: 'Tên sự kiện', en: 'Event name' },
       },
       {
         key: 'organizer',
-        labels: ['organizer', 'organization', 'tổ chức', 'đơn vị tổ chức'],
         question: { vi: 'Đơn vị tổ chức là ai?', en: 'Organizer?' },
         promptLabel: { vi: 'Đơn vị tổ chức', en: 'Organizer' },
       },
       {
         key: 'theme',
-        labels: ['theme', 'chủ đề', 'chủ đề chính'],
         question: { vi: 'Chủ đề chính của sự kiện là gì?', en: 'Theme?' },
         promptLabel: { vi: 'Chủ đề', en: 'Theme' },
       },
       {
         key: 'dateTime',
-        labels: ['date/time', 'datetime', 'date time', 'thời gian', 'ngày giờ'],
         question: { vi: 'Thời gian diễn ra là khi nào?', en: 'Date/time?' },
         promptLabel: { vi: 'Thời gian', en: 'Date/time' },
       },
       {
         key: 'location',
-        labels: ['location', 'venue', 'địa điểm', 'nơi tổ chức'],
         question: { vi: 'Địa điểm tổ chức ở đâu?', en: 'Location?' },
         promptLabel: { vi: 'Địa điểm', en: 'Location' },
       },
       {
         key: 'audience',
-        labels: [
-          'target audience',
-          'audience',
-          'đối tượng',
-          'đối tượng tham gia',
-          'khán giả',
-          'khách chính',
-        ],
         question: { vi: 'Đối tượng tham gia là ai?', en: 'Target audience?' },
         promptLabel: { vi: 'Đối tượng', en: 'Audience' },
       },
       {
         key: 'style',
-        labels: ['preferred style', 'style', 'phong cách'],
         question: { vi: 'Phong cách mong muốn là gì?', en: 'Preferred style?' },
         promptLabel: { vi: 'Phong cách', en: 'Style' },
       },
       {
         key: 'colors',
-        labels: ['preferred colors', 'color', 'colors', 'màu', 'màu sắc', 'màu chủ đạo'],
-        question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Preferred colors?' },
+        question: {
+          vi: 'Màu chủ đạo mong muốn là gì?',
+          en: 'Preferred colors?',
+        },
         promptLabel: { vi: 'Màu sắc', en: 'Colors' },
       },
     ],
@@ -148,44 +143,46 @@ const IMAGE_PROMPT_SCHEMAS: Record<ImageIntent, ImagePromptSchema> = {
     fields: [
       {
         key: 'organizationName',
-        labels: ['organization name', 'organization', 'tên tổ chức', 'tổ chức'],
         question: { vi: 'Tên tổ chức là gì?', en: 'Organization name?' },
         promptLabel: { vi: 'Tên tổ chức', en: 'Organization name' },
       },
       {
         key: 'industry',
-        labels: ['industry', 'lĩnh vực', 'ngành'],
         question: { vi: 'Tổ chức thuộc lĩnh vực nào?', en: 'Industry?' },
         promptLabel: { vi: 'Lĩnh vực', en: 'Industry' },
       },
       {
         key: 'slogan',
-        labels: ['slogan', 'tagline', 'khẩu hiệu'],
         question: { vi: 'Slogan hoặc tagline là gì?', en: 'Slogan/tagline?' },
         promptLabel: { vi: 'Slogan', en: 'Slogan' },
       },
       {
         key: 'brandMessage',
-        labels: ['brand message', 'message', 'thông điệp thương hiệu', 'thông điệp'],
-        question: { vi: 'Thông điệp thương hiệu muốn truyền tải là gì?', en: 'Brand message?' },
+        question: {
+          vi: 'Thông điệp thương hiệu muốn truyền tải là gì?',
+          en: 'Brand message?',
+        },
         promptLabel: { vi: 'Thông điệp thương hiệu', en: 'Brand message' },
       },
       {
         key: 'targetAudience',
-        labels: ['target audience', 'audience', 'đối tượng', 'khách hàng mục tiêu'],
-        question: { vi: 'Đối tượng mục tiêu của tổ chức là ai?', en: 'Target audience?' },
+        question: {
+          vi: 'Đối tượng mục tiêu của tổ chức là ai?',
+          en: 'Target audience?',
+        },
         promptLabel: { vi: 'Đối tượng mục tiêu', en: 'Target audience' },
       },
       {
         key: 'brandColors',
-        labels: ['brand colors', 'colors', 'màu thương hiệu', 'màu chủ đạo'],
         question: { vi: 'Màu thương hiệu là gì?', en: 'Brand colors?' },
         promptLabel: { vi: 'Màu thương hiệu', en: 'Brand colors' },
       },
       {
         key: 'visualStyle',
-        labels: ['visual style', 'style', 'phong cách hình ảnh', 'phong cách'],
-        question: { vi: 'Phong cách hình ảnh mong muốn là gì?', en: 'Visual style?' },
+        question: {
+          vi: 'Phong cách hình ảnh mong muốn là gì?',
+          en: 'Visual style?',
+        },
         promptLabel: { vi: 'Phong cách hình ảnh', en: 'Visual style' },
       },
     ],
@@ -200,37 +197,34 @@ const IMAGE_PROMPT_SCHEMAS: Record<ImageIntent, ImagePromptSchema> = {
     fields: [
       {
         key: 'postPurpose',
-        labels: ['post purpose', 'purpose', 'mục đích bài đăng', 'mục đích'],
         question: { vi: 'Mục đích bài đăng là gì?', en: 'Post purpose?' },
         promptLabel: { vi: 'Mục đích bài đăng', en: 'Post purpose' },
       },
       {
         key: 'headline',
-        labels: ['headline', 'title', 'tiêu đề'],
         question: { vi: 'Tiêu đề chính là gì?', en: 'Headline?' },
         promptLabel: { vi: 'Tiêu đề', en: 'Headline' },
       },
       {
         key: 'content',
-        labels: ['content', 'body', 'nội dung'],
-        question: { vi: 'Nội dung chính muốn truyền tải là gì?', en: 'Content?' },
+        question: {
+          vi: 'Nội dung chính muốn truyền tải là gì?',
+          en: 'Content?',
+        },
         promptLabel: { vi: 'Nội dung', en: 'Content' },
       },
       {
         key: 'cta',
-        labels: ['cta', 'call to action', 'kêu gọi hành động'],
         question: { vi: 'CTA/kêu gọi hành động là gì?', en: 'CTA?' },
         promptLabel: { vi: 'CTA', en: 'CTA' },
       },
       {
         key: 'style',
-        labels: ['style', 'phong cách'],
         question: { vi: 'Phong cách mong muốn là gì?', en: 'Style?' },
         promptLabel: { vi: 'Phong cách', en: 'Style' },
       },
       {
         key: 'colors',
-        labels: ['colors', 'color', 'màu', 'màu sắc', 'màu chủ đạo'],
         question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Colors?' },
         promptLabel: { vi: 'Màu sắc', en: 'Colors' },
       },
@@ -246,37 +240,31 @@ const IMAGE_PROMPT_SCHEMAS: Record<ImageIntent, ImagePromptSchema> = {
     fields: [
       {
         key: 'title',
-        labels: ['title', 'headline', 'tiêu đề'],
         question: { vi: 'Tiêu đề chính là gì?', en: 'Title?' },
         promptLabel: { vi: 'Tiêu đề', en: 'Title' },
       },
       {
         key: 'mainMessage',
-        labels: ['main message', 'message', 'thông điệp chính', 'thông điệp'],
         question: { vi: 'Thông điệp chính là gì?', en: 'Main message?' },
         promptLabel: { vi: 'Thông điệp chính', en: 'Main message' },
       },
       {
         key: 'cta',
-        labels: ['cta', 'call to action', 'kêu gọi hành động'],
         question: { vi: 'CTA/kêu gọi hành động là gì?', en: 'CTA?' },
         promptLabel: { vi: 'CTA', en: 'CTA' },
       },
       {
         key: 'audience',
-        labels: ['audience', 'target audience', 'đối tượng', 'khán giả'],
         question: { vi: 'Đối tượng hướng tới là ai?', en: 'Audience?' },
         promptLabel: { vi: 'Đối tượng', en: 'Audience' },
       },
       {
         key: 'style',
-        labels: ['style', 'phong cách'],
         question: { vi: 'Phong cách mong muốn là gì?', en: 'Style?' },
         promptLabel: { vi: 'Phong cách', en: 'Style' },
       },
       {
         key: 'colors',
-        labels: ['colors', 'color', 'màu', 'màu sắc', 'màu chủ đạo'],
         question: { vi: 'Màu chủ đạo mong muốn là gì?', en: 'Colors?' },
         promptLabel: { vi: 'Màu sắc', en: 'Colors' },
       },
@@ -295,7 +283,11 @@ export class AiClientService {
     user?: AiAuthenticatedUser,
     history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
-    const language = this.detectLanguage(message);
+    const language = this.detectLanguage(
+      mode === AiChatMode.IMAGE_PROMPT_BUILDER
+        ? this.buildConversationText(message, history)
+        : message,
+    );
 
     if (mode === AiChatMode.IMAGE_PROMPT_BUILDER) {
       return this.buildImagePrompt(message, language, history);
@@ -340,15 +332,19 @@ export class AiClientService {
     language: ResponseLanguage,
     history?: AiChatHistoryMessageDto[],
   ): Promise<AiChatResponseDto> {
-    const imageIntent = this.resolveImageIntent(message, history);
+    const semanticResult = await this.understandImageRequest(
+      message,
+      history,
+      language,
+    );
+    const imageIntent = semanticResult.imageType;
     if (!imageIntent) {
       return this.buildImageTypeSelectionResponse(language);
     }
 
     const schema = IMAGE_PROMPT_SCHEMAS[imageIntent];
-    const conversationText = this.buildConversationText(message, history);
-    const imageCreationInfo = this.extractImageCreationInfo(
-      conversationText,
+    const imageCreationInfo = this.normalizeExtractedImageData(
+      semanticResult.extractedData,
       schema,
     );
     const missingImageInfo = this.getMissingImageCreationFields(
@@ -366,8 +362,10 @@ export class AiClientService {
     }
 
     const reply = await this.callGroq({
-      message,
-      history,
+      message: JSON.stringify({
+        imageType: imageIntent,
+        extractedData: imageCreationInfo,
+      }),
       systemPrompt: this.getImagePromptBuilderSystemPrompt(language, schema),
       temperature: 0.2,
       logScope: 'image_prompt_builder',
@@ -379,6 +377,48 @@ export class AiClientService {
       schema,
       language,
     );
+  }
+
+  private async understandImageRequest(
+    message: string,
+    history: AiChatHistoryMessageDto[] = [],
+    language: ResponseLanguage,
+  ): Promise<ImageSemanticResult> {
+    const reply = await this.callGroq({
+      message,
+      history,
+      systemPrompt: this.getImageSemanticUnderstandingSystemPrompt(language),
+      temperature: 0,
+      logScope: 'image_semantic_understanding',
+    });
+    const parsed = this.tryParseJson(reply);
+
+    if (!parsed) {
+      this.logger.warn('AI_IMAGE_SEMANTIC_INVALID_JSON');
+      return { intent: 'UNKNOWN', extractedData: {} };
+    }
+
+    const imageType = this.asImageIntent(parsed.imageType);
+    const extractedData =
+      parsed.extractedData && typeof parsed.extractedData === 'object'
+        ? (parsed.extractedData as Record<string, unknown>)
+        : {};
+
+    if (parsed.intent !== 'IMAGE_CREATION' || !imageType) {
+      return { intent: 'UNKNOWN', extractedData: {} };
+    }
+
+    return {
+      intent: 'IMAGE_CREATION',
+      imageType,
+      extractedData: Object.entries(extractedData).reduce<ImagePromptInfo>(
+        (normalized, [key, value]) => {
+          normalized[key] = this.asOptionalString(value);
+          return normalized;
+        },
+        {},
+      ),
+    };
   }
 
   private async callGroq(params: {
@@ -404,7 +444,10 @@ export class AiClientService {
     for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt += 1) {
       const startedAt = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), GROQ_CHAT_TIMEOUT_MS);
+      const timeout = setTimeout(
+        () => controller.abort(),
+        GROQ_CHAT_TIMEOUT_MS,
+      );
 
       try {
         const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
@@ -566,7 +609,10 @@ export class AiClientService {
   }
 
   private countMessageCharacters(messages: GroqMessage[]): number {
-    return messages.reduce((total, message) => total + message.content.length, 0);
+    return messages.reduce(
+      (total, message) => total + message.content.length,
+      0,
+    );
   }
 
   private extractGroqReply(output: GroqChatResponse): string | undefined {
@@ -683,6 +729,33 @@ export class AiClientService {
     ].join('\n');
   }
 
+  private getImageSemanticUnderstandingSystemPrompt(
+    language: ResponseLanguage,
+  ): string {
+    const schemas = Object.values(IMAGE_PROMPT_SCHEMAS).map((schema) => ({
+      imageType: schema.intent,
+      fields: schema.fields.map((field) => field.key),
+    }));
+
+    return [
+      'You are the semantic understanding layer for Eventix image prompt conversations.',
+      'Understand natural Vietnamese or English, short answers, synonyms, and fields supplied in any order.',
+      'Read the complete conversation. Merge facts from earlier user turns with the latest user message.',
+      'Never reset a previously established image type or field unless the user explicitly corrects it.',
+      'Map the request to exactly one supported imageType only when the meaning is clear.',
+      'A generic banner request in image creation mode means EVENT_BANNER.',
+      'If the image type is ambiguous, return UNKNOWN. Do not guess.',
+      'Extract every fact already provided. Preserve the user language and wording in field values.',
+      'Do not invent missing values and do not add keys outside the selected schema.',
+      `User-facing language context: ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
+      '',
+      `Supported schemas: ${JSON.stringify(schemas)}`,
+      '',
+      'Return compact valid JSON only:',
+      '{"intent":"IMAGE_CREATION|UNKNOWN","imageType":"EVENT_BANNER|ORG_COVER|SQUARE_POST|POSTER_STORY|UNKNOWN","extractedData":{}}',
+    ].join('\n');
+  }
+
   private buildSafeUserContext(user?: AiAuthenticatedUser): string {
     if (!user) {
       return 'Current authenticated user context: Not available.';
@@ -720,55 +793,6 @@ export class AiClientService {
       `Permissions: ${permissions || 'N/A'}`,
       'Never reveal secrets, tokens, raw JWT, or credentials.',
     ].join('\n');
-  }
-
-  private resolveImageIntent(
-    message: string,
-    history: AiChatHistoryMessageDto[] = [],
-  ): ImageIntent | undefined {
-    const conversation = this.buildConversationText(message, history);
-    const normalized = conversation.toLowerCase();
-
-    if (
-      normalized.includes('event_banner') ||
-      normalized.includes('banner sự kiện') ||
-      normalized.includes('event banner') ||
-      normalized.includes('banner event')
-    ) {
-      return 'EVENT_BANNER';
-    }
-
-    if (
-      normalized.includes('org_cover') ||
-      normalized.includes('cover tổ chức') ||
-      normalized.includes('organization cover') ||
-      normalized.includes('ảnh bìa tổ chức') ||
-      normalized.includes('anh bia to chuc')
-    ) {
-      return 'ORG_COVER';
-    }
-
-    if (
-      normalized.includes('square_post') ||
-      normalized.includes('bài đăng vuông') ||
-      normalized.includes('bai dang vuong') ||
-      normalized.includes('square post') ||
-      normalized.includes('post vuông') ||
-      normalized.includes('post vuong')
-    ) {
-      return 'SQUARE_POST';
-    }
-
-    if (
-      normalized.includes('poster_story') ||
-      normalized.includes('poster / story') ||
-      normalized.includes('poster') ||
-      normalized.includes('story')
-    ) {
-      return 'POSTER_STORY';
-    }
-
-    return undefined;
   }
 
   private buildConversationText(
@@ -829,8 +853,11 @@ export class AiClientService {
       imageCreationInfo,
       schema,
     );
-    const imagePrompt = String(parsed.prompt || parsed.imagePrompt || '').trim();
-    const negativePrompt = String(parsed.negativePrompt || '').trim();
+    const imagePrompt =
+      this.asOptionalString(parsed.prompt) ||
+      this.asOptionalString(parsed.imagePrompt) ||
+      '';
+    const negativePrompt = this.asOptionalString(parsed.negativePrompt) || '';
 
     if (!imagePrompt) {
       return this.buildImagePromptReadyResponseFromInfo(
@@ -849,8 +876,7 @@ export class AiClientService {
       summary,
       prompt: imagePrompt,
       imagePrompt,
-      negativePrompt:
-        negativePrompt || this.getDefaultNegativePrompt(language),
+      negativePrompt: negativePrompt || this.getDefaultNegativePrompt(language),
       canUseForCreate: true,
       display: this.getImagePromptDisplay(language),
       actions: ['COPY_PROMPT', 'USE_IN_CREATE'],
@@ -871,49 +897,14 @@ export class AiClientService {
     };
   }
 
-  private extractImageCreationInfo(
-    message: string,
+  private normalizeExtractedImageData(
+    extractedData: ImagePromptInfo,
     schema: ImagePromptSchema,
   ): ImagePromptInfo {
     return schema.fields.reduce<ImagePromptInfo>((info, field) => {
-      info[field.key] = this.cleanExtractedValue(
-        this.extractFieldValueByLabels(message, field.labels),
-      );
+      info[field.key] = this.cleanExtractedValue(extractedData[field.key]);
       return info;
     }, {});
-  }
-
-  private extractFieldValueByLabels(
-    message: string,
-    labels: string[],
-  ): string | undefined {
-    const lines = message.split(/\r?\n/);
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      for (const label of labels) {
-        const pattern = new RegExp(
-          `^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*(.+)$`,
-          'i',
-        );
-        const match = line.match(pattern);
-        if (match?.[1]?.trim()) {
-          return match[1].trim();
-        }
-
-        const labelOnlyPattern = new RegExp(
-          `^\\s*${this.escapeRegExp(label)}\\s*[:：]\\s*$`,
-          'i',
-        );
-        if (labelOnlyPattern.test(line)) {
-          const nextValue = this.findNextNonEmptyLine(lines, index + 1);
-          if (nextValue) {
-            return nextValue;
-          }
-        }
-      }
-    }
-
-    return undefined;
   }
 
   private cleanExtractedValue(value?: string): string | undefined {
@@ -924,20 +915,6 @@ export class AiClientService {
       .trim();
 
     return normalized || undefined;
-  }
-
-  private findNextNonEmptyLine(
-    lines: string[],
-    startIndex: number,
-  ): string | undefined {
-    for (let index = startIndex; index < lines.length; index += 1) {
-      const value = lines[index].trim();
-      if (value) {
-        return value;
-      }
-    }
-
-    return undefined;
   }
 
   private getMissingImageCreationFields(
@@ -1063,13 +1040,16 @@ export class AiClientService {
     };
   }
 
-  private tryParseJson(reply: string): Record<string, any> | null {
+  private tryParseJson(reply: string): Record<string, unknown> | null {
     const cleaned = reply.replace(/```json|```/g, '').trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     const jsonText = jsonMatch?.[0] || cleaned;
 
     try {
-      return JSON.parse(jsonText);
+      const parsed: unknown = JSON.parse(jsonText);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
     } catch {
       return null;
     }
@@ -1218,12 +1198,26 @@ export class AiClientService {
   }
 
   private asOptionalString(value: unknown): string | undefined {
-    const normalized = String(value || '').trim();
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      return undefined;
+    }
+
+    const normalized = String(value).trim();
     return normalized || undefined;
   }
 
-  private escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  private asImageIntent(value: unknown): ImageIntent | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return Object.prototype.hasOwnProperty.call(
+      IMAGE_PROMPT_SCHEMAS,
+      normalized,
+    )
+      ? (normalized as ImageIntent)
+      : undefined;
   }
 
   private async normalizeGroqError(
@@ -1241,17 +1235,15 @@ export class AiClientService {
       `AI_CHAT_PROVIDER_ERROR:mode=${mode}:provider=groq:model=${model}:attempt=${attempt + 1}:status=${response.status}:latency=${latencyMs}ms:body=${safeBody}`,
     );
 
-    if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
+    if (response.status === Number(HttpStatus.TOO_MANY_REQUESTS)) {
       return new HttpException('AI_RATE_LIMITED', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     if (
-      response.status === HttpStatus.UNAUTHORIZED ||
-      response.status === HttpStatus.FORBIDDEN
+      response.status === Number(HttpStatus.UNAUTHORIZED) ||
+      response.status === Number(HttpStatus.FORBIDDEN)
     ) {
-      return new ServiceUnavailableException(
-        'AI_PROVIDER_CONFIGURATION_ERROR',
-      );
+      return new ServiceUnavailableException('AI_PROVIDER_CONFIGURATION_ERROR');
     }
 
     if (

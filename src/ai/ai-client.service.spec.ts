@@ -304,345 +304,191 @@ describe('AiClientService', () => {
     expect(global.fetch).toHaveBeenCalledTimes(20);
   });
 
-  it('asks for image type before collecting prompt details', async () => {
-    const service = new AiClientService();
-    const result = await service.chat(
-      'Tôi muốn tạo mẫu ảnh',
+  it('asks for image type when semantic intent is ambiguous', async () => {
+    mockSemanticResult('UNKNOWN', {});
+
+    const result = await new AiClientService().chat(
+      'Cho tôi cái ảnh đẹp đẹp',
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_type_selecting');
-    expect(result.canUseForCreate).toBe(false);
-    expect(result.content).toContain(
-      'Bạn muốn tạo loại ảnh nào?',
-    );
-    expect(result.language).toBe('vi');
-    expect(result.options).toEqual([
-      { label: 'Banner sự kiện', value: 'EVENT_BANNER' },
-      { label: 'Cover tổ chức', value: 'ORG_COVER' },
-      { label: 'Bài đăng vuông', value: 'SQUARE_POST' },
-      { label: 'Poster / Story', value: 'POSTER_STORY' },
-    ]);
     expect(result.missingFields).toEqual(['imageIntent']);
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.options).toHaveLength(4);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('asks event banner schema questions after user chooses banner type', async () => {
-    const service = new AiClientService();
-    const result = await service.chat(
-      'Banner sự kiện',
+  it.each([
+    'event banner',
+    'banner',
+    'ảnh banner',
+    'tạo banner cho sự kiện',
+    'banner sự kiện',
+  ])('accepts semantic EVENT_BANNER classification for "%s"', async (input) => {
+    mockSemanticResult('EVENT_BANNER', {});
+
+    const result = await new AiClientService().chat(
+      input,
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_prompt_collecting');
     expect(result.imageIntent).toBe('EVENT_BANNER');
-    expect(result.canUseForCreate).toBe(false);
-    expect(result.content).toContain(
-      'Mình cần thêm một vài thông tin để tạo hình ảnh sự kiện:',
-    );
-    expect(result.language).toBe('vi');
-    expect(result.questions).toEqual([
-      'Tên sự kiện là gì?',
-      'Đơn vị tổ chức là ai?',
-      'Chủ đề chính của sự kiện là gì?',
-      'Thời gian diễn ra là khi nào?',
-      'Địa điểm tổ chức ở đâu?',
-    ]);
     expect(result.missingFields).toContain('eventName');
-    expect(result.missingFields).toContain('dateTime');
-    expect(result.missingFields).toContain('location');
-    expect(result.missingFields).toContain('colors');
-    expect(global.fetch).not.toHaveBeenCalled();
+    const semanticBody = getFetchBody(0);
+    expect(semanticBody.messages.at(-1)?.content).toBe(input);
   });
 
-  it('returns image prompt ready structure in image_prompt_builder mode', async () => {
-    mockFetchResponse(200, {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              mode: 'image_prompt_ready',
-              summary: {
-                eventName: 'Green Future Agriculture Expo 2026',
-                organization: 'GreenFarm Vietnam',
-                theme: 'Smart agriculture, IoT and sustainability',
-                audience:
-                  'Agricultural businesses, investors, technology experts',
-                style: 'Natural premium, environmental technology',
-                colors: 'Green and white',
-              },
-              prompt:
-                'Create a professional event banner for Green Future Agriculture Expo 2026. Organization: GreenFarm Vietnam. Theme: smart agriculture, IoT, sustainability. Target audience: agricultural businesses, investors, technology experts. Style: natural premium environmental technology. Color palette: green and white. Composition: wide event banner with clean space for title overlay.',
-              negativePrompt:
-                'no website logo, no watermark, no random text, no Eventix branding, no distorted faces, no messy composition, no low quality text',
-            }),
-          },
-        },
-      ],
+  it('extracts multiple natural-language fields and asks only missing fields', async () => {
+    mockSemanticResult('EVENT_BANNER', {
+      eventName: 'Saigon Night Fest',
+      dateTime: '21/11',
+      location: 'SECC',
+      theme: 'neon',
     });
 
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Event banner',
-        '',
-        'Event name:',
-        'Green Future Agriculture Expo 2026',
-        '',
-        'Organization:',
-        'GreenFarm Vietnam',
-        '',
-        'Theme:',
-        'Smart agriculture, IoT and sustainable development',
-        '',
-        'Date/time:',
-        'Jun 21, 2026',
-        '',
-        'Location:',
-        'Ho Chi Minh City',
-        '',
-        'Target audience:',
-        'Agricultural businesses, investors, technology experts',
-        '',
-        'Style:',
-        'Natural premium, environmental technology',
-        '',
-        'Colors:',
-        'Green and white',
-      ].join('\n'),
+    const result = await new AiClientService().chat(
+      'Tôi muốn làm banner Saigon Night Fest, ngày 21/11 tại SECC, concept neon.',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.missingFields).toEqual([
+      'organizer',
+      'audience',
+      'style',
+      'colors',
+    ]);
+    expect(result.missingFields).not.toContain('eventName');
+    expect(result.missingFields).not.toContain('dateTime');
+    expect(result.missingFields).not.toContain('location');
+    expect(result.missingFields).not.toContain('theme');
+  });
+
+  it('keeps image type and prior fields across conversation turns', async () => {
+    mockSemanticResult('EVENT_BANNER', {
+      eventName: 'Saigon Night Fest 2026',
+      organizer: 'Eventix Entertainment',
+      dateTime: '21/11/2026, 18:00-23:00',
+      location: 'SECC, Quận 7',
+      theme: 'Modern Electronic Music Festival',
+    });
+    const history = [
+      {
+        role: 'user' as const,
+        content: 'Tôi muốn tạo ảnh cho Saigon Night Fest 2026',
+      },
+      { role: 'assistant' as const, content: 'Bạn muốn tạo loại ảnh nào?' },
+      { role: 'user' as const, content: 'banner' },
+    ];
+
+    const result = await new AiClientService().chat(
+      'Eventix Entertainment tổ chức, ngày 21/11 ở SECC, concept nhạc điện tử.',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      undefined,
+      history,
+    );
+
+    expect(result.imageIntent).toBe('EVENT_BANNER');
+    expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.missingFields).not.toContain('eventName');
+    expect(result.missingFields).not.toContain('organizer');
+    expect(result.missingFields).not.toContain('imageIntent');
+    const semanticBody = getFetchBody(0);
+    expect(
+      semanticBody.messages.map((item: { content: string }) => item.content),
+    ).toEqual(expect.arrayContaining(['banner']));
+  });
+
+  it('filters unknown fields and validates required fields with TS schema', async () => {
+    mockSemanticResult('EVENT_BANNER', {
+      eventName: 'Saigon Night Fest 2026',
+      organizer: 'Eventix Entertainment',
+      unsupportedField: 'must not leak',
+    });
+
+    const result = await new AiClientService().chat(
+      'Thông tin tiếp theo',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_prompt_collecting');
+    expect(result.missingFields).toContain('theme');
+    expect(result.missingFields).not.toContain('eventName');
+    expect(result.missingFields).not.toContain('organizer');
+    expect(result.message).not.toContain('unsupportedField');
+  });
+
+  it('rejects an image type outside the TS rule engine', async () => {
+    mockSemanticResult('WEBSITE_HERO', { title: 'Unknown type' });
+
+    const result = await new AiClientService().chat(
+      'Tạo hero website',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_type_selecting');
+    expect(result.imageIntent).toBeUndefined();
+  });
+
+  it('prepares final prompt when semantic state contains all required fields', async () => {
+    const extractedData = {
+      eventName: 'Saigon Night Fest 2026',
+      organizer: 'Eventix Entertainment',
+      theme: 'Modern Electronic Music Festival',
+      dateTime: 'November 21, 2026, 18:00-23:00',
+      location: 'SECC, District 7, Ho Chi Minh City',
+      audience: 'Gen Z music fans',
+      style: 'Neon, energetic, modern',
+      colors: 'Electric blue and magenta',
+    };
+    mockSemanticResult('EVENT_BANNER', extractedData);
+    mockImagePromptResult({
+      summary: extractedData,
+      prompt: 'Create a professional event banner for Saigon Night Fest 2026.',
+      negativePrompt: 'no watermark, no distorted text',
+    });
+
+    const result = await new AiClientService().chat(
+      'Tôi đã cung cấp đủ thông tin ở trên.',
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_prompt_ready');
     expect(result.canUseForCreate).toBe(true);
-    expect(result.locale).toBe('en');
-    expect(result.language).toBe('en');
     expect(result.imageIntent).toBe('EVENT_BANNER');
-    expect(result.actions).toEqual(['COPY_PROMPT', 'USE_IN_CREATE']);
-    expect(result.summary?.eventName).toBe(
-      'Green Future Agriculture Expo 2026',
-    );
-    expect(result.prompt).toContain('Create a professional event banner');
-    expect(result.imagePrompt).toContain('Create a professional event banner');
-    expect(result.negativePrompt).toContain('no Eventix branding');
-    expect(result.display?.summaryTitle).toBe('Information summary');
-    expect(result.display?.promptTitle).toBe('Prompt for Create Image');
-    expect(result.content).toContain('Prompt for Create Image:');
-    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
-    expect(result.message).not.toContain('TOM_TAT:');
-
-    const [, request] = (global.fetch as jest.Mock).mock.calls[0];
-    const body = JSON.parse(request.body);
-    expect(body.messages[0].content).toContain('Mode: IMAGE_PROMPT_BUILDER.');
-    expect(body.messages[0].content).toContain('IMAGE DESIGN GUIDE');
-    expect(body.messages[0].content).toContain(
-      'prompt and negativePrompt must be written in English',
-    );
+    expect(result.summary).toEqual(extractedData);
+    expect(result.prompt).toContain('Saigon Night Fest 2026');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const promptBody = getFetchBody(1);
+    expect(promptBody.messages[0].content).toContain('IMAGE DESIGN GUIDE');
+    expect(JSON.parse(promptBody.messages.at(-1)?.content || '')).toEqual({
+      imageType: 'EVENT_BANNER',
+      extractedData,
+    });
   });
 
-  it('returns Vietnamese image prompt contract when user writes Vietnamese', async () => {
-    mockFetchResponse(200, {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              mode: 'image_prompt_ready',
-              summary: {
-                eventName: 'Green Future Agriculture Expo 2026',
-                organization: 'GreenFarm Vietnam',
-                theme: 'Nông nghiệp thông minh, IoT và phát triển bền vững',
-                audience:
-                  'Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
-                style: 'Natural premium, environmental technology',
-                colors: 'Xanh lá, trắng',
-              },
-              prompt:
-                'Tạo banner sự kiện khổ ngang cho Green Future Agriculture Expo 2026, phong cách natural premium, công nghệ môi trường, màu xanh lá và trắng.',
-              negativePrompt:
-                'Không dùng logo website, không dùng watermark, không thêm chữ ngẫu nhiên, không bố cục rối.',
-            }),
-          },
-        },
-      ],
-    });
-
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Banner sự kiện',
-        'Tên sự kiện: Green Future Agriculture Expo 2026',
-        'Tổ chức: GreenFarm Vietnam',
-        'Chủ đề: Nông nghiệp thông minh, IoT và phát triển bền vững',
-        'Thời gian: 21/06/2026',
-        'Địa điểm: TP.HCM',
-        'Đối tượng: Doanh nghiệp nông nghiệp, nhà đầu tư, chuyên gia công nghệ',
-        'Phong cách: Natural premium, environmental technology',
-        'Màu chủ đạo: Xanh lá, trắng',
-      ].join('\n'),
-      AiChatMode.IMAGE_PROMPT_BUILDER,
-    );
-
-    expect(result.mode).toBe('image_prompt_ready');
-    expect(result.locale).toBe('vi');
-    expect(result.prompt).toContain('Tạo banner sự kiện');
-    expect(result.negativePrompt).toContain('Không dùng logo website');
-    expect(result.display).toEqual({
-      summaryTitle: 'Tóm tắt thông tin',
-      promptTitle: 'Prompt dùng cho Tạo ảnh',
-      negativePromptTitle: 'Negative prompt',
-      hint: 'Bạn có thể sao chép prompt bên dưới để dùng trong mục Tạo ảnh.',
-    });
-    expect(result.message).toContain('Tóm tắt thông tin:');
-    expect(result.message).toContain('Prompt dùng cho Tạo ảnh:');
-    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
-    expect(result.message).not.toContain('TOM_TAT:');
-  });
-
-  it('normalizes Vietnamese labeled image prompt input to fixed English schema', async () => {
-    mockFetchResponse(200, {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              mode: 'chat',
-              message: 'This should be replaced by the fallback prompt.',
-            }),
-          },
-        },
-      ],
-    });
-
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Banner sự kiện',
-        'Tên sự kiện: Green Life Festival 2026',
-        'Đơn vị tổ chức: Green Future Community',
-        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
-        'Thời gian: 20/10/2026',
-        'Địa điểm: Công viên trung tâm',
-        'Đối tượng tham gia: Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
-        'Phong cách: Natural, fresh, eco-friendly',
-        'Màu chủ đạo: Xanh lá, trắng, be',
-      ].join('\n'),
-      AiChatMode.IMAGE_PROMPT_BUILDER,
-    );
-
-    expect(result.mode).toBe('image_prompt_ready');
-    expect(result.summary).toEqual({
-      eventName: 'Green Life Festival 2026',
-      organizer: 'Green Future Community',
-      theme: 'Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
-      dateTime: '20/10/2026',
-      location: 'Công viên trung tâm',
-      audience:
-        'Gia đình, học sinh, sinh viên, cộng đồng yêu thiên nhiên',
-      style: 'Natural, fresh, eco-friendly',
-      colors: 'Xanh lá, trắng, be',
-    });
-    expect(result.missingFields).toBeUndefined();
-  });
-
-  it('collects only missing event banner fields from schema', async () => {
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Banner sự kiện',
-        'Tên sự kiện: Green Life Festival 2026',
-        'Đơn vị tổ chức: Green Future Community',
-        'Chủ đề chính: Cây xanh, sống xanh, trồng cây và bảo vệ môi trường',
-        'Thời gian: 20/10/2026',
-        'Địa điểm: Công viên trung tâm',
-        'Đối tượng tham gia: Gia đình, học sinh, sinh viên',
-        'Phong cách: Natural, fresh, eco-friendly',
-      ].join('\n'),
-      AiChatMode.IMAGE_PROMPT_BUILDER,
-    );
-
-    expect(result.mode).toBe('image_prompt_collecting');
-    expect(result.imageIntent).toBe('EVENT_BANNER');
-    expect(result.missingFields).toEqual(['colors']);
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  it('normalizes organization cover prompt input by schema', async () => {
-    mockFetchResponse(200, {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              mode: 'chat',
-              message: 'This should be replaced by the fallback prompt.',
-            }),
-          },
-        },
-      ],
-    });
-
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Cover tổ chức',
-        'Tên tổ chức: Green Future Community',
-        'Lĩnh vực: Môi trường và giáo dục cộng đồng',
-        'Slogan: Grow green together',
-        'Thông điệp thương hiệu: Truyền cảm hứng sống xanh',
-        'Đối tượng: Gia đình và sinh viên',
-        'Màu thương hiệu: Xanh lá và be',
-        'Phong cách hình ảnh: Tự nhiên, thân thiện môi trường',
-      ].join('\n'),
-      AiChatMode.IMAGE_PROMPT_BUILDER,
-    );
-
-    expect(result.mode).toBe('image_prompt_ready');
-    expect(result.imageIntent).toBe('ORG_COVER');
-    expect(result.summary).toEqual({
+  it('uses the current schema for organization cover semantic data', async () => {
+    const extractedData = {
       organizationName: 'Green Future Community',
-      industry: 'Môi trường và giáo dục cộng đồng',
+      industry: 'Môi trường',
       slogan: 'Grow green together',
       brandMessage: 'Truyền cảm hứng sống xanh',
       targetAudience: 'Gia đình và sinh viên',
       brandColors: 'Xanh lá và be',
       visualStyle: 'Tự nhiên, thân thiện môi trường',
-    });
-    expect(result.missingFields).toBeUndefined();
-  });
+    };
+    mockSemanticResult('ORG_COVER', extractedData);
+    mockImagePromptResult({ summary: extractedData });
 
-  it('falls back to structured prompt when image provider returns wrong mode', async () => {
-    mockFetchResponse(200, {
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              mode: 'chat',
-              message: 'Here is a guide to creating banners...',
-            }),
-          },
-        },
-      ],
-    });
-
-    const service = new AiClientService();
-    const result = await service.chat(
-      [
-        'Event banner',
-        'Event name: Green Future Agriculture Expo 2026',
-        'Organizer: GreenFarm Vietnam',
-        'Theme: Smart agriculture and IoT',
-        'Date/time: Jun 21, 2026',
-        'Location: Ho Chi Minh City',
-        'Audience: Agricultural businesses',
-        'Style: Natural premium',
-        'Colors: Green and white',
-      ].join('\n'),
+    const result = await new AiClientService().chat(
+      'Tạo cover cho tổ chức',
       AiChatMode.IMAGE_PROMPT_BUILDER,
     );
 
     expect(result.mode).toBe('image_prompt_ready');
-    expect(result.canUseForCreate).toBe(true);
-    expect(result.message).not.toContain('guide to creating banners');
-    expect(result.message).toContain('Prompt for Create Image:');
-    expect(result.message).not.toContain('IMAGE_PROMPT_READY:');
+    expect(result.imageIntent).toBe('ORG_COVER');
+    expect(result.summary).toEqual(extractedData);
   });
 
   it('returns controlled error when GROQ_API_KEY is missing', async () => {
@@ -733,6 +579,52 @@ describe('AiClientService', () => {
       GatewayTimeoutException,
     );
   });
+
+  function mockSemanticResult(imageType: string, extractedData: object) {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              intent: imageType === 'UNKNOWN' ? 'UNKNOWN' : 'IMAGE_CREATION',
+              imageType,
+              extractedData,
+            }),
+          },
+        },
+      ],
+    });
+  }
+
+  function mockImagePromptResult(
+    result: {
+      summary?: object;
+      prompt?: string;
+      negativePrompt?: string;
+    } = {},
+  ) {
+    mockFetchResponse(200, {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              mode: 'image_prompt_ready',
+              summary: result.summary || {},
+              prompt: result.prompt || 'Generated image prompt.',
+              negativePrompt: result.negativePrompt || 'No watermark.',
+            }),
+          },
+        },
+      ],
+    });
+  }
+
+  function getFetchBody(index: number): {
+    messages: Array<{ role: string; content: string }>;
+  } {
+    const [, request] = (global.fetch as jest.Mock).mock.calls[index];
+    return JSON.parse(request.body);
+  }
 
   function mockFetchResponse(status: number, body: unknown) {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
