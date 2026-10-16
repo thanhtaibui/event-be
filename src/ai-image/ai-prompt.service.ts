@@ -50,6 +50,16 @@ export class AiPromptService {
     );
   }
 
+  fitPromptToProviderLimit(
+    prompt: string,
+    maxCharacters: number,
+  ): Promise<string> {
+    return this.imagePromptGeneratorService.fitPromptToProviderLimit(
+      prompt,
+      maxCharacters,
+    );
+  }
+
   generateImageEditInstruction(
     description: string,
     ratio?: string,

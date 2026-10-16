@@ -38,20 +38,38 @@ export class AiImageService {
 
   async generate(dto: GenerateImageDto) {
     const timer = 'POST_AI_IMAGE_GENERATE';
-    let stage = 'CHAT_PROMPT_GENERATION';
+    let stage = 'IMAGE_REQUEST_VALIDATION';
     console.time(timer);
     try {
-      const prompt = await this.aiPromptService.generateReadyImagePrompt(
-        dto.description,
-        dto.ratio,
-      );
-      stage = 'IMAGE_REQUEST_VALIDATION';
+      const prompt = dto.prompt ?? dto.description ?? '';
       if (!prompt.trim()) {
+        throw new BadRequestException('description or prompt is required');
+      }
+      const restrictions = dto.negativePrompt?.trim();
+      const requestedPrompt = restrictions
+        ? `${prompt}\n\nRestrictions: ${restrictions}`
+        : prompt;
+      stage = 'IMAGE_REQUEST_VALIDATION';
+      const configuredPromptLimit = Number(
+        process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS ?? 2048,
+      );
+      const maxCharacters =
+        Number.isFinite(configuredPromptLimit) && configuredPromptLimit > 0
+          ? Math.floor(configuredPromptLimit)
+          : 2048;
+      const providerPrompt =
+        requestedPrompt.length > maxCharacters
+          ? await this.aiPromptService.fitPromptToProviderLimit(
+              requestedPrompt,
+              maxCharacters,
+            )
+          : requestedPrompt;
+      if (!providerPrompt.trim()) {
         throw new BadRequestException('INVALID_IMAGE_PROMPT');
       }
       stage = 'IMAGE_PROVIDER_REQUEST';
       const generatedImage = await this.cloudflareImageProvider.generate({
-        prompt,
+        prompt: providerPrompt,
         ratio: dto.ratio,
       });
       stage = 'IMAGE_PROVIDER_RESPONSE';

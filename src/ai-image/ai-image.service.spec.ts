@@ -5,10 +5,19 @@ import { ImagePromptGeneratorService } from './image-prompt-generator.service';
 
 describe('AiImageService', () => {
   const originalFetch = global.fetch;
+  const originalPromptLimit =
+    process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS;
   let validPng: Buffer;
-  let aiPromptService: { generateImageEditInstruction: jest.Mock };
+  let aiPromptService: {
+    fitPromptToProviderLimit: jest.Mock;
+    generateImageEditInstruction: jest.Mock;
+  };
   let imageStorageService: { createPreviewImage: jest.Mock };
-  let cloudflareImageProvider: { edit: jest.Mock; inpaint: jest.Mock };
+  let cloudflareImageProvider: {
+    generate: jest.Mock;
+    edit: jest.Mock;
+    inpaint: jest.Mock;
+  };
   let service: AiImageService;
 
   beforeAll(async () => {
@@ -28,6 +37,9 @@ describe('AiImageService', () => {
     jest.resetAllMocks();
     global.fetch = jest.fn();
     aiPromptService = {
+      fitPromptToProviderLimit: jest
+        .fn()
+        .mockResolvedValue('compressed provider prompt'),
       generateImageEditInstruction: jest.fn().mockResolvedValue('Edit image'),
     };
     imageStorageService = {
@@ -36,6 +48,10 @@ describe('AiImageService', () => {
         .mockResolvedValue('data:image/png;base64,edited'),
     };
     cloudflareImageProvider = {
+      generate: jest.fn().mockResolvedValue({
+        buffer: validPng,
+        mimeType: 'image/png',
+      }),
       edit: jest.fn().mockResolvedValue({
         buffer: validPng,
         mimeType: 'image/png',
@@ -52,6 +68,57 @@ describe('AiImageService', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    if (originalPromptLimit === undefined) {
+      delete process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS;
+    } else {
+      process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS =
+        originalPromptLimit;
+    }
+  });
+
+  it('sends a final prompt unchanged to Cloudflare without calling Groq', async () => {
+    const prompt = '  Final render-ready event banner prompt.  ';
+    aiPromptService.fitPromptToProviderLimit.mockRejectedValue(
+      new Error('AI_PROMPT_PROVIDER_RATE_LIMITED'),
+    );
+
+    await expect(service.generate({ prompt })).resolves.toMatchObject({
+      status: 'preview',
+    });
+
+    expect(cloudflareImageProvider.generate).toHaveBeenCalledWith({
+      prompt,
+      ratio: undefined,
+    });
+    expect(aiPromptService.fitPromptToProviderLimit).not.toHaveBeenCalled();
+  });
+
+  it('uses the legacy description field directly without calling Groq', async () => {
+    const description = 'Modern neon music festival banner, DJ stage, 16:9.';
+
+    await service.generate({ description });
+
+    expect(cloudflareImageProvider.generate).toHaveBeenCalledWith({
+      prompt: description,
+      ratio: undefined,
+    });
+    expect(aiPromptService.fitPromptToProviderLimit).not.toHaveBeenCalled();
+  });
+
+  it('uses semantic fitting only when the prompt exceeds provider limit', async () => {
+    const prompt = 'A'.repeat(2100);
+    process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS = '2048';
+
+    await service.generate({ prompt });
+
+    expect(aiPromptService.fitPromptToProviderLimit).toHaveBeenCalledWith(
+      prompt,
+      2048,
+    );
+    expect(cloudflareImageProvider.generate).toHaveBeenCalledWith({
+      prompt: 'compressed provider prompt',
+      ratio: undefined,
+    });
   });
 
   it('accepts a public HTTP image URL for edit', async () => {

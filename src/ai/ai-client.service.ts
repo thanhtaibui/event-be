@@ -810,6 +810,7 @@ export class AiClientService {
       'Rules:',
       `- prompt and negativePrompt must be written in ${language === 'vi' ? 'Vietnamese' : 'English'}.`,
       '- prompt must be directly usable by image generation.',
+      '- Keep prompt under 1800 characters so it fits the image provider limit without another LLM pass.',
       `- prompt must be for ${schema.promptSubject.en}.`,
       `- summary must include these keys: ${schema.fields.map((field) => field.key).join(', ')}.`,
       '- prompt must include image type, all collected information, visual direction, composition, and quality requirements.',

@@ -26,12 +26,36 @@ export const IMAGE_RATIOS = ['1:1', '16:9', '9:16'] as const;
 export const IMAGE_OUTPUT_FORMATS = ['png', 'jpeg', 'webp'] as const;
 
 export class GenerateImageDto {
-  @ApiProperty({
-    example: 'Tạo poster khai trương cửa hàng điện thoại phong cách điện máy Việt Nam',
+  @ApiPropertyOptional({
+    example:
+      'Create a professional wide banner for Green Future Agriculture Expo 2026...',
+    description:
+      'Final render-ready prompt. Sent directly to the image provider when within its limit.',
+  })
+  @IsString()
+  @MaxLength(10000)
+  @IsOptional()
+  prompt?: string;
+
+  @ApiPropertyOptional({
+    example:
+      'Tạo poster khai trương cửa hàng điện thoại phong cách điện máy Việt Nam',
+    description: 'Legacy alias accepted for existing Create Image clients.',
+  })
+  @IsString()
+  @MaxLength(10000)
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({
+    example: 'no watermark, no random text',
+    description:
+      'Optional restrictions; merged into the provider prompt because FLUX accepts a single prompt field.',
   })
   @IsString()
   @MaxLength(3000)
-  description: string;
+  @IsOptional()
+  negativePrompt?: string;
 
   @ApiPropertyOptional({
     enum: IMAGE_RATIOS,
@@ -46,7 +70,8 @@ export class EditImageDto {
   @ApiPropertyOptional({
     example:
       'https://event-management-uploads.s3.ap-southeast-1.amazonaws.com/ai/images/iphone.jpg',
-    description: 'Public HTTP/HTTPS image URL. Use either imageUrl or imageData.',
+    description:
+      'Public HTTP/HTTPS image URL. Use either imageUrl or imageData.',
   })
   @IsString()
   @IsOptional()
