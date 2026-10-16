@@ -97,6 +97,7 @@ export class CloudflareImageProvider implements AiImageProvider {
       `AI_IMAGE_PROVIDER_REQUEST:cloudflare:path=/client/v4/accounts/<account>/ai/run/${modelPath}:model=${model}:payloadKeys=${Object.keys(payload).join(',')}`,
     );
 
+    let lastRetryableError: HttpException | undefined;
     for (let attempt = 0; attempt <= CLOUDFLARE_MAX_RETRIES; attempt += 1) {
       const controller = new AbortController();
       const timeout = setTimeout(
@@ -117,6 +118,7 @@ export class CloudflareImageProvider implements AiImageProvider {
         if (!response.ok) {
           const error = await this.normalizeCloudflareError(response);
           if (this.isRetryable(error) && attempt < CLOUDFLARE_MAX_RETRIES) {
+            lastRetryableError = error;
             this.logger.warn(
               `AI_IMAGE_PROVIDER_RETRY:cloudflare:model=${model}:attempt=${attempt + 1}:status=${error.getStatus()}`,
             );
@@ -138,9 +140,10 @@ export class CloudflareImageProvider implements AiImageProvider {
         const normalized =
           error instanceof Error && error.name === 'AbortError'
             ? new GatewayTimeoutException('AI_PROVIDER_TIMEOUT')
-            : new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+            : new ServiceUnavailableException('AI_PROVIDER_NETWORK_ERROR');
 
         if (retryable && attempt < CLOUDFLARE_MAX_RETRIES) {
+          lastRetryableError = normalized;
           this.logger.warn(
             `AI_IMAGE_PROVIDER_RETRY:cloudflare:model=${model}:attempt=${attempt + 1}:reason=${normalized.message}`,
           );
@@ -153,7 +156,10 @@ export class CloudflareImageProvider implements AiImageProvider {
       }
     }
 
-    throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+    throw (
+      lastRetryableError ??
+      new ServiceUnavailableException('AI_PROVIDER_RETRIES_EXHAUSTED')
+    );
   }
 
   private async normalizeImageResponse(
@@ -243,19 +249,21 @@ export class CloudflareImageProvider implements AiImageProvider {
   ): Promise<HttpException> {
     const body = await response.text().catch(() => '');
     const normalizedBody = body.toLowerCase();
+    const providerErrorCode = this.extractCloudflareErrorCode(body);
 
     this.logger.error(
       `AI_IMAGE_PROVIDER_ERROR:cloudflare:${response.status}:${this.truncateLogBody(body)}`,
     );
 
     if (
+      providerErrorCode === '3036' ||
       normalizedBody.includes('quota') ||
       normalizedBody.includes('neuron') ||
       normalizedBody.includes('daily') ||
       normalizedBody.includes('allocation')
     ) {
       return new HttpException(
-        "AI image generation has reached today's free usage limit. Please try again later.",
+        'AI_PROVIDER_QUOTA_EXCEEDED',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -265,18 +273,32 @@ export class CloudflareImageProvider implements AiImageProvider {
     }
 
     if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
+      if (
+        providerErrorCode === '3040' ||
+        normalizedBody.includes('capacity') ||
+        normalizedBody.includes('temporarily unavailable')
+      ) {
+        return new HttpException(
+          'AI_PROVIDER_BUSY',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
       return new ServiceUnavailableException('AI_PROVIDER_BUSY');
     }
 
-    if (
-      response.status === HttpStatus.UNAUTHORIZED ||
-      response.status === HttpStatus.FORBIDDEN
-    ) {
-      return new ServiceUnavailableException('AI_PROVIDER_CONFIGURATION_ERROR');
+    if (response.status === HttpStatus.UNAUTHORIZED) {
+      return new ServiceUnavailableException(
+        'AI_PROVIDER_AUTHENTICATION_FAILED',
+      );
+    }
+
+    if (response.status === HttpStatus.FORBIDDEN) {
+      return new ServiceUnavailableException('AI_PROVIDER_PERMISSION_DENIED');
     }
 
     if (
       response.status === HttpStatus.NOT_FOUND ||
+      providerErrorCode === '5007' ||
       (normalizedBody.includes('model') &&
         (normalizedBody.includes('not found') ||
           normalizedBody.includes('not available') ||
@@ -289,26 +311,51 @@ export class CloudflareImageProvider implements AiImageProvider {
       response.status === HttpStatus.BAD_REQUEST ||
       normalizedBody.includes('invalid image')
     ) {
-      return new BadRequestException('IMAGE_PROCESSING_FAILED');
+      return new BadRequestException('AI_PROVIDER_INVALID_REQUEST');
     }
 
     if (response.status >= 500) {
-      return new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+      return new ServiceUnavailableException(
+        `AI_PROVIDER_SERVER_ERROR:${response.status}`,
+      );
     }
 
     return new BadGatewayException('AI_REQUEST_FAILED');
   }
 
-  private isRetryable(error: HttpException): boolean {
-    if (error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
-      return error.message === 'AI_PROVIDER_BUSY';
+  private extractCloudflareErrorCode(body: string): string | undefined {
+    try {
+      const parsed = JSON.parse(body) as {
+        errors?: Array<{ code?: string | number }>;
+      };
+      const code = parsed.errors?.[0]?.code;
+      return code === undefined ? undefined : String(code);
+    } catch {
+      return undefined;
     }
-    return [
-      HttpStatus.REQUEST_TIMEOUT,
-      HttpStatus.BAD_GATEWAY,
-      HttpStatus.SERVICE_UNAVAILABLE,
-      HttpStatus.GATEWAY_TIMEOUT,
-    ].includes(error.getStatus());
+  }
+
+  private isRetryable(error: HttpException): boolean {
+    const errorMessage = error.message;
+    if (
+      errorMessage.includes('AUTHENTICATION') ||
+      errorMessage.includes('PERMISSION') ||
+      errorMessage.includes('CONFIGURATION') ||
+      errorMessage.includes('QUOTA')
+    ) {
+      return false;
+    }
+    if (error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+      return errorMessage === 'AI_PROVIDER_BUSY';
+    }
+    return (
+      errorMessage === 'AI_PROVIDER_TIMEOUT' ||
+      errorMessage === 'AI_PROVIDER_BUSY' ||
+      errorMessage.startsWith('AI_PROVIDER_SERVER_ERROR:') ||
+      [HttpStatus.BAD_GATEWAY, HttpStatus.GATEWAY_TIMEOUT].includes(
+        error.getStatus(),
+      )
+    );
   }
 
   private async delay(milliseconds: number): Promise<void> {

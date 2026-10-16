@@ -190,9 +190,34 @@ export class ImagePromptGeneratorService {
 
       if (!response.ok) {
         this.logger.error(
-          `AI_PROMPT_GENERATOR_PROVIDER_ERROR:groq:${response.status}`,
+          `AI_PROMPT_GENERATOR_PROVIDER_ERROR:provider=groq:model=${model}:status=${response.status}`,
         );
-        throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+        if (response.status === 401) {
+          throw new ServiceUnavailableException(
+            'AI_PROMPT_PROVIDER_AUTHENTICATION_FAILED',
+          );
+        }
+        if (response.status === 403) {
+          throw new ServiceUnavailableException(
+            'AI_PROMPT_PROVIDER_PERMISSION_DENIED',
+          );
+        }
+        if (response.status === 429) {
+          throw new ServiceUnavailableException(
+            'AI_PROMPT_PROVIDER_RATE_LIMITED',
+          );
+        }
+        if ([408, 504].includes(response.status)) {
+          throw new ServiceUnavailableException('AI_PROMPT_PROVIDER_TIMEOUT');
+        }
+        if (response.status >= 500) {
+          throw new ServiceUnavailableException(
+            `AI_PROMPT_PROVIDER_SERVER_ERROR:${response.status}`,
+          );
+        }
+        throw new BadGatewayException(
+          `AI_PROMPT_PROVIDER_REQUEST_REJECTED:${response.status}`,
+        );
       }
 
       const output = (await response.json()) as GroqChatResponse;
@@ -212,10 +237,10 @@ export class ImagePromptGeneratorService {
       }
 
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new ServiceUnavailableException('AI_PROVIDER_TIMEOUT');
+        throw new ServiceUnavailableException('AI_PROMPT_PROVIDER_TIMEOUT');
       }
 
-      throw new ServiceUnavailableException('AI_PROMPT_GENERATION_FAILED');
+      throw new ServiceUnavailableException('AI_PROMPT_PROVIDER_NETWORK_ERROR');
     } finally {
       clearTimeout(timeout);
     }

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
 import { AiImageService } from './ai-image.service';
+import { ImagePromptGeneratorService } from './image-prompt-generator.service';
 
 describe('AiImageService', () => {
   const originalFetch = global.fetch;
@@ -30,7 +31,9 @@ describe('AiImageService', () => {
       generateImageEditInstruction: jest.fn().mockResolvedValue('Edit image'),
     };
     imageStorageService = {
-      createPreviewImage: jest.fn().mockResolvedValue('data:image/png;base64,edited'),
+      createPreviewImage: jest
+        .fn()
+        .mockResolvedValue('data:image/png;base64,edited'),
     };
     cloudflareImageProvider = {
       edit: jest.fn().mockResolvedValue({
@@ -183,4 +186,44 @@ describe('AiImageService', () => {
         ),
     });
   }
+});
+
+describe('ImagePromptGeneratorService provider errors', () => {
+  const originalFetch = global.fetch;
+  const originalGroqApiKey = process.env.GROQ_API_KEY;
+  const originalGroqModel = process.env.GROQ_CHAT_MODEL;
+
+  beforeEach(() => {
+    process.env.GROQ_API_KEY = 'test-token';
+    process.env.GROQ_CHAT_MODEL = 'test-model';
+    global.fetch = jest.fn();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    if (originalGroqApiKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = originalGroqApiKey;
+    if (originalGroqModel === undefined) delete process.env.GROQ_CHAT_MODEL;
+    else process.env.GROQ_CHAT_MODEL = originalGroqModel;
+  });
+
+  it.each([
+    [401, 'AI_PROMPT_PROVIDER_AUTHENTICATION_FAILED'],
+    [403, 'AI_PROMPT_PROVIDER_PERMISSION_DENIED'],
+    [429, 'AI_PROMPT_PROVIDER_RATE_LIMITED'],
+    [503, 'AI_PROMPT_PROVIDER_SERVER_ERROR:503'],
+  ])('preserves Groq HTTP failure %s as %s', async (status, code) => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status,
+    });
+
+    const service = new ImagePromptGeneratorService();
+
+    await expect(
+      service.generateImagePrompt('create a banner'),
+    ).rejects.toMatchObject({
+      response: { message: code },
+    });
+  });
 });

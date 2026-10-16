@@ -126,10 +126,19 @@ describe('CloudflareImageProvider', () => {
     await provider.generate({ prompt: 'test' }).catch((error: unknown) => {
       expect(error).toBeInstanceOf(HttpException);
       expect((error as HttpException).getStatus()).toBe(429);
-      expect((error as Error).message).toContain(
-        "AI image generation has reached today's free usage limit",
-      );
+      expect((error as Error).message).toBe('AI_PROVIDER_QUOTA_EXCEEDED');
     });
+  });
+
+  it('distinguishes invalid Cloudflare credentials from provider downtime', async () => {
+    mockJsonResponse(401, { errors: [{ message: 'invalid token' }] });
+
+    const provider = new CloudflareImageProvider();
+
+    await expect(provider.generate({ prompt: 'test' })).rejects.toMatchObject({
+      response: { message: 'AI_PROVIDER_AUTHENTICATION_FAILED' },
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('retries temporary Cloudflare capacity errors and succeeds', async () => {
@@ -171,12 +180,26 @@ describe('CloudflareImageProvider', () => {
 
   it('normalizes Cloudflare unavailable', async () => {
     mockJsonResponse(503, { errors: [{ message: 'unavailable' }] });
+    mockJsonResponse(503, { errors: [{ message: 'unavailable' }] });
+    mockJsonResponse(503, { errors: [{ message: 'unavailable' }] });
 
     const provider = new CloudflareImageProvider();
 
-    await expect(provider.generate({ prompt: 'test' })).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+    await expect(provider.generate({ prompt: 'test' })).rejects.toMatchObject({
+      response: { message: 'AI_PROVIDER_SERVER_ERROR:503' },
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry Cloudflare authentication and permission errors', async () => {
+    mockJsonResponse(403, { errors: [{ message: 'missing permission' }] });
+
+    const provider = new CloudflareImageProvider();
+
+    await expect(provider.generate({ prompt: 'test' })).rejects.toMatchObject({
+      response: { message: 'AI_PROVIDER_PERMISSION_DENIED' },
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('fails before external call when credentials are missing', async () => {
