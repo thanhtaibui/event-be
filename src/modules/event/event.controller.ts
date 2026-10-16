@@ -138,8 +138,7 @@ export class EventController {
     return this.eventService.findOne(id);
   }
   @Get(':id/ticket-types')
-  @UseGuards(JwtGuard, PermissionsGuard)
-  @Permissions(PermissionCode.EVENT, PermissionCode.EVENT_VIEW)
+  @ApiOperation({ operationId: 'getPublicEventTicketTypes' })
   async getTicketTypes(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ApiResponse<TicketTypeDto[]>> {

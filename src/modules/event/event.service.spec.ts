@@ -1,10 +1,16 @@
 import { ForbiddenException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { Test } from '@nestjs/testing';
 import { paginate } from 'nestjs-paginate';
+import request from 'supertest';
+import { EventController } from './event.controller';
 import { EventService } from './event.service';
 import { EventStatus, OrganizationStatus } from 'src/shared/enum/enum';
 
 jest.mock('nestjs-paginate', () => ({
   paginate: jest.fn(),
+  ApiPaginationQuery: jest.fn(() => () => undefined),
+  Paginate: jest.fn(() => () => undefined),
   FilterOperator: {
     EQ: '$eq',
     GTE: '$gte',
@@ -270,6 +276,78 @@ describe('EventService create', () => {
       { organizationStatus: OrganizationStatus.ACTIVE },
     );
     expect(eventRepo.find).toHaveBeenCalled();
+  });
+
+  it('exposes event ticket types without authentication or permission guards', async () => {
+    const controllerGuards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      EventController.prototype.getTicketTypes,
+    );
+    const protectedEventListGuards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      EventController.prototype.findAll,
+    );
+
+    expect(controllerGuards).toBeUndefined();
+    expect(protectedEventListGuards).toHaveLength(2);
+  });
+
+  it('serves event ticket types over HTTP without an authorization header', async () => {
+    const eventId = '11111111-1111-4111-8111-111111111111';
+    const responseData = {
+      statusCode: 200,
+      message: 'Get Ticket Types of Event Successfully',
+      data: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Standard',
+          price: 100000,
+          quantity: 50,
+        },
+      ],
+    };
+    const eventService = {
+      getTicketTypes: jest.fn().mockResolvedValue(responseData),
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [EventController],
+      providers: [{ provide: EventService, useValue: eventService }],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+
+    try {
+      const response = await request(app.getHttpServer())
+        .get(`/events/${eventId}/ticket-types`)
+        .expect(200);
+
+      expect(response.body).toEqual(responseData);
+      expect(eventService.getTicketTypes).toHaveBeenCalledWith(eventId);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns ticket types for an event discovery request', async () => {
+    const { service, eventRepo } = createService();
+    const ticketTypes = [
+      {
+        id: 'ticket-type-1',
+        name: 'Standard',
+        price: 100000,
+        quantity: 50,
+      },
+    ];
+    eventRepo.findOne.mockResolvedValueOnce({
+      ...draftEvent,
+      status: EventStatus.PUBLISHED,
+      ticketTypes,
+    });
+
+    const result = await service.getTicketTypes(draftEvent.id);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.data).toEqual(ticketTypes);
   });
 
   it('publishes a draft event successfully', async () => {
