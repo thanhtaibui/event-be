@@ -3,10 +3,7 @@ import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AiService } from './ai.service';
 import { AiChatDto, AiChatMode, AiChatResponseDto } from './dto/ai-chat.dto';
-import {
-  AiAuthenticatedUser,
-  OptionalJwtGuard,
-} from './optional-jwt.guard';
+import { AiAuthenticatedUser, OptionalJwtGuard } from './optional-jwt.guard';
 
 type AiRequest = Request & {
   user?: AiAuthenticatedUser;
@@ -75,6 +72,12 @@ export class AiController {
     @Body() dto: AiChatDto,
     @Req() request: AiRequest,
   ): Promise<AiChatResponseDto> {
-    return this.aiService.chat(dto.message, dto.mode, request.user, dto.history);
+    return this.aiService.chat(
+      dto.message,
+      dto.mode,
+      request.user,
+      dto.history,
+      dto.imageContext,
+    );
   }
 }

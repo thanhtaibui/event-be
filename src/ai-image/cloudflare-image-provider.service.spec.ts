@@ -15,8 +15,7 @@ describe('CloudflareImageProvider', () => {
       ...originalEnv,
       CLOUDFLARE_ACCOUNT_ID: 'test-account',
       CLOUDFLARE_API_TOKEN: 'test-token',
-      CLOUDFLARE_IMAGE_GENERATION_MODEL:
-        '@cf/black-forest-labs/flux-1-schnell',
+      CLOUDFLARE_IMAGE_GENERATION_MODEL: '@cf/black-forest-labs/flux-1-schnell',
       CLOUDFLARE_IMAGE_EDIT_MODEL:
         '@cf/stabilityai/stable-diffusion-xl-base-1.0',
       CLOUDFLARE_IMAGE_INPAINT_MODEL:
@@ -44,9 +43,7 @@ describe('CloudflareImageProvider', () => {
     expect(result.buffer.toString()).toBe('generated');
     expect(result.mimeType).toBe('image/png');
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '/ai/run/%40cf/black-forest-labs/flux-1-schnell',
-      ),
+      expect.stringContaining('/ai/run/%40cf/black-forest-labs/flux-1-schnell'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -120,7 +117,9 @@ describe('CloudflareImageProvider', () => {
 
   it('normalizes Cloudflare free quota exhausted', async () => {
     expect.assertions(3);
-    mockJsonResponse(429, { errors: [{ message: 'daily neuron quota exhausted' }] });
+    mockJsonResponse(429, {
+      errors: [{ message: 'daily neuron quota exhausted' }],
+    });
 
     const provider = new CloudflareImageProvider();
 
@@ -131,6 +130,33 @@ describe('CloudflareImageProvider', () => {
         "AI image generation has reached today's free usage limit",
       );
     });
+  });
+
+  it('retries temporary Cloudflare capacity errors and succeeds', async () => {
+    mockJsonResponse(429, {
+      errors: [{ message: 'capacity temporarily exceeded' }],
+    });
+    mockJsonResponse(200, {
+      result: { image: Buffer.from('generated').toString('base64') },
+    });
+
+    const provider = new CloudflareImageProvider();
+    const result = await provider.generate({ prompt: 'valid prompt' });
+
+    expect(result.buffer.toString()).toBe('generated');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects oversized FLUX prompt before provider request', async () => {
+    process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS = '12';
+    const provider = new CloudflareImageProvider();
+
+    await expect(
+      provider.generate({ prompt: 'this is too long' }),
+    ).rejects.toMatchObject({
+      response: { message: 'AI_IMAGE_PROMPT_TOO_LONG' },
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('normalizes model unavailable', async () => {

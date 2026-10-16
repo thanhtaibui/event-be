@@ -33,9 +33,21 @@ export class AiPromptService {
       });
     }
 
-    return [result.prompt, result.negativePrompt]
+    const prompt = [result.prompt, result.negativePrompt]
       .filter(Boolean)
       .join('\n\nNegative prompt: ');
+    const maxCharacters = Math.max(
+      Number(process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS ?? 2048),
+      1,
+    );
+    if (prompt.length <= maxCharacters) {
+      return prompt;
+    }
+
+    return this.imagePromptGeneratorService.fitPromptToProviderLimit(
+      prompt,
+      maxCharacters,
+    );
   }
 
   generateImageEditInstruction(

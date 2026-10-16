@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  GatewayTimeoutException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -15,9 +16,11 @@ import {
   InpaintImageInput,
 } from './interfaces/ai-image-provider.interface';
 
-const CLOUDFLARE_TIMEOUT_MS = Number(
-  process.env.CLOUDFLARE_AI_TIMEOUT_MS ?? 60000,
+const CLOUDFLARE_TIMEOUT_MS = Math.max(
+  Number(process.env.CLOUDFLARE_AI_TIMEOUT_MS ?? 90000),
+  90000,
 );
+const CLOUDFLARE_MAX_RETRIES = 2;
 
 @Injectable()
 export class CloudflareImageProvider implements AiImageProvider {
@@ -31,6 +34,14 @@ export class CloudflareImageProvider implements AiImageProvider {
     const payload = {
       prompt: input.prompt,
     };
+
+    const maxPromptLength = Math.max(
+      Number(process.env.CLOUDFLARE_IMAGE_GENERATION_MAX_PROMPT_CHARS ?? 2048),
+      1,
+    );
+    if (input.prompt.length > maxPromptLength) {
+      throw new BadRequestException('AI_IMAGE_PROMPT_TOO_LONG');
+    }
 
     this.logger.log(`AI_IMAGE_GENERATE:cloudflare:${model}`);
     this.logger.log(
@@ -79,8 +90,6 @@ export class CloudflareImageProvider implements AiImageProvider {
   ): Promise<AiImageBuffer> {
     const accountId = this.getRequiredEnv('CLOUDFLARE_ACCOUNT_ID');
     const apiToken = this.getRequiredEnv('CLOUDFLARE_API_TOKEN');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CLOUDFLARE_TIMEOUT_MS);
     const modelPath = this.encodeModelPath(model);
     const cloudflareUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelPath}`;
 
@@ -88,35 +97,63 @@ export class CloudflareImageProvider implements AiImageProvider {
       `AI_IMAGE_PROVIDER_REQUEST:cloudflare:path=/client/v4/accounts/<account>/ai/run/${modelPath}:model=${model}:payloadKeys=${Object.keys(payload).join(',')}`,
     );
 
-    try {
-      const response = await fetch(cloudflareUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+    for (let attempt = 0; attempt <= CLOUDFLARE_MAX_RETRIES; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        CLOUDFLARE_TIMEOUT_MS,
+      );
+      try {
+        const response = await fetch(cloudflareUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        throw await this.normalizeCloudflareError(response);
+        if (!response.ok) {
+          const error = await this.normalizeCloudflareError(response);
+          if (this.isRetryable(error) && attempt < CLOUDFLARE_MAX_RETRIES) {
+            this.logger.warn(
+              `AI_IMAGE_PROVIDER_RETRY:cloudflare:model=${model}:attempt=${attempt + 1}:status=${error.getStatus()}`,
+            );
+            await this.delay(500 * (attempt + 1));
+            continue;
+          }
+          throw error;
+        }
+
+        return await this.normalizeImageResponse(response);
+      } catch (error) {
+        if (error instanceof HttpException) {
+          throw error;
+        }
+
+        const retryable =
+          (error instanceof Error && error.name === 'AbortError') ||
+          error instanceof TypeError;
+        const normalized =
+          error instanceof Error && error.name === 'AbortError'
+            ? new GatewayTimeoutException('AI_PROVIDER_TIMEOUT')
+            : new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
+
+        if (retryable && attempt < CLOUDFLARE_MAX_RETRIES) {
+          this.logger.warn(
+            `AI_IMAGE_PROVIDER_RETRY:cloudflare:model=${model}:attempt=${attempt + 1}:reason=${normalized.message}`,
+          );
+          await this.delay(500 * (attempt + 1));
+          continue;
+        }
+        throw normalized;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      return this.normalizeImageResponse(response);
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new ServiceUnavailableException('AI_PROVIDER_TIMEOUT');
-      }
-
-      throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
-    } finally {
-      clearTimeout(timeout);
     }
+
+    throw new ServiceUnavailableException('AI_PROVIDER_UNAVAILABLE');
   }
 
   private async normalizeImageResponse(
@@ -212,7 +249,6 @@ export class CloudflareImageProvider implements AiImageProvider {
     );
 
     if (
-      response.status === HttpStatus.TOO_MANY_REQUESTS ||
       normalizedBody.includes('quota') ||
       normalizedBody.includes('neuron') ||
       normalizedBody.includes('daily') ||
@@ -224,13 +260,19 @@ export class CloudflareImageProvider implements AiImageProvider {
       );
     }
 
+    if (response.status === HttpStatus.REQUEST_TIMEOUT) {
+      return new GatewayTimeoutException('AI_PROVIDER_TIMEOUT');
+    }
+
+    if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
+      return new ServiceUnavailableException('AI_PROVIDER_BUSY');
+    }
+
     if (
       response.status === HttpStatus.UNAUTHORIZED ||
       response.status === HttpStatus.FORBIDDEN
     ) {
-      return new ServiceUnavailableException(
-        'AI_PROVIDER_CONFIGURATION_ERROR',
-      );
+      return new ServiceUnavailableException('AI_PROVIDER_CONFIGURATION_ERROR');
     }
 
     if (
@@ -255,6 +297,22 @@ export class CloudflareImageProvider implements AiImageProvider {
     }
 
     return new BadGatewayException('AI_REQUEST_FAILED');
+  }
+
+  private isRetryable(error: HttpException): boolean {
+    if (error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+      return error.message === 'AI_PROVIDER_BUSY';
+    }
+    return [
+      HttpStatus.REQUEST_TIMEOUT,
+      HttpStatus.BAD_GATEWAY,
+      HttpStatus.SERVICE_UNAVAILABLE,
+      HttpStatus.GATEWAY_TIMEOUT,
+    ].includes(error.getStatus());
+  }
+
+  private async delay(milliseconds: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
   private getRequiredEnv(name: string): string {
@@ -285,7 +343,16 @@ export class CloudflareImageProvider implements AiImageProvider {
       return '<empty body>';
     }
 
-    return body.length > 2000 ? `${body.slice(0, 2000)}...<truncated>` : body;
+    const sanitized = body
+      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+      .replace(
+        /("(?:token|api_key|authorization)"\s*:\s*")[^"]+/gi,
+        '$1[REDACTED]',
+      )
+      .replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED_API_KEY]');
+    return sanitized.length > 2000
+      ? `${sanitized.slice(0, 2000)}...<truncated>`
+      : sanitized;
   }
 
   private getSize(ratio?: string): { width: number; height: number } {

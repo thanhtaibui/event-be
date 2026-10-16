@@ -14,6 +14,7 @@ describe('AiService', () => {
     const client = { chat: jest.fn() };
     const service = new AiService(
       client as unknown as AiClientService,
+      { edit: jest.fn() } as any,
       mockUserRepo() as any,
     );
 
@@ -29,6 +30,7 @@ describe('AiService', () => {
     };
     const service = new AiService(
       client as unknown as AiClientService,
+      { edit: jest.fn() } as any,
       mockUserRepo({
         id: 'user-1',
         email: 'tai@example.com',
@@ -55,7 +57,114 @@ describe('AiService', () => {
         fullName: 'Anh Tài Bùi',
       }),
       history,
+      undefined,
     );
+  });
+
+  it('edits the latest supplied preview and returns the replacement image', async () => {
+    const client = {
+      chat: jest
+        .fn()
+        .mockResolvedValueOnce({
+          type: 'text',
+          mode: 'image_edit_ready',
+          locale: 'vi',
+          sourceImageUrl: 'https://example.com/image-a.png',
+          editInstruction: 'Cho sân khấu lớn hơn',
+        })
+        .mockResolvedValueOnce({
+          type: 'text',
+          mode: 'image_edit_ready',
+          locale: 'vi',
+          sourceImageUrl: 'https://example.com/image-b.png',
+          editInstruction: 'Thêm laser',
+        }),
+    };
+    const imageService = {
+      edit: jest
+        .fn()
+        .mockResolvedValueOnce({
+          imageUrl: 'https://example.com/image-b.png',
+          status: 'preview',
+        })
+        .mockResolvedValueOnce({
+          imageUrl: 'https://example.com/image-c.png',
+          status: 'preview',
+        }),
+    };
+    const service = new AiService(
+      client as unknown as AiClientService,
+      imageService as any,
+      mockUserRepo({
+        id: 'user-1',
+        email: 'tai@example.com',
+        fullName: 'Anh Tài Bùi',
+        memberships: [],
+      }) as any,
+    );
+
+    const response = await service.chat(
+      'Cho sân khấu lớn hơn',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      { userId: 'user-1' },
+      [],
+      { currentImageUrl: 'https://example.com/image-a.png', ratio: '16:9' },
+    );
+
+    expect(imageService.edit).toHaveBeenCalledWith({
+      imageUrl: 'https://example.com/image-a.png',
+      description: 'Cho sân khấu lớn hơn',
+      ratio: '16:9',
+    });
+    expect(response).toMatchObject({
+      mode: 'image_edit_completed',
+      imageResult: {
+        imageUrl: 'https://example.com/image-b.png',
+        status: 'preview',
+      },
+    });
+
+    await service.chat(
+      'Thêm laser',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      { userId: 'user-1' },
+      [],
+      { currentImageUrl: 'https://example.com/image-b.png', ratio: '16:9' },
+    );
+    expect(imageService.edit).toHaveBeenLastCalledWith({
+      imageUrl: 'https://example.com/image-b.png',
+      description: 'Thêm laser',
+      ratio: '16:9',
+    });
+  });
+
+  it('does not execute edit without an authenticated user', async () => {
+    const client = {
+      chat: jest.fn().mockResolvedValue({
+        type: 'text',
+        mode: 'image_edit_ready',
+        locale: 'en',
+        sourceImageUrl: 'https://example.com/image.png',
+        editInstruction: 'Make it brighter',
+      }),
+    };
+    const imageService = { edit: jest.fn() };
+    const service = new AiService(
+      client as unknown as AiClientService,
+      imageService as any,
+      mockUserRepo() as any,
+    );
+
+    const response = await service.chat(
+      'Make it brighter',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      undefined,
+      [],
+      { currentImageUrl: 'https://example.com/image.png' },
+    );
+
+    expect(response.mode).toBe('image_edit_authentication_required');
+    expect(imageService.edit).not.toHaveBeenCalled();
   });
 
   function mockUserRepo(user?: unknown) {
@@ -305,7 +414,7 @@ describe('AiClientService', () => {
   });
 
   it('asks for image type when semantic intent is ambiguous', async () => {
-    mockSemanticResult('UNKNOWN', {});
+    mockSemanticResult('UNKNOWN', {}, 'CREATE');
 
     const result = await new AiClientService().chat(
       'Cho tôi cái ảnh đẹp đẹp',
@@ -316,6 +425,53 @@ describe('AiClientService', () => {
     expect(result.missingFields).toEqual(['imageIntent']);
     expect(result.options).toHaveLength(4);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes an edit request to the latest supplied image preview', async () => {
+    mockSemanticResult('EVENT_BANNER', {}, 'EDIT');
+    const result = await new AiClientService().chat(
+      'Cho sân khấu lớn hơn trong ảnh vừa rồi',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      undefined,
+      [],
+      {
+        currentImageUrl: 'https://event-be.onrender.com/tmp/latest.png',
+        imageType: 'EVENT_BANNER',
+        currentPrompt: 'A concert banner',
+      },
+    );
+
+    expect(result).toMatchObject({
+      mode: 'image_edit_ready',
+      intent: 'EDIT',
+      sourceImageUrl: 'https://event-be.onrender.com/tmp/latest.png',
+      editInstruction: 'Cho sân khấu lớn hơn trong ảnh vừa rồi',
+    });
+  });
+
+  it('requires a current image before editing', async () => {
+    mockSemanticResult('EVENT_BANNER', {}, 'EDIT');
+    const result = await new AiClientService().chat(
+      'Sửa ảnh này cho sáng hơn',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+    );
+
+    expect(result.mode).toBe('image_edit_context_required');
+    expect(result.intent).toBe('EDIT');
+  });
+
+  it('asks whether an ambiguous request means create or edit', async () => {
+    mockSemanticResult('UNKNOWN', {}, 'CLARIFY');
+    const result = await new AiClientService().chat(
+      'Làm lại đẹp hơn',
+      AiChatMode.IMAGE_PROMPT_BUILDER,
+      undefined,
+      [],
+      { currentImageUrl: 'https://event-be.onrender.com/tmp/latest.png' },
+    );
+
+    expect(result.mode).toBe('image_action_clarifying');
+    expect(result.intent).toBe('CLARIFY');
   });
 
   it.each([
@@ -580,13 +736,18 @@ describe('AiClientService', () => {
     );
   });
 
-  function mockSemanticResult(imageType: string, extractedData: object) {
+  function mockSemanticResult(
+    imageType: string,
+    extractedData: object,
+    action?: 'CREATE' | 'EDIT' | 'CLARIFY',
+  ) {
     mockFetchResponse(200, {
       choices: [
         {
           message: {
             content: JSON.stringify({
               intent: imageType === 'UNKNOWN' ? 'UNKNOWN' : 'IMAGE_CREATION',
+              action,
               imageType,
               extractedData,
             }),

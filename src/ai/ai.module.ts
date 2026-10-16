@@ -6,9 +6,10 @@ import { AiClientService } from './ai-client.service';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { OptionalJwtGuard } from './optional-jwt.guard';
+import { AiImageModule } from 'src/ai-image/ai-image.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User]), AiImageModule],
   controllers: [AiController],
   providers: [AiService, AiClientService, JwtService, OptionalJwtGuard],
 })

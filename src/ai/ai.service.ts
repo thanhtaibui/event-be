@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Repository } from 'typeorm';
 import { AiClientService } from './ai-client.service';
+import { AiImageService } from 'src/ai-image/ai-image.service';
+import { AiImageContextDto } from './dto/ai-chat.dto';
 import {
   AiChatHistoryMessageDto,
   AiChatMode,
@@ -16,6 +18,7 @@ export class AiService {
 
   constructor(
     private readonly aiClientService: AiClientService,
+    private readonly aiImageService: AiImageService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
@@ -25,6 +28,7 @@ export class AiService {
     mode: AiChatMode = AiChatMode.CHAT,
     user?: AiAuthenticatedUser,
     history?: AiChatHistoryMessageDto[],
+    imageContext?: AiImageContextDto,
   ): Promise<AiChatResponseDto> {
     const message = prompt?.trim();
     if (!message) {
@@ -33,7 +37,52 @@ export class AiService {
 
     const safeUserContext = await this.getSafeUserContext(user);
 
-    return this.aiClientService.chat(message, mode, safeUserContext, history);
+    const response = await this.aiClientService.chat(
+      message,
+      mode,
+      safeUserContext,
+      history,
+      imageContext,
+    );
+
+    if (response.mode !== 'image_edit_ready') {
+      return response;
+    }
+
+    if (!safeUserContext?.userId) {
+      const content =
+        response.locale === 'vi'
+          ? 'Bạn cần đăng nhập để chỉnh sửa ảnh.'
+          : 'Please sign in to edit this image.';
+      return {
+        ...response,
+        mode: 'image_edit_authentication_required',
+        sourceImageUrl: undefined,
+        editInstruction: undefined,
+        content,
+        message: content,
+      };
+    }
+
+    const imageResult = await this.aiImageService.edit({
+      imageUrl: response.sourceImageUrl,
+      description: response.editInstruction || message,
+      ratio: imageContext?.ratio,
+    });
+    const content =
+      response.locale === 'vi'
+        ? 'Đã chỉnh sửa ảnh. Bạn có thể tiếp tục yêu cầu chỉnh sửa trên ảnh mới.'
+        : 'Image edited. You can continue editing the latest image.';
+
+    return {
+      ...response,
+      mode: 'image_edit_completed',
+      imageResult,
+      sourceImageUrl: undefined,
+      editInstruction: undefined,
+      content,
+      message: content,
+    };
   }
 
   private async getSafeUserContext(

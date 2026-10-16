@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import { join } from 'path';
@@ -15,6 +16,7 @@ type UploadedImageResult = {
 
 @Injectable()
 export class ImageStorageService {
+  private readonly logger = new Logger(ImageStorageService.name);
   private readonly previewDir = join(process.cwd(), 'tmp', 'ai-images');
 
   constructor(private readonly uploadService: UploadService) {}
@@ -23,22 +25,41 @@ export class ImageStorageService {
     image: AiImageBuffer,
     fileNamePrefix: string,
   ): Promise<string> {
-    await fs.mkdir(this.previewDir, { recursive: true });
+    try {
+      await fs.mkdir(this.previewDir, { recursive: true });
 
-    const extension = this.getExtensionFromMimeType(image.mimeType);
-    const fileName = `${this.normalizeFileName(fileNamePrefix)}-${Date.now()}.${extension}`;
-    const filePath = join(this.previewDir, fileName);
+      const extension = this.getExtensionFromMimeType(image.mimeType);
+      const fileName = `${this.normalizeFileName(fileNamePrefix)}-${Date.now()}.${extension}`;
+      const filePath = join(this.previewDir, fileName);
 
-    await fs.writeFile(filePath, image.buffer);
+      await fs.writeFile(filePath, image.buffer);
 
-    return `${this.getPublicBaseUrl()}/tmp/ai-images/${fileName}`;
+      return `${this.getPublicBaseUrl()}/tmp/ai-images/${fileName}`;
+    } catch (error) {
+      this.logger.error(
+        `AI_IMAGE_PREVIEW_STORAGE_FAILED:${error instanceof Error ? error.name : 'UnknownError'}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException('AI_IMAGE_STORAGE_FAILED');
+    }
   }
 
   async saveImageToS3(imageUrl: string): Promise<string> {
-    const image = await this.readImageFromUrl(imageUrl);
-    const uploaded = await this.uploadResult(image, 'ai-saved-image');
+    try {
+      const image = await this.readImageFromUrl(imageUrl);
+      const uploaded = await this.uploadResult(image, 'ai-saved-image');
 
-    return uploaded.secure_url;
+      return uploaded.secure_url;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(
+        `AI_IMAGE_S3_UPLOAD_FAILED:${error instanceof Error ? error.name : 'UnknownError'}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException('AI_IMAGE_STORAGE_FAILED');
+    }
   }
 
   private async readImageFromUrl(imageUrl: string): Promise<AiImageBuffer> {

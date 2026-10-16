@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  BadGatewayException,
+  HttpException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import sharp from 'sharp';
 import {
   EditImageDto,
@@ -32,20 +38,33 @@ export class AiImageService {
 
   async generate(dto: GenerateImageDto) {
     const timer = 'POST_AI_IMAGE_GENERATE';
+    let stage = 'CHAT_PROMPT_GENERATION';
     console.time(timer);
     try {
       const prompt = await this.aiPromptService.generateReadyImagePrompt(
         dto.description,
         dto.ratio,
       );
+      stage = 'IMAGE_REQUEST_VALIDATION';
+      if (!prompt.trim()) {
+        throw new BadRequestException('INVALID_IMAGE_PROMPT');
+      }
+      stage = 'IMAGE_PROVIDER_REQUEST';
       const generatedImage = await this.cloudflareImageProvider.generate({
         prompt,
         ratio: dto.ratio,
       });
+      stage = 'IMAGE_PROVIDER_RESPONSE';
+      await this.validateImageBuffer(generatedImage, true);
+      stage = 'IMAGE_POST_PROCESSING';
       const image = await this.normalizeGeneratedImageRatio(
         generatedImage,
         dto.ratio,
       );
+      if (image !== generatedImage) {
+        await this.validateImageBuffer(image, true);
+      }
+      stage = 'IMAGE_STORAGE';
       const previewUrl = await this.imageStorageService.createPreviewImage(
         image,
         'ai-generated-image',
@@ -54,7 +73,7 @@ export class AiImageService {
       return this.toPreviewResponse(previewUrl);
     } catch (error) {
       this.logger.error(
-        `POST_AI_IMAGE_GENERATE_FAILED:${this.getErrorMessage(error)}`,
+        `POST_AI_IMAGE_GENERATE_FAILED:stage=${stage}:error=${this.getErrorCode(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
       throw error;
@@ -64,20 +83,26 @@ export class AiImageService {
   }
 
   async edit(dto: EditImageDto) {
-    const timer = dto.maskImageUrl ? 'POST_AI_IMAGE_INPAINT' : 'POST_AI_IMAGE_EDIT';
+    const timer = dto.maskImageUrl
+      ? 'POST_AI_IMAGE_INPAINT'
+      : 'POST_AI_IMAGE_EDIT';
+    let stage = 'IMAGE_REQUEST_VALIDATION';
     console.time(timer);
     try {
       const editPrompt = this.getEditPrompt(dto);
+      stage = 'IMAGE_SOURCE_LOAD';
       const sourceImage = await this.normalizeImageSource({
         imageUrl: dto.imageUrl,
         imageData: dto.imageData,
       });
+      stage = 'CHAT_PROMPT_GENERATION';
       const instruction =
         await this.aiPromptService.generateImageEditInstruction(
           editPrompt,
           dto.ratio,
         );
 
+      stage = 'IMAGE_PROVIDER_REQUEST';
       const image = dto.maskImageUrl
         ? await this.cloudflareImageProvider.inpaint({
             image: sourceImage,
@@ -97,12 +122,22 @@ export class AiImageService {
             strength: dto.strength,
           });
 
+      stage = 'IMAGE_PROVIDER_RESPONSE';
+      stage = 'IMAGE_POST_PROCESSING';
+      await this.validateImageBuffer(image, true);
+      stage = 'IMAGE_STORAGE';
       const previewUrl = await this.imageStorageService.createPreviewImage(
         image,
         dto.maskImageUrl ? 'ai-inpainted-image' : 'ai-edited-image',
       );
 
       return this.toPreviewResponse(previewUrl);
+    } catch (error) {
+      this.logger.error(
+        `POST_AI_IMAGE_EDIT_FAILED:stage=${stage}:error=${this.getErrorCode(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     } finally {
       console.timeEnd(timer);
     }
@@ -191,8 +226,17 @@ export class AiImageService {
 
     let response: globalThis.Response;
     try {
-      response = await fetch(imageUrl);
-    } catch {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        response = await fetch(imageUrl, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new BadRequestException('IMAGE_SOURCE_TIMEOUT');
+      }
       throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
 
@@ -246,7 +290,10 @@ export class AiImageService {
     }
   }
 
-  private async validateImageBuffer(image: AiImageBuffer): Promise<void> {
+  private async validateImageBuffer(
+    image: AiImageBuffer,
+    providerOutput = false,
+  ): Promise<void> {
     if (!this.isAllowedImageMimeType(image.mimeType)) {
       throw new BadRequestException('INVALID_IMAGE_SOURCE');
     }
@@ -256,6 +303,9 @@ export class AiImageService {
     try {
       await sharp(image.buffer).metadata();
     } catch {
+      if (providerOutput) {
+        throw new BadGatewayException('AI_IMAGE_PROCESSING_FAILED');
+      }
       throw new BadRequestException('INVALID_IMAGE_DATA');
     }
   }
@@ -316,23 +366,30 @@ export class AiImageService {
       return image;
     }
 
-    const croppedImage = await this.sharpImageProcessor.process({
-      image,
-      action: 'crop',
-      ratio,
-    });
-    const size = this.getGeneratedImageSize(ratio);
+    try {
+      const croppedImage = await this.sharpImageProcessor.process({
+        image,
+        action: 'crop',
+        ratio,
+      });
+      const size = this.getGeneratedImageSize(ratio);
 
-    return this.sharpImageProcessor.process({
-      image: croppedImage,
-      action: 'resize',
-      width: size.width,
-      height: size.height,
-      format: 'png',
-    });
+      return await this.sharpImageProcessor.process({
+        image: croppedImage,
+        action: 'resize',
+        width: size.width,
+        height: size.height,
+        format: 'png',
+      });
+    } catch {
+      throw new BadGatewayException('AI_IMAGE_PROCESSING_FAILED');
+    }
   }
 
-  private getGeneratedImageSize(ratio: string): { width: number; height: number } {
+  private getGeneratedImageSize(ratio: string): {
+    width: number;
+    height: number;
+  } {
     if (ratio === '1:1') {
       return { width: 1024, height: 1024 };
     }
@@ -343,15 +400,19 @@ export class AiImageService {
     return { width: 1024, height: 576 };
   }
 
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
+  private getErrorCode(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') {
+        return `HTTP_${error.getStatus()}:${response}`;
+      }
+      if (response && typeof response === 'object' && 'message' in response) {
+        const message = (response as { message?: unknown }).message;
+        return `HTTP_${error.getStatus()}:${typeof message === 'string' ? message : error.name}`;
+      }
+      return `HTTP_${error.getStatus()}:${error.name}`;
     }
-
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return String(error);
-    }
+    if (error instanceof Error) return error.name;
+    return 'UNKNOWN_ERROR';
   }
 }

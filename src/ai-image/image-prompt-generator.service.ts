@@ -116,6 +116,27 @@ export class ImagePromptGeneratorService {
     return this.parseJsonField(response, 'instruction');
   }
 
+  async fitPromptToProviderLimit(
+    prompt: string,
+    maxCharacters: number,
+  ): Promise<string> {
+    const response = await this.callGroq([
+      'Compress the image-generation prompt semantically to fit the exact character limit.',
+      `Maximum length: ${maxCharacters} characters including spaces.`,
+      'Return JSON only: {"prompt":"..."}.',
+      'Preserve event/product/organization names, key subject, date and location if present, audience, theme, style, palette, composition, ratio, and essential negative constraints.',
+      'Keep the source prompt language unchanged.',
+      'Remove repetition and decorative wording first. Do not replace specific facts with generic text. Do not truncate.',
+      '',
+      `Source prompt:\n${prompt}`,
+    ]);
+    const fitted = this.parseJsonField(response, 'prompt');
+    if (fitted.length > maxCharacters) {
+      throw new BadGatewayException('AI_IMAGE_PROMPT_TOO_LONG');
+    }
+    return fitted;
+  }
+
   private async callGroq(promptLines: string[]): Promise<string> {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
@@ -133,7 +154,10 @@ export class ImagePromptGeneratorService {
 
     this.logger.log(`AI_PROMPT_GENERATOR:groq:${model}`);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GROQ_PROMPT_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      GROQ_PROMPT_TIMEOUT_MS,
+    );
 
     try {
       const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
