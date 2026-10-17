@@ -62,3 +62,19 @@ export enum TicketStatus {
   USED = 'USED',
   CANCELLED = 'CANCELLED',
 }
+
+export enum OrderStatus {
+  PENDING_PAYMENT = 'PENDING_PAYMENT',
+  PAID = 'PAID',
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum PaymentStatus {
+  PENDING = 'PENDING',
+  PAID = 'PAID',
+  FAILED = 'FAILED',
+  EXPIRED = 'EXPIRED',
+  UNDERPAID = 'UNDERPAID',
+  OVERPAID = 'OVERPAID',
+}

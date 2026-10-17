@@ -7,9 +7,19 @@ import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { Event } from '../event/entities/event.entity';
+import { OrderItem } from './entities/order-item.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order, User, TicketType, Ticket, Event])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Order,
+      OrderItem,
+      User,
+      TicketType,
+      Ticket,
+      Event,
+    ]),
+  ],
   controllers: [OrderController],
   providers: [OrderService],
 })

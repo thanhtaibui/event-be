@@ -8,13 +8,18 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, LessThan, Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
-import { EventStatus, TicketStatus } from 'src/shared/enum/enum';
+import {
+  EventStatus,
+  OrderStatus,
+  OrganizationStatus,
+} from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
+import { OrderItem } from './entities/order-item.entity';
 
 const PURCHASABLE_EVENT_STATUSES = [
   EventStatus.PUBLISHED,
@@ -47,7 +52,7 @@ export class OrderService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
-    let orderId = '';
+    const orderIds: string[] = [];
     try {
       const manager = queryRunner.manager;
       const user = await manager.findOne(User, {
@@ -61,12 +66,13 @@ export class OrderService {
       const ticketTypeIds = createOrderDto.items.map(
         (item) => item.ticketTypeId,
       );
-      const uniqueTicketTypeIds = [...new Set(ticketTypeIds)];
+      const uniqueTicketTypeIds = [...new Set(ticketTypeIds)].sort();
       const ticketTypes = await manager
         .getRepository(TicketType)
         .createQueryBuilder('ticketType')
         .setLock('pessimistic_write')
         .innerJoinAndSelect('ticketType.event', 'event')
+        .innerJoinAndSelect('event.organization', 'organization')
         .where('ticketType.id IN (:...ticketTypeIds)', {
           ticketTypeIds: uniqueTicketTypeIds,
         })
@@ -86,7 +92,9 @@ export class OrderService {
       }
 
       const soldQuantityByTicketTypeId =
-        await this.getSoldQuantityByTicketTypeIds(
+        await this.getSoldQuantityByTicketTypeIds(uniqueTicketTypeIds, manager);
+      const reservedQuantityByTicketTypeId =
+        await this.getReservedQuantityByTicketTypeIds(
           uniqueTicketTypeIds,
           manager,
         );
@@ -95,41 +103,79 @@ export class OrderService {
         ticketTypes,
         requestedQuantityByTicketTypeId,
         soldQuantityByTicketTypeId,
+        reservedQuantityByTicketTypeId,
       );
 
       const ticketTypeMap = new Map(
         ticketTypes.map((ticketType) => [ticketType.id, ticketType]),
       );
 
-      const totalPrice = createOrderDto.items.reduce((total, item) => {
+      const groups = new Map<string, typeof createOrderDto.items>();
+      for (const item of createOrderDto.items) {
         const ticketType = ticketTypeMap.get(item.ticketTypeId);
-        if (!ticketType) {
-          throw new BadRequestException('Invalid ticket type');
+        const organization = ticketType?.event?.organization;
+        if (!ticketType || !organization) {
+          throw new BadRequestException(
+            'Ticket type has no valid organization',
+          );
         }
-        return total + ticketType.price * item.quantity;
-      }, 0);
+        if (organization.status !== OrganizationStatus.ACTIVE) {
+          throw new BadRequestException('Organization cannot receive orders');
+        }
+        groups.set(organization.id, [
+          ...(groups.get(organization.id) || []),
+          item,
+        ]);
+      }
 
-      const order = manager.create(Order, {
-        user,
-        totalPrice,
-      });
-      const savedOrder = await manager.save(Order, order);
-      orderId = savedOrder.id;
-
-      const tickets = createOrderDto.items.flatMap((item) => {
-        const ticketType = ticketTypeMap.get(item.ticketTypeId)!;
-        return Array.from({ length: item.quantity }, () =>
-          manager.create(Ticket, {
+      const expiresAt = new Date(
+        Date.now() + this.getPaymentExpiryMinutes() * 60_000,
+      );
+      for (const [organizationId, groupItems] of groups) {
+        const quantities = new Map<string, number>();
+        for (const item of groupItems) {
+          quantities.set(
+            item.ticketTypeId,
+            (quantities.get(item.ticketTypeId) || 0) + item.quantity,
+          );
+        }
+        const orderLines = Array.from(
+          quantities,
+          ([ticketTypeId, quantity]) => ({ ticketTypeId, quantity }),
+        );
+        const totalPrice = orderLines.reduce((total, item) => {
+          const ticketType = ticketTypeMap.get(item.ticketTypeId)!;
+          return total + Number(ticketType.price) * item.quantity;
+        }, 0);
+        if (!Number.isSafeInteger(totalPrice) || totalPrice <= 0) {
+          throw new BadRequestException(
+            'Order total must be a positive integer in VND',
+          );
+        }
+        const savedOrder = await manager.save(
+          Order,
+          manager.create(Order, {
             user,
-            ticketType,
-            order: savedOrder,
-            status: TicketStatus.VALID,
-            usedAt: null,
+            organization: { id: organizationId } as any,
+            totalPrice,
+            status: OrderStatus.PENDING_PAYMENT,
+            expiresAt,
           }),
         );
-      });
-
-      await manager.save(Ticket, tickets);
+        orderIds.push(savedOrder.id);
+        await manager.save(
+          OrderItem,
+          orderLines.map((item) => {
+            const ticketType = ticketTypeMap.get(item.ticketTypeId)!;
+            return manager.create(OrderItem, {
+              order: savedOrder,
+              ticketType,
+              quantity: item.quantity,
+              unitPrice: Number(ticketType.price),
+            });
+          }),
+        );
+      }
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -138,11 +184,15 @@ export class OrderService {
       await queryRunner.release();
     }
 
-    const savedOrder = await this.findOrderEntityById(orderId!);
+    const savedOrders = await Promise.all(
+      orderIds.map((id) => this.findOrderEntityById(id)),
+    );
     return Response(
       201,
       'Order created successfully',
-      this.toOrderDto(savedOrder),
+      savedOrders.length === 1
+        ? this.toOrderDto(savedOrders[0])
+        : { orders: savedOrders.map((order) => this.toOrderDto(order)) },
     );
   }
 
@@ -155,6 +205,9 @@ export class OrderService {
           'tickets',
           'tickets.ticketType',
           'tickets.ticketType.event',
+          'items',
+          'items.ticketType',
+          'organization',
         ],
         order: { createdAt: 'DESC' },
       });
@@ -197,11 +250,23 @@ export class OrderService {
         'tickets',
         'tickets.ticketType',
         'tickets.ticketType.event',
+        'items',
+        'items.ticketType',
+        'organization',
       ],
     });
 
     if (!order) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (
+      order.status === OrderStatus.PENDING_PAYMENT &&
+      order.expiresAt &&
+      order.expiresAt <= new Date()
+    ) {
+      order.status = OrderStatus.EXPIRED;
+      await this.orderRepo.save(order);
     }
 
     return order;
@@ -211,6 +276,11 @@ export class OrderService {
     return {
       id: order.id,
       totalPrice: order.totalPrice,
+      status: order.status,
+      expiresAt: order.expiresAt,
+      organization: order.organization
+        ? { id: order.organization.id, name: order.organization.name }
+        : null,
       createdAt: order.createdAt,
       user: {
         id: order.user?.id,
@@ -237,6 +307,14 @@ export class OrderService {
             }
           : null,
       })),
+      items: (order.items || []).map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        ticketType: item.ticketType
+          ? { id: item.ticketType.id, name: item.ticketType.name }
+          : null,
+      })),
     };
   }
 
@@ -256,12 +334,15 @@ export class OrderService {
     ticketTypes: TicketType[],
     requestedQuantityByTicketTypeId: Map<string, number>,
     soldQuantityByTicketTypeId: Map<string, number>,
+    reservedQuantityByTicketTypeId: Map<string, number>,
   ): Promise<void> {
     const now = new Date();
 
     for (const ticketType of ticketTypes) {
       if (!ticketType.event) {
-        throw new BadRequestException('Ticket type does not belong to an event');
+        throw new BadRequestException(
+          'Ticket type does not belong to an event',
+        );
       }
 
       await this.syncEventStatus(ticketType.event, now);
@@ -283,7 +364,10 @@ export class OrderService {
       const requestedQuantity =
         requestedQuantityByTicketTypeId.get(ticketType.id) || 0;
       const soldQuantity = soldQuantityByTicketTypeId.get(ticketType.id) || 0;
-      const availableQuantity = ticketType.quantity - soldQuantity;
+      const reservedQuantity =
+        reservedQuantityByTicketTypeId.get(ticketType.id) || 0;
+      const availableQuantity =
+        ticketType.quantity - soldQuantity - reservedQuantity;
 
       if (requestedQuantity > availableQuantity) {
         throw new BadRequestException(
@@ -291,6 +375,44 @@ export class OrderService {
         );
       }
     }
+  }
+
+  private async getReservedQuantityByTicketTypeIds(
+    ticketTypeIds: string[],
+    manager: EntityManager,
+  ): Promise<Map<string, number>> {
+    if (!ticketTypeIds.length) return new Map();
+    const now = new Date();
+    await manager
+      .getRepository(Order)
+      .update(
+        { status: OrderStatus.PENDING_PAYMENT, expiresAt: LessThan(now) },
+        { status: OrderStatus.EXPIRED },
+      );
+    const rows = await manager
+      .getRepository(OrderItem)
+      .createQueryBuilder('item')
+      .innerJoin('item.order', 'order')
+      .innerJoin('item.ticketType', 'ticketType')
+      .select('ticketType.id', 'ticketTypeId')
+      .addSelect('SUM(item.quantity)', 'reservedQuantity')
+      .where('ticketType.id IN (:...ticketTypeIds)', { ticketTypeIds })
+      .andWhere('order.status = :status', {
+        status: OrderStatus.PENDING_PAYMENT,
+      })
+      .andWhere('order.expiresAt > :now', { now })
+      .groupBy('ticketType.id')
+      .getRawMany<{ ticketTypeId: string; reservedQuantity: string }>();
+    return new Map(
+      rows.map((row) => [row.ticketTypeId, Number(row.reservedQuantity)]),
+    );
+  }
+
+  private getPaymentExpiryMinutes(): number {
+    const configured = Number(process.env.PAYMENT_EXPIRY_MINUTES);
+    return Number.isInteger(configured) && configured > 0 && configured <= 1440
+      ? configured
+      : 15;
   }
 
   private async getSoldQuantityByTicketTypeIds(

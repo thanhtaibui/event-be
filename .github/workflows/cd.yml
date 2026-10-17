@@ -5,16 +5,43 @@ on:
     workflows: ['Backend CI']
     branches: [main]
     types: [completed]
-  workflow_dispatch:
+
+concurrency:
+  group: backend-render-production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Render deploy
+      - name: Trigger Render deploy hook
         run: |
-          curl -fsSL -X POST "$RENDER_DEPLOY_HOOK_URL"
+          if [[ -z "$RENDER_DEPLOY_HOOK_URL" ]]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured"
+            exit 1
+          fi
+
+          set +e
+          http_status=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            --request POST "$RENDER_DEPLOY_HOOK_URL" 2>/dev/null)
+          curl_status=$?
+          set -e
+
+          if [[ $curl_status -ne 0 ]]; then
+            echo "::error::Could not contact the Render deploy hook (curl exit $curl_status)"
+            exit "$curl_status"
+          fi
+
+          if [[ "$http_status" == 2?? ]]; then
+            echo "Render accepted the deploy request (HTTP $http_status). This does not confirm deployment completion."
+          elif [[ "$http_status" == "409" ]]; then
+            echo "::error::Render rejected the deploy request (HTTP 409). Render documents this as a suspended service or a workspace that cannot trigger deploys; check the service and workspace settings."
+            exit 1
+          else
+            echo "::error::Render rejected the deploy request (HTTP $http_status)"
+            exit 1
+          fi
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
