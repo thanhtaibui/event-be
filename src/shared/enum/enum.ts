@@ -25,6 +25,7 @@ export enum OrganizationInvitationStatus {
   ACCEPTED = 'accepted',
   REJECTED = 'rejected',
   EXPIRED = 'expired',
+  REVOKED = 'revoked',
 }
 export enum RoleUser {
   USER = 'user',

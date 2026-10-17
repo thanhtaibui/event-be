@@ -89,7 +89,9 @@ export class MembershipService {
       );
     }
     if (!this.roleCanBeUsedInOrganization(role, organization.id)) {
-      throw new BadRequestException('Role does not belong to this organization');
+      throw new BadRequestException(
+        'Role does not belong to this organization',
+      );
     }
     await this.assertRoleAssignmentAllowed(role, organization.id, currentUser);
 
@@ -564,7 +566,27 @@ export class MembershipService {
       return true;
     }
 
-    return !role.organization && role.role_code?.trim().toUpperCase() === 'OWNER';
+    return (
+      !role.organization && role.role_code?.trim().toUpperCase() === 'OWNER'
+    );
+  }
+
+  async validateRoleAssignment(
+    role: Role,
+    orgId: string,
+    currentUser?: any,
+  ): Promise<void> {
+    if (isSuperAdminRole(role)) {
+      throw new ForbiddenException(
+        'SUPER_ADMIN system role cannot be assigned.',
+      );
+    }
+    if (!this.roleCanBeUsedInOrganization(role, orgId)) {
+      throw new BadRequestException(
+        'Role does not belong to this organization',
+      );
+    }
+    await this.assertRoleAssignmentAllowed(role, orgId, currentUser);
   }
 
   private async getAccessibleOrganizationIds(
@@ -675,7 +697,9 @@ export class MembershipService {
     );
 
     if (exceedsCurrentUserPermissions) {
-      throw new ForbiddenException('Cannot assign role beyond current permissions');
+      throw new ForbiddenException(
+        'Cannot assign role beyond current permissions',
+      );
     }
   }
 

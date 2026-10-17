@@ -8,6 +8,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { Role } from '../role/entities/role.entity';
 import { User } from '../user/entities/user.entity';
+import { MembershipModule } from '../membership/membership.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { User } from '../user/entities/user.entity';
       User,
     ]),
     MailerModule,
+    MembershipModule,
   ],
   controllers: [OrganizationInvitationController],
   providers: [OrganizationInvitationService],
