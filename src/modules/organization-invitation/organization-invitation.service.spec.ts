@@ -124,6 +124,10 @@ describe('OrganizationInvitationService security', () => {
       Membership,
       expect.objectContaining({ user: invitee, isActive: true }),
     );
+    await expect(
+      ctx.service.accept(invitation.id, inviteeUser, 'secret-token'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(ctx.manager.create).toHaveBeenCalledTimes(1);
   });
 
   it('accepts hashed tokens used by newly created invitations', async () => {
@@ -194,6 +198,10 @@ describe('OrganizationInvitationService security', () => {
     await resend.service.resend(org.id, retry.id, managerUser);
     expect(retry.token).toMatch(/^sha256:/);
     expect(resend.mailer.sendMail).toHaveBeenCalledTimes(1);
+    retry.status = OrganizationInvitationStatus.ACCEPTED;
+    await expect(
+      resend.service.resend(org.id, retry.id, managerUser),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('removes a new invitation if email delivery fails', async () => {
