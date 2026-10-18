@@ -40,10 +40,10 @@ export class Payment extends BaseEntity {
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
   status: PaymentStatus;
 
-  @Column({ nullable: true, unique: true, length: 120 })
+  @Column({ type: 'varchar', nullable: true, unique: true, length: 120 })
   providerTransactionId: string | null;
 
-  @Column({ nullable: true, length: 80 })
+  @Column({ type: 'varchar', nullable: true, length: 80 })
   provider: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
