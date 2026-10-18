@@ -1,9 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsUUID,
   Min,
   ValidateNested,
@@ -23,7 +24,8 @@ export class CreateOrderItemDto {
 }
 
 export class CreateOrderDto {
-  @ApiProperty({ example: 'uuid-user' })
+  @ApiPropertyOptional({ example: 'uuid-user' })
+  @IsOptional()
   @IsUUID('4', { message: 'User ID must be a valid UUID' })
   @IsNotEmpty({ message: 'User ID is required' })
   userId: string;
