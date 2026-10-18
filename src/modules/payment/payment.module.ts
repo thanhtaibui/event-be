@@ -9,9 +9,13 @@ import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Payment } from './entities/payment.entity';
 import { OrganizationPaymentAccount } from './entities/organization-payment-account.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
+import { PaymentWebhookReceipt } from './entities/payment-webhook-receipt.entity';
 import { PaymentController } from './payment.controller';
+import { SePayWebhookController } from './sepay-webhook.controller';
 import { PaymentService } from './payment.service';
 import { PaymentCryptoService } from './services/payment-crypto.service';
+import { SePayWebhookProvider } from './services/sepay-webhook.provider';
+import { SePayWebhookService } from './services/sepay-webhook.service';
 import { VietQrService } from './services/vietqr.service';
 
 @Module({
@@ -23,13 +27,20 @@ import { VietQrService } from './services/vietqr.service';
       Organization,
       OrganizationPaymentAccount,
       PaymentTransaction,
+      PaymentWebhookReceipt,
       Membership,
       Ticket,
       TicketType,
     ]),
   ],
-  controllers: [PaymentController],
-  providers: [PaymentService, PaymentCryptoService, VietQrService],
+  controllers: [PaymentController, SePayWebhookController],
+  providers: [
+    PaymentService,
+    PaymentCryptoService,
+    VietQrService,
+    SePayWebhookProvider,
+    SePayWebhookService,
+  ],
   exports: [PaymentService],
 })
 export class PaymentModule {}

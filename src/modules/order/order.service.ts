@@ -8,7 +8,14 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
-import { DataSource, EntityManager, In, LessThan, Repository } from 'typeorm';
+import {
+  Brackets,
+  DataSource,
+  EntityManager,
+  In,
+  LessThan,
+  Repository,
+} from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
@@ -20,6 +27,10 @@ import {
 } from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 import { OrderItem } from './entities/order-item.entity';
+import {
+  PaymentWebhookReceipt,
+  PaymentWebhookReceiptStatus,
+} from '../payment/entities/payment-webhook-receipt.entity';
 
 const PURCHASABLE_EVENT_STATUSES = [
   EventStatus.PUBLISHED,
@@ -383,6 +394,13 @@ export class OrderService {
   ): Promise<Map<string, number>> {
     if (!ticketTypeIds.length) return new Map();
     const now = new Date();
+    const reconciliationOrders = manager
+      .createQueryBuilder()
+      .subQuery()
+      .select('receipt.orderId')
+      .from(PaymentWebhookReceipt, 'receipt')
+      .where('receipt.status IN (:...reconciliationStatuses)')
+      .getQuery();
     await manager
       .getRepository(Order)
       .update(
@@ -397,10 +415,25 @@ export class OrderService {
       .select('ticketType.id', 'ticketTypeId')
       .addSelect('SUM(item.quantity)', 'reservedQuantity')
       .where('ticketType.id IN (:...ticketTypeIds)', { ticketTypeIds })
-      .andWhere('order.status = :status', {
-        status: OrderStatus.PENDING_PAYMENT,
-      })
-      .andWhere('order.expiresAt > :now', { now })
+      .andWhere(
+        new Brackets((query) => {
+          query
+            .where('(order.status = :status AND order.expiresAt > :now)', {
+              status: OrderStatus.PENDING_PAYMENT,
+              now,
+            })
+            .orWhere(
+              `(order.status != :paidStatus AND order.id IN ${reconciliationOrders})`,
+              {
+                reconciliationStatuses: [
+                  PaymentWebhookReceiptStatus.RECEIVED,
+                  PaymentWebhookReceiptStatus.RECONCILIATION_REQUIRED,
+                ],
+                paidStatus: OrderStatus.PAID,
+              },
+            );
+        }),
+      )
       .groupBy('ticketType.id')
       .getRawMany<{ ticketTypeId: string; reservedQuantity: string }>();
     return new Map(

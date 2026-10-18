@@ -5,7 +5,7 @@ import { Order } from '../order/entities/order.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { OrderStatus, PaymentStatus } from '../../shared/enum/enum';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PermissionCode } from '../../common/constants/permission-codes';
 
 describe('PaymentService verified transfer processing', () => {
@@ -102,6 +102,7 @@ describe('PaymentService verified transfer processing', () => {
       amount: 150000,
       receivingAccountNumber: '0123456789',
       occurredAt: new Date(),
+      transferType: 'in',
     };
     const first = await h.service.processVerifiedTransfer(
       'test-adapter',
@@ -131,10 +132,27 @@ describe('PaymentService verified transfer processing', () => {
       amount: 50000,
       receivingAccountNumber: '0123456789',
       occurredAt: new Date(),
+      transferType: 'in',
     });
     expect(h.payment.status).toBe(PaymentStatus.UNDERPAID);
     expect(h.order.status).toBe(OrderStatus.PENDING_PAYMENT);
     expect(result.statusCode).toBe(202);
+    expect(h.manager.save).not.toHaveBeenCalledWith(Ticket, expect.anything());
+  });
+
+  it('rejects a transfer to a different receiving account without issuing tickets', async () => {
+    const h = makeHarness();
+    await expect(
+      h.service.processVerifiedTransfer('test-adapter', {
+        transactionId: 'bank-tx-wrong-account',
+        reference: 'EVT123456',
+        amount: 150000,
+        receivingAccountNumber: '9999999999',
+        occurredAt: new Date(),
+        transferType: 'in',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(h.payment.status).toBe(PaymentStatus.PENDING);
     expect(h.manager.save).not.toHaveBeenCalledWith(Ticket, expect.anything());
   });
 

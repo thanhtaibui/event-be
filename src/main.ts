@@ -9,7 +9,7 @@ import { join } from 'path';
 import { runQaResetOnStartupIfRequested } from './common/qa-db-reset';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const port = Number(process.env.PORT ?? 3000);
   const serverUrl =
     process.env.API_URL ||

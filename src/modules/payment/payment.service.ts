@@ -312,6 +312,7 @@ export class PaymentService {
       !providerName ||
       !transfer?.transactionId ||
       !transfer.reference ||
+      transfer.transferType !== 'in' ||
       !Number.isSafeInteger(transfer.amount) ||
       transfer.amount <= 0 ||
       !transfer.receivingAccountNumber ||
