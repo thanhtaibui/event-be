@@ -27,7 +27,8 @@ export class PaymentController {
   @Put('organizations/:organizationId/payment-account')
   @Permissions(PermissionCode.ORGANIZATION_UPDATE)
   @ApiOperation({
-    summary: 'Configure an organization VietQR receiving account',
+    summary:
+      'Configure an organization receiving account and get verification instructions',
   })
   upsertOrganizationAccount(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

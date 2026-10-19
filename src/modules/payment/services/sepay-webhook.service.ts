@@ -3,9 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
+import {
+  OrganizationPaymentAccount,
+  PaymentAccountVerificationStatus,
+} from '../entities/organization-payment-account.entity';
 import {
   PaymentWebhookReceipt,
   PaymentWebhookReceiptStatus,
@@ -15,6 +19,7 @@ import {
   VerifiedBankTransfer,
 } from '../payment-verification.provider';
 import { PaymentService } from '../payment.service';
+import { PaymentCryptoService } from './payment-crypto.service';
 
 @Injectable()
 export class SePayWebhookService {
@@ -23,7 +28,9 @@ export class SePayWebhookService {
     private readonly receiptRepo: Repository<PaymentWebhookReceipt>,
     @InjectRepository(Payment)
     private readonly paymentRepo: Repository<Payment>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly paymentService: PaymentService,
+    private readonly crypto: PaymentCryptoService,
   ) {}
 
   async handleVerifiedTransfer(transfer: SePayWebhookNotification) {
@@ -34,8 +41,13 @@ export class SePayWebhookService {
       return { success: true };
     }
 
+    const isVerificationTransfer = this.isVerificationReference(
+      transfer.reference,
+    );
     const payment =
-      transfer.transferType === 'in' && transfer.reference
+      !isVerificationTransfer &&
+      transfer.transferType === 'in' &&
+      transfer.reference
         ? await this.paymentRepo.findOne({
             where: { reference: transfer.reference },
             relations: ['order'],
@@ -78,6 +90,11 @@ export class SePayWebhookService {
     const incompleteReason = this.getIncompleteReason(transfer);
     if (incompleteReason) {
       await this.markForReconciliation(receipt, incompleteReason);
+      return { success: true };
+    }
+
+    if (isVerificationTransfer) {
+      await this.processOrganizationAccountVerification(receipt, transfer);
       return { success: true };
     }
 
@@ -145,6 +162,81 @@ export class SePayWebhookService {
       return 'Transfer is not an incoming payment';
     }
     return null;
+  }
+
+  private isVerificationReference(reference: string | null): boolean {
+    return !!reference && /^EVV[A-F0-9]{12}$/i.test(reference);
+  }
+
+  private async processOrganizationAccountVerification(
+    receipt: PaymentWebhookReceipt,
+    transfer: SePayWebhookNotification,
+  ): Promise<void> {
+    if (transfer.transferType !== 'in') {
+      await this.markForReconciliation(
+        receipt,
+        'Verification transfer is not incoming',
+      );
+      return;
+    }
+    if (transfer.amount !== 1000) {
+      await this.markForReconciliation(
+        receipt,
+        'Verification transfer amount does not match the requested amount',
+      );
+      return;
+    }
+
+    const outcome = await this.dataSource.transaction(async (manager) => {
+      const accountRepository = manager.getRepository(
+        OrganizationPaymentAccount,
+      );
+      const account = await accountRepository.findOne({
+        where: { verificationReference: transfer.reference! },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!account) return 'REFERENCE_NOT_FOUND' as const;
+      if (
+        account.verificationStatus !== PaymentAccountVerificationStatus.PENDING
+      ) {
+        return 'NOT_PENDING' as const;
+      }
+
+      const expectedAccountNumber = this.crypto.decrypt(
+        account.accountNumberEncrypted,
+        account.accountNumberIv,
+        account.accountNumberTag,
+      );
+      if (transfer.receivingAccountNumber !== expectedAccountNumber) {
+        return 'ACCOUNT_MISMATCH' as const;
+      }
+
+      account.verificationStatus = PaymentAccountVerificationStatus.VERIFIED;
+      account.verifiedAccountName = null;
+      account.verifiedAt = new Date();
+      account.verificationProvider = 'SEPAY';
+      account.verificationFailureReason = null;
+      await accountRepository.save(account);
+      return 'VERIFIED' as const;
+    });
+
+    if (outcome === 'VERIFIED' || outcome === 'NOT_PENDING') {
+      receipt.status = PaymentWebhookReceiptStatus.PROCESSED;
+      receipt.reconciliationReason =
+        outcome === 'NOT_PENDING'
+          ? 'Verification reference was already processed'
+          : null;
+      await this.receiptRepo.save(receipt);
+      return;
+    }
+
+    const reasonByOutcome = {
+      REFERENCE_NOT_FOUND:
+        'No organization account matches the verification reference',
+      ACCOUNT_MISMATCH:
+        'Verification transfer receiving account does not match',
+    } as const;
+    await this.markForReconciliation(receipt, reasonByOutcome[outcome]);
   }
 
   private async markForReconciliation(

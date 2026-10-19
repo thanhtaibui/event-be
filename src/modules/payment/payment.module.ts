@@ -17,7 +17,6 @@ import { PaymentCryptoService } from './services/payment-crypto.service';
 import { SePayWebhookProvider } from './services/sepay-webhook.provider';
 import { SePayWebhookService } from './services/sepay-webhook.service';
 import { VietQrService } from './services/vietqr.service';
-import { VietQrAccountLookupService } from './services/vietqr-account-lookup.service';
 
 @Module({
   imports: [
@@ -41,7 +40,6 @@ import { VietQrAccountLookupService } from './services/vietqr-account-lookup.ser
     VietQrService,
     SePayWebhookProvider,
     SePayWebhookService,
-    VietQrAccountLookupService,
   ],
   exports: [PaymentService],
 })

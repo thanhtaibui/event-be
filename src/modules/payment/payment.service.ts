@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, MoreThan, Repository } from 'typeorm';
@@ -29,7 +28,6 @@ import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-payment-account.dto';
 import { PaymentCryptoService } from './services/payment-crypto.service';
 import { VietQrService } from './services/vietqr.service';
-import { VietQrAccountLookupService } from './services/vietqr-account-lookup.service';
 import { randomBytes } from 'crypto';
 import { VerifiedBankTransfer } from './payment-verification.provider';
 
@@ -48,8 +46,9 @@ export class PaymentService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly crypto: PaymentCryptoService,
     private readonly vietQr: VietQrService,
-    private readonly accountLookup: VietQrAccountLookupService,
   ) {}
+
+  private static readonly ORGANIZATION_ACCOUNT_VERIFICATION_AMOUNT = 1000;
 
   async upsertOrganizationAccount(
     organizationId: string,
@@ -112,55 +111,15 @@ export class PaymentService {
         verifiedAt: null,
         verificationProvider: null,
         verificationFailureReason: null,
+        verificationReference: `EVV${randomBytes(6).toString('hex').toUpperCase()}`,
       });
 
-      // Commit as unusable before network lookup; provider failure cannot leave
-      // new bank details carrying the old VERIFIED state.
       return accountRepository.save(pendingAccount);
     });
-    let lookupResult;
-    try {
-      lookupResult = await this.accountLookup.lookupAccount(
-        dto.bankBin,
-        dto.accountNumber,
-      );
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        account.verificationStatus = PaymentAccountVerificationStatus.FAILED;
-        account.verificationFailureReason = 'Bank account lookup was rejected';
-        await this.accountRepo.save(account);
-      } else if (error instanceof ServiceUnavailableException) {
-        account.verificationFailureReason =
-          'Verification provider unavailable; retry required';
-        await this.accountRepo.save(account);
-      }
-      throw error;
-    }
-
-    if (
-      this.normalizeAccountName(dto.accountName) !==
-      this.normalizeAccountName(lookupResult.accountName)
-    ) {
-      account.verificationStatus = PaymentAccountVerificationStatus.FAILED;
-      account.verificationFailureReason = 'Account holder name did not match';
-      await this.accountRepo.save(account);
-      throw new BadRequestException({
-        code: 'BANK_ACCOUNT_NAME_MISMATCH',
-        message: 'The account holder name does not match the bank record',
-      });
-    }
-
-    account.bankName = lookupResult.bankName;
-    account.verificationStatus = PaymentAccountVerificationStatus.VERIFIED;
-    account.verifiedAccountName = lookupResult.accountName;
-    account.verifiedAt = new Date();
-    account.verificationProvider = 'VIETQR';
-    account.verificationFailureReason = null;
-    const saved = await this.accountRepo.save(account);
     return Response(
       200,
-      'Organization payment account verified and saved successfully',
-      this.toMaskedAccount(saved),
+      'Organization receiving account saved; complete the SePay transfer verification',
+      this.toMaskedAccount(account),
     );
   }
 
@@ -565,10 +524,27 @@ export class PaymentService {
       accountNumber: this.maskAccountNumber(accountNumber),
       maskedAccountNumber: this.maskAccountNumber(accountNumber),
       verificationStatus: account.verificationStatus,
-      verifiedAccountName:
-        account.verificationStatus === PaymentAccountVerificationStatus.VERIFIED
-          ? account.verifiedAccountName
+      verificationReference:
+        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
+          ? account.verificationReference
           : null,
+      verificationAmount:
+        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
+          ? PaymentService.ORGANIZATION_ACCOUNT_VERIFICATION_AMOUNT
+          : null,
+      verificationMethod:
+        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
+          ? 'SEPAY_TRANSFER'
+          : null,
+      verificationScope: 'RECEIVING_ACCOUNT_CONFIRMED_BY_SEPAY_TRANSFER',
+      verificationProvider: account.verificationProvider,
+      verificationInstructions:
+        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
+          ? 'Transfer exactly 1000 VND to this receiving account and include the verification reference as the transfer content.'
+          : null,
+      paymentChannelVerificationStatus: account.verificationStatus,
+      beneficiaryNameVerificationStatus: 'NOT_VERIFIED_BY_BANK',
+      verifiedAccountName: null,
       verifiedAt: account.verifiedAt,
       verificationFailureReason: account.verificationFailureReason,
     };
@@ -589,16 +565,6 @@ export class PaymentService {
         'Organization receiving bank account must be verified before payment',
       );
     }
-  }
-
-  private normalizeAccountName(value: string): string {
-    return value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[đĐ]/g, 'D')
-      .trim()
-      .replace(/\s+/g, ' ')
-      .toLocaleUpperCase('vi-VN');
   }
 
   private maskAccountNumber(value: string): string {

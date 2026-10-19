@@ -42,6 +42,9 @@ export class OrganizationPaymentAccount extends BaseEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   verificationFailureReason: string | null;
 
+  @Column({ type: 'varchar', length: 15, unique: true, nullable: true })
+  verificationReference: string | null;
+
   @Column({ type: 'text' })
   accountNumberEncrypted: string;
 

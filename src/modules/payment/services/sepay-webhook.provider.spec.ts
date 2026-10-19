@@ -52,6 +52,25 @@ describe('SePayWebhookProvider', () => {
     expect(result.payloadSha256).toHaveLength(64);
   });
 
+  it('extracts organization verification references from SePay transfer content', async () => {
+    const body = Buffer.from(
+      JSON.stringify({
+        id: 92705,
+        transactionDate: '2026-10-18 11:08:33',
+        accountNumber: '1017588888',
+        code: null,
+        content: 'EVVABCDEF123456 xac minh tai khoan',
+        transferType: 'in',
+        transferAmount: 1000,
+      }),
+    );
+    const result = await provider.verifyNotification(signedHeaders(body), body);
+    expect(result.reference).toBe('EVVABCDEF123456');
+    expect(result.transferType).toBe('in');
+    expect(result.amount).toBe(1000);
+    expect(result.receivingAccountNumber).toBe('1017588888');
+  });
+
   it('rejects a forged signature and stale timestamp', async () => {
     const body = Buffer.from('{}');
     await expect(

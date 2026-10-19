@@ -111,12 +111,12 @@ export class SePayWebhookProvider implements PaymentVerificationProvider {
   }
 
   private paymentReference(code: unknown, content: unknown): string | null {
-    const validReference = /^EVT[A-F0-9]{12}$/i;
+    const validReference = /^(?:EVT|EVV)[A-F0-9]{12}$/i;
     if (typeof code === 'string' && validReference.test(code.trim())) {
       return code.trim().toUpperCase();
     }
     if (typeof content !== 'string') return null;
-    const match = content.match(/\bEVT[A-F0-9]{12}\b/i);
+    const match = content.match(/\b(?:EVT|EVV)[A-F0-9]{12}\b/i);
     return match?.[0]?.toUpperCase() ?? null;
   }
 
