@@ -26,8 +26,10 @@ import {
 } from './entities/organization-payment-account.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-payment-account.dto';
+import { LookupOrganizationPaymentAccountDto } from './dto/lookup-organization-payment-account.dto';
 import { PaymentCryptoService } from './services/payment-crypto.service';
 import { VietQrService } from './services/vietqr.service';
+import { PaymentAccountVerificationService } from './services/payment-account-verification.service';
 import { randomBytes } from 'crypto';
 import { VerifiedBankTransfer } from './payment-verification.provider';
 
@@ -46,9 +48,8 @@ export class PaymentService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly crypto: PaymentCryptoService,
     private readonly vietQr: VietQrService,
+    private readonly accountVerification: PaymentAccountVerificationService,
   ) {}
-
-  private static readonly ORGANIZATION_ACCOUNT_VERIFICATION_AMOUNT = 1000;
 
   async upsertOrganizationAccount(
     organizationId: string,
@@ -56,22 +57,24 @@ export class PaymentService {
     currentUser: any,
   ): Promise<ApiResponse<any>> {
     await this.assertCanManageOrganization(organizationId, currentUser);
-    const organization = await this.organizationRepo.findOne({
-      where: { id: organizationId },
-    });
-    if (!organization) throw new NotFoundException('Organization not found');
-    if (
-      [
-        OrganizationStatus.SUSPENDED,
-        OrganizationStatus.ARCHIVED,
-        OrganizationStatus.REJECTED,
-      ].includes(organization.status)
-    ) {
-      throw new BadRequestException(
-        'This organization cannot configure receiving payments',
-      );
+    const organization =
+      await this.getReceivingAccountOrganization(organizationId);
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
     }
-    const encrypted = this.crypto.encrypt(dto.accountNumber);
+    const input = {
+      bankBin: dto.bankBin.trim(),
+      accountNumber: dto.accountNumber.trim(),
+    };
+    const verification = this.accountVerification.verifyConfirmation({
+      organizationId,
+      userId: currentUser.userId,
+      bankBin: input.bankBin,
+      accountNumber: input.accountNumber,
+      verificationToken: dto.verificationToken,
+    });
+
+    const encrypted = this.crypto.encrypt(input.accountNumber);
     const account = await this.dataSource.transaction(async (manager) => {
       const accountRepository = manager.getRepository(
         OrganizationPaymentAccount,
@@ -97,30 +100,52 @@ export class PaymentService {
         );
       }
 
-      const pendingAccount = accountRepository.create({
+      const verifiedAccount = accountRepository.create({
         ...(existingAccount || {}),
         organization,
-        bankBin: dto.bankBin,
-        bankName: dto.bankName,
-        accountName: dto.accountName,
+        bankBin: input.bankBin,
+        bankName: verification.bankName,
+        accountName: verification.accountName,
         accountNumberEncrypted: encrypted.encrypted,
         accountNumberIv: encrypted.iv,
         accountNumberTag: encrypted.tag,
-        verificationStatus: PaymentAccountVerificationStatus.PENDING,
-        verifiedAccountName: null,
-        verifiedAt: null,
-        verificationProvider: null,
+        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: verification.accountName,
+        verifiedAt: new Date(),
+        verificationProvider: 'VIETQR_LOOKUP',
         verificationFailureReason: null,
-        verificationReference: `EVV${randomBytes(6).toString('hex').toUpperCase()}`,
+        verificationReference: null,
       });
 
-      return accountRepository.save(pendingAccount);
+      return accountRepository.save(verifiedAccount);
     });
     return Response(
       200,
-      'Organization receiving account saved; complete the SePay transfer verification',
+      'Organization payment account verified and saved successfully',
       this.toMaskedAccount(account),
     );
+  }
+
+  async lookupOrganizationAccount(
+    organizationId: string,
+    dto: LookupOrganizationPaymentAccountDto,
+    currentUser: any,
+  ): Promise<ApiResponse<any>> {
+    await this.assertCanManageOrganization(organizationId, currentUser);
+    await this.getReceivingAccountOrganization(organizationId);
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+    const result = await this.accountVerification.lookup({
+      organizationId,
+      userId: currentUser.userId,
+      bankBin: dto.bankBin.trim(),
+      accountNumber: dto.accountNumber.trim(),
+    });
+    return Response(200, 'Bank beneficiary lookup successful', {
+      valid: true,
+      ...result,
+    });
   }
 
   async getOrganizationAccount(
@@ -517,35 +542,37 @@ export class PaymentService {
       account.accountNumberIv,
       account.accountNumberTag,
     );
+    const isVerified = this.isVerifiedForPayments(account);
     return {
       bankBin: account.bankBin,
       bankName: account.bankName,
       accountName: account.accountName,
       accountNumber: this.maskAccountNumber(accountNumber),
       maskedAccountNumber: this.maskAccountNumber(accountNumber),
-      verificationStatus: account.verificationStatus,
-      verificationReference:
-        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
-          ? account.verificationReference
-          : null,
-      verificationAmount:
-        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
-          ? PaymentService.ORGANIZATION_ACCOUNT_VERIFICATION_AMOUNT
-          : null,
-      verificationMethod:
-        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
-          ? 'SEPAY_TRANSFER'
-          : null,
-      verificationScope: 'RECEIVING_ACCOUNT_CONFIRMED_BY_SEPAY_TRANSFER',
+      verificationStatus:
+        account.verificationStatus ===
+          PaymentAccountVerificationStatus.VERIFIED && !isVerified
+          ? PaymentAccountVerificationStatus.PENDING
+          : account.verificationStatus,
       verificationProvider: account.verificationProvider,
-      verificationInstructions:
-        account.verificationStatus === PaymentAccountVerificationStatus.PENDING
-          ? 'Transfer exactly 1000 VND to this receiving account and include the verification reference as the transfer content.'
-          : null,
-      paymentChannelVerificationStatus: account.verificationStatus,
-      beneficiaryNameVerificationStatus: 'NOT_VERIFIED_BY_BANK',
-      verifiedAccountName: null,
-      verifiedAt: account.verifiedAt,
+      verificationMethod:
+        account.verificationProvider === 'VIETQR_LOOKUP'
+          ? 'VIETQR_ACCOUNT_LOOKUP'
+          : account.verificationProvider === 'VIETQR'
+            ? 'LEGACY_VIETQR_ACCOUNT_LOOKUP'
+            : null,
+      verificationScope: ['VIETQR_LOOKUP', 'VIETQR'].includes(
+        account.verificationProvider || '',
+      )
+        ? 'BANK_ACCOUNT_LOOKUP'
+        : null,
+      beneficiaryNameVerificationStatus: ['VIETQR_LOOKUP', 'VIETQR'].includes(
+        account.verificationProvider || '',
+      )
+        ? 'VERIFIED_BY_LOOKUP_PROVIDER'
+        : 'NOT_VERIFIED_BY_BANK',
+      verifiedAccountName: isVerified ? account.verifiedAccountName : null,
+      verifiedAt: isVerified ? account.verifiedAt : null,
       verificationFailureReason: account.verificationFailureReason,
     };
   }
@@ -558,13 +585,43 @@ export class PaymentService {
         'Organization receiving bank account is not configured',
       );
     }
-    if (
-      account.verificationStatus !== PaymentAccountVerificationStatus.VERIFIED
-    ) {
+    if (!this.isVerifiedForPayments(account)) {
       throw new BadRequestException(
-        'Organization receiving bank account must be verified before payment',
+        'Organization receiving bank account must be verified by Eventix before payment',
       );
     }
+  }
+
+  private isVerifiedForPayments(
+    account: OrganizationPaymentAccount | null,
+  ): account is OrganizationPaymentAccount {
+    return !!(
+      account?.verificationStatus ===
+        PaymentAccountVerificationStatus.VERIFIED &&
+      account.verifiedAccountName?.trim() &&
+      ['VIETQR_LOOKUP', 'VIETQR'].includes(account.verificationProvider || '')
+    );
+  }
+
+  private async getReceivingAccountOrganization(
+    organizationId: string,
+  ): Promise<Organization> {
+    const organization = await this.organizationRepo.findOne({
+      where: { id: organizationId },
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+    if (
+      [
+        OrganizationStatus.SUSPENDED,
+        OrganizationStatus.ARCHIVED,
+        OrganizationStatus.REJECTED,
+      ].includes(organization.status)
+    ) {
+      throw new BadRequestException(
+        'This organization cannot configure receiving payments',
+      );
+    }
+    return organization;
   }
 
   private maskAccountNumber(value: string): string {

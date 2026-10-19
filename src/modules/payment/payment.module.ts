@@ -10,6 +10,7 @@ import { Payment } from './entities/payment.entity';
 import { OrganizationPaymentAccount } from './entities/organization-payment-account.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { PaymentWebhookReceipt } from './entities/payment-webhook-receipt.entity';
+import { BankAccountLookupProvider } from './bank-account-lookup.provider';
 import { PaymentController } from './payment.controller';
 import { SePayWebhookController } from './sepay-webhook.controller';
 import { PaymentService } from './payment.service';
@@ -17,6 +18,9 @@ import { PaymentCryptoService } from './services/payment-crypto.service';
 import { SePayWebhookProvider } from './services/sepay-webhook.provider';
 import { SePayWebhookService } from './services/sepay-webhook.service';
 import { VietQrService } from './services/vietqr.service';
+import { PaymentAccountVerificationService } from './services/payment-account-verification.service';
+import { PaymentAccountLookupTokenService } from './services/payment-account-lookup-token.service';
+import { VietQrAccountLookupProvider } from './services/vietqr-account-lookup.provider';
 
 @Module({
   imports: [
@@ -38,6 +42,12 @@ import { VietQrService } from './services/vietqr.service';
     PaymentService,
     PaymentCryptoService,
     VietQrService,
+    PaymentAccountVerificationService,
+    PaymentAccountLookupTokenService,
+    {
+      provide: BankAccountLookupProvider,
+      useClass: VietQrAccountLookupProvider,
+    },
     SePayWebhookProvider,
     SePayWebhookService,
   ],

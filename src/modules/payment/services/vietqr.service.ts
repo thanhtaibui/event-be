@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as QRCode from 'qrcode';
+import { VIETQR_BANKS } from './vietqr-bank-catalog';
 
 @Injectable()
 export class VietQrService {
@@ -11,7 +12,7 @@ export class VietQrService {
     reference: string;
   }): Promise<string> {
     if (
-      !/^\d{6}$/.test(input.bankBin) ||
+      !VIETQR_BANKS.has(input.bankBin) ||
       !/^\d{6,19}$/.test(input.accountNumber)
     ) {
       throw new BadRequestException(

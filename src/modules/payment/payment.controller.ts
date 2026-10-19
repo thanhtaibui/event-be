@@ -15,6 +15,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionCode } from '../../common/constants/permission-codes';
 import { PaymentService } from './payment.service';
+import { LookupOrganizationPaymentAccountDto } from './dto/lookup-organization-payment-account.dto';
 import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-payment-account.dto';
 
 @ApiTags('Payments')
@@ -24,11 +25,28 @@ import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-p
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
-  @Put('organizations/:organizationId/payment-account')
+  @Post('organizations/:organizationId/payment-account/lookup')
   @Permissions(PermissionCode.ORGANIZATION_UPDATE)
   @ApiOperation({
     summary:
-      'Configure an organization receiving account and get verification instructions',
+      'Look up a real bank beneficiary before saving organization account',
+  })
+  lookupOrganizationAccount(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Body() dto: LookupOrganizationPaymentAccountDto,
+    @Req() req: any,
+  ) {
+    return this.paymentService.lookupOrganizationAccount(
+      organizationId,
+      dto,
+      req.user,
+    );
+  }
+
+  @Put('organizations/:organizationId/payment-account')
+  @Permissions(PermissionCode.ORGANIZATION_UPDATE)
+  @ApiOperation({
+    summary: 'Confirm a verified bank account for the organization',
   })
   upsertOrganizationAccount(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

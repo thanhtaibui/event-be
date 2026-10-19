@@ -3,7 +3,6 @@ import {
   PaymentWebhookReceipt,
   PaymentWebhookReceiptStatus,
 } from '../entities/payment-webhook-receipt.entity';
-import { PaymentAccountVerificationStatus } from '../entities/organization-payment-account.entity';
 import { SePayWebhookNotification } from '../payment-verification.provider';
 import { SePayWebhookService } from './sepay-webhook.service';
 
@@ -13,7 +12,6 @@ describe('SePayWebhookService', () => {
     payment?: any;
     processResult?: any;
     processError?: Error;
-    account?: any;
   }) => {
     let storedReceipt = options?.receipt ?? null;
     const receiptRepo: any = {
@@ -36,37 +34,15 @@ describe('SePayWebhookService', () => {
             .fn()
             .mockResolvedValue(options?.processResult ?? { statusCode: 200 }),
     };
-    const account = options?.account ?? {
-      verificationStatus: PaymentAccountVerificationStatus.PENDING,
-      verificationReference: 'EVVABCDEF123456',
-      accountNumberEncrypted: 'cipher',
-      accountNumberIv: 'iv',
-      accountNumberTag: 'tag',
-      verifiedAccountName: null,
-      verificationProvider: null,
-    };
-    const accountRepository: any = {
-      findOne: jest.fn(async () => account),
-      save: jest.fn(async (value) => value),
-    };
-    const dataSource: any = {
-      transaction: jest.fn((callback) =>
-        callback({ getRepository: () => accountRepository }),
-      ),
-    };
     return {
       service: new SePayWebhookService(
         receiptRepo,
         paymentRepo,
-        dataSource,
         paymentService,
-        { decrypt: jest.fn().mockReturnValue('1017588888') } as any,
       ),
       receiptRepo,
       paymentRepo,
       paymentService,
-      account,
-      accountRepository,
       getReceipt: () => storedReceipt,
     };
   };
@@ -156,85 +132,6 @@ describe('SePayWebhookService', () => {
     ).resolves.toEqual({
       success: true,
     });
-    expect(h.paymentService.processVerifiedTransfer).not.toHaveBeenCalled();
-  });
-
-  it('verifies a matching incoming SePay transfer without entering payment or ticket issuance', async () => {
-    const h = makeHarness();
-    await h.service.handleVerifiedTransfer(
-      notification({ reference: 'EVVABCDEF123456', amount: 1000 }),
-    );
-    expect(h.account.verificationStatus).toBe(
-      PaymentAccountVerificationStatus.VERIFIED,
-    );
-    expect(h.account.verificationProvider).toBe('SEPAY');
-    expect(h.account.verifiedAt).toBeInstanceOf(Date);
-    expect(h.account.verifiedAccountName).toBeNull();
-    expect(h.paymentService.processVerifiedTransfer).not.toHaveBeenCalled();
-    expect(h.paymentRepo.findOne).not.toHaveBeenCalled();
-    expect(h.getReceipt().status).toBe(PaymentWebhookReceiptStatus.PROCESSED);
-  });
-
-  it('does not verify an unknown EVV reference', async () => {
-    const h = makeHarness();
-    h.accountRepository.findOne.mockResolvedValue(null);
-    await h.service.handleVerifiedTransfer(
-      notification({ reference: 'EVV000000000000', amount: 1000 }),
-    );
-    expect(h.account.verificationStatus).toBe(
-      PaymentAccountVerificationStatus.PENDING,
-    );
-    expect(h.getReceipt().status).toBe(
-      PaymentWebhookReceiptStatus.RECONCILIATION_REQUIRED,
-    );
-    expect(h.paymentService.processVerifiedTransfer).not.toHaveBeenCalled();
-  });
-
-  it('does not verify when the incoming receiving account is different', async () => {
-    const h = makeHarness();
-    h.service = new SePayWebhookService(
-      h.receiptRepo,
-      h.paymentRepo,
-      {
-        transaction: jest.fn((callback) =>
-          callback({ getRepository: () => h.accountRepository }),
-        ),
-      } as any,
-      h.paymentService,
-      { decrypt: jest.fn().mockReturnValue('another-account') } as any,
-    );
-    await h.service.handleVerifiedTransfer(
-      notification({ reference: 'EVVABCDEF123456', amount: 1000 }),
-    );
-    expect(h.account.verificationStatus).toBe(
-      PaymentAccountVerificationStatus.PENDING,
-    );
-    expect(h.getReceipt().status).toBe(
-      PaymentWebhookReceiptStatus.RECONCILIATION_REQUIRED,
-    );
-  });
-
-  it('does not verify a transfer with the wrong verification amount', async () => {
-    const h = makeHarness();
-    await h.service.handleVerifiedTransfer(
-      notification({ reference: 'EVVABCDEF123456', amount: 2000 }),
-    );
-    expect(h.account.verificationStatus).toBe(
-      PaymentAccountVerificationStatus.PENDING,
-    );
-    expect(h.accountRepository.findOne).not.toHaveBeenCalled();
-  });
-
-  it('does not process the same verification webhook twice', async () => {
-    const h = makeHarness();
-    const transfer = notification({
-      reference: 'EVVABCDEF123456',
-      amount: 1000,
-    });
-    await h.service.handleVerifiedTransfer(transfer);
-    const saveCount = h.accountRepository.save.mock.calls.length;
-    await h.service.handleVerifiedTransfer(transfer);
-    expect(h.accountRepository.save).toHaveBeenCalledTimes(saveCount);
     expect(h.paymentService.processVerifiedTransfer).not.toHaveBeenCalled();
   });
 });

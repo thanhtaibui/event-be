@@ -91,6 +91,7 @@ describe('PaymentService verified transfer processing', () => {
       dataSource,
       { decrypt: jest.fn().mockReturnValue('0123456789') } as any,
       {} as any,
+      {} as any,
     );
     return {
       service,
@@ -175,6 +176,7 @@ describe('PaymentService verified transfer processing', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     await expect(
       (service as any).assertCanManageOrganization('org-a', {
@@ -212,6 +214,7 @@ describe('PaymentService verified transfer processing', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     expect(() =>
       (service as any).assertPaymentAccountVerified({
@@ -230,12 +233,36 @@ describe('PaymentService verified transfer processing', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     expect(() =>
       (service as any).assertPaymentAccountVerified({
         verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: 'NGUYEN VAN A',
+        verificationProvider: 'VIETQR',
       } as OrganizationPaymentAccount),
     ).not.toThrow();
+  });
+
+  it('does not accept SePay account-setup records for payment creation', () => {
+    const service = new PaymentService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    expect(() =>
+      (service as any).assertPaymentAccountVerified({
+        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: null,
+        verificationProvider: 'SEPAY',
+      } as OrganizationPaymentAccount),
+    ).toThrow('verified by Eventix');
   });
 
   const makeCreatePaymentService = (
@@ -291,6 +318,14 @@ describe('PaymentService verified transfer processing', () => {
       findOne: jest.fn().mockResolvedValue({
         organization: order.organization,
         verificationStatus,
+        verifiedAccountName:
+          verificationStatus === PaymentAccountVerificationStatus.VERIFIED
+            ? 'NGUYEN VAN A'
+            : null,
+        verificationProvider:
+          verificationStatus === PaymentAccountVerificationStatus.VERIFIED
+            ? 'VIETQR_LOOKUP'
+            : null,
         accountNumberEncrypted: 'cipher',
         accountNumberIv: 'iv',
         accountNumberTag: 'tag',
@@ -327,6 +362,7 @@ describe('PaymentService verified transfer processing', () => {
           .fn()
           .mockResolvedValue('data:image/png;base64,qr'),
       } as any,
+      {} as any,
     );
     return { service, accountRepository };
   };
@@ -356,7 +392,7 @@ describe('PaymentService verified transfer processing', () => {
     expect(result.data.qrCode).toBe('data:image/png;base64,qr');
   });
 
-  const makeAccountUpsertService = () => {
+  const makeAccountUpsertService = (valid = true) => {
     const organization: any = {
       id: 'org-1',
       status: OrganizationStatus.ACTIVE,
@@ -364,6 +400,11 @@ describe('PaymentService verified transfer processing', () => {
     let storedAccount: any = {
       id: 'account-1',
       verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+      verifiedAccountName: 'OLD HOLDER',
+      verificationProvider: 'VIETQR_LOOKUP',
+      accountNumberEncrypted: 'old-cipher',
+      accountNumberIv: 'old-iv',
+      accountNumberTag: 'old-tag',
     };
     const accountRepository: any = {
       findOne: jest.fn().mockResolvedValue(storedAccount),
@@ -387,10 +428,31 @@ describe('PaymentService verified transfer processing', () => {
         callback({
           getRepository: (entity: any) =>
             entity === OrganizationPaymentAccount
-              ? accountRepository
+              ? {
+                  findOne: jest.fn().mockResolvedValue(storedAccount),
+                  create: jest.fn((value) => value),
+                  save: accountRepository.save,
+                }
               : { count: jest.fn().mockResolvedValue(0) },
         }),
       ),
+    };
+    const verificationService: any = {
+      verifyConfirmation: jest.fn(() => {
+        if (!valid) throw new BadRequestException('invalid verification token');
+        return {
+          accountName: 'NGUYEN VAN A',
+          provider: 'VIETQR',
+          bankName: 'MBBank',
+        };
+      }),
+      lookup: jest.fn().mockResolvedValue({
+        bankBin: '970422',
+        bankName: 'MBBank',
+        accountNumber: '0123456789',
+        accountName: 'NGUYEN VAN A',
+        verificationToken: 'signed-short-lived-token',
+      }),
     };
     const service = new PaymentService(
       {} as any,
@@ -406,63 +468,166 @@ describe('PaymentService verified transfer processing', () => {
         decrypt: jest.fn().mockReturnValue('0123456789'),
       } as any,
       {} as any,
+      verificationService,
     );
-    return { service, accountRepository, getAccount: () => storedAccount };
+    return {
+      service,
+      accountRepository,
+      dataSource,
+      verificationService,
+      getAccount: () => storedAccount,
+    };
   };
 
-  it('saves account as pending and returns a unique SePay verification reference', async () => {
+  const accountInput = {
+    bankBin: '970422',
+    accountNumber: '0123456789',
+    verificationToken: 'signed-short-lived-token',
+  };
+
+  it('uses the provider-signed lookup result before saving as VERIFIED', async () => {
     const h = makeAccountUpsertService();
     const result = await h.service.upsertOrganizationAccount(
       'org-1',
-      {
-        bankBin: '970422',
-        bankName: 'MBBank',
-        accountName: '  Nguyễn   Văn A ',
-        accountNumber: '0123456789',
-      },
+      accountInput,
       { userId: 'user-1' },
     );
     expect(h.getAccount().verificationStatus).toBe(
-      PaymentAccountVerificationStatus.PENDING,
+      PaymentAccountVerificationStatus.VERIFIED,
     );
-    expect(h.getAccount().verifiedAccountName).toBeNull();
-    expect(h.getAccount().verificationProvider).toBeNull();
-    expect(h.getAccount().verificationReference).toMatch(/^EVV[A-F0-9]{12}$/);
-    expect(result.data.verificationReference).toBe(
-      h.getAccount().verificationReference,
+    expect(h.getAccount().verifiedAccountName).toBe('NGUYEN VAN A');
+    expect(h.getAccount().verificationProvider).toBe('VIETQR_LOOKUP');
+    expect(h.getAccount().verifiedAt).toBeInstanceOf(Date);
+    expect(h.verificationService.verifyConfirmation).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      userId: 'user-1',
+      bankBin: '970422',
+      accountNumber: '0123456789',
+      verificationToken: 'signed-short-lived-token',
+    });
+    expect(h.accountRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: 'NGUYEN VAN A',
+        verifiedAt: expect.any(Date),
+        verificationProvider: 'VIETQR_LOOKUP',
+      }),
     );
-    expect(result.data.verificationAmount).toBe(1000);
-    expect(result.data.beneficiaryNameVerificationStatus).toBe(
-      'NOT_VERIFIED_BY_BANK',
-    );
-    expect(JSON.stringify(result)).not.toContain('0123456789');
-    expect(JSON.stringify(result)).toContain('******6789');
-    const secondResult = await h.service.upsertOrganizationAccount(
-      'org-1',
-      {
+    expect(result.data).toEqual(
+      expect.objectContaining({
         bankBin: '970422',
         bankName: 'MBBank',
+        maskedAccountNumber: '******6789',
         accountName: 'NGUYEN VAN A',
-        accountNumber: '0123456789',
-      },
+        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: 'NGUYEN VAN A',
+        verifiedAt: expect.any(Date),
+        verificationProvider: 'VIETQR_LOOKUP',
+        verificationMethod: 'VIETQR_ACCOUNT_LOOKUP',
+      }),
+    );
+    expect(JSON.stringify(result)).not.toContain('0123456789');
+  });
+
+  it('rejects an invalid lookup confirmation without persisting', async () => {
+    const h = makeAccountUpsertService(false);
+    await expect(
+      h.service.upsertOrganizationAccount('org-1', accountInput, {
+        userId: 'user-1',
+      }),
+    ).rejects.toMatchObject({
+      message: 'invalid verification token',
+    });
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+    expect(h.accountRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing VERIFIED account after an invalid replacement', async () => {
+    const h = makeAccountUpsertService(false);
+    const original = h.getAccount();
+    await expect(
+      h.service.upsertOrganizationAccount(
+        'org-1',
+        { ...accountInput, accountNumber: '0999999999' },
+        { userId: 'user-1' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(h.getAccount()).toBe(original);
+    expect(h.getAccount().verificationStatus).toBe(
+      PaymentAccountVerificationStatus.VERIFIED,
+    );
+  });
+
+  it('replaces a verified account only after the new account passes checks', async () => {
+    const h = makeAccountUpsertService();
+    await h.service.upsertOrganizationAccount(
+      'org-1',
+      { ...accountInput, accountNumber: '0999999999' },
       { userId: 'user-1' },
     );
-    expect(secondResult.data.verificationReference).not.toBe(
-      result.data.verificationReference,
+    expect(h.getAccount()).toEqual(
+      expect.objectContaining({
+        bankName: 'MBBank',
+        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
+        verifiedAccountName: 'NGUYEN VAN A',
+      }),
     );
+  });
+
+  it('looks up an account without persisting it', async () => {
+    const h = makeAccountUpsertService();
+    const result = await h.service.lookupOrganizationAccount(
+      'org-1',
+      { bankBin: '970422', accountNumber: '0123456789' } as any,
+      { userId: 'user-1' },
+    );
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        accountName: 'NGUYEN VAN A',
+        verificationToken: 'signed-short-lived-token',
+      }),
+    );
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+    expect(h.accountRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing account unchanged if persistence fails after lookup', async () => {
+    const h = makeAccountUpsertService();
+    const original = h.getAccount();
+    h.accountRepository.save.mockRejectedValueOnce(new Error('db failure'));
+    await expect(
+      h.service.upsertOrganizationAccount(
+        'org-1',
+        { ...accountInput, accountNumber: '0999999999' },
+        { userId: 'user-1' },
+      ),
+    ).rejects.toThrow('db failure');
+    expect(h.getAccount()).toBe(original);
   });
 });
 
 describe('Organization payment account DTO validation', () => {
-  it('rejects whitespace-only bank and account names', async () => {
+  it('accepts only bank, account number and lookup token', async () => {
     const dto = plainToInstance(UpsertOrganizationPaymentAccountDto, {
       bankBin: '970422',
-      bankName: '   ',
-      accountName: ' \t ',
       accountNumber: '0123456789',
+      verificationToken: 'signed-token',
     });
     const errors = await validate(dto);
-    expect(errors.map((error) => error.property)).toEqual(
+    expect(errors).toHaveLength(0);
+
+    const legacyDto = plainToInstance(UpsertOrganizationPaymentAccountDto, {
+      bankBin: '970422',
+      bankName: 'Fake bank',
+      accountName: 'Fake holder',
+      accountNumber: '0123456789',
+      verificationToken: 'signed-token',
+    });
+    const legacyErrors = await validate(legacyDto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(legacyErrors.map((error) => error.property)).toEqual(
       expect.arrayContaining(['bankName', 'accountName']),
     );
   });
