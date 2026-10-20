@@ -5,7 +5,11 @@ import { Order } from '../order/entities/order.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { OrderStatus, PaymentStatus } from '../../shared/enum/enum';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PermissionCode } from '../../common/constants/permission-codes';
 import {
   OrganizationPaymentAccount,
@@ -15,6 +19,7 @@ import { OrganizationStatus } from '../../shared/enum/enum';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-payment-account.dto';
+import { LookupOrganizationPaymentAccountDto } from './dto/lookup-organization-payment-account.dto';
 
 describe('PaymentService verified transfer processing', () => {
   const makeHarness = () => {
@@ -438,9 +443,14 @@ describe('PaymentService verified transfer processing', () => {
       ),
     };
     const verificationService: any = {
-      verifyConfirmation: jest.fn(() => {
-        if (!valid) throw new BadRequestException('invalid verification token');
+      verifyAccountHolder: jest.fn(async (input) => {
+        if (input.verificationToken && input.accountNumber !== '0123456789') {
+          throw new BadRequestException('invalid verification token');
+        }
+        if (!valid) throw new BadRequestException('invalid bank account');
         return {
+          bankBin: input.bankBin,
+          accountNumber: input.accountNumber,
           accountName: 'NGUYEN VAN A',
           provider: 'VIETQR',
           bankName: 'MBBank',
@@ -473,6 +483,7 @@ describe('PaymentService verified transfer processing', () => {
     return {
       service,
       accountRepository,
+      membershipRepository,
       dataSource,
       verificationService,
       getAccount: () => storedAccount,
@@ -482,10 +493,11 @@ describe('PaymentService verified transfer processing', () => {
   const accountInput = {
     bankBin: '970422',
     accountNumber: '0123456789',
+    accountName: 'NGUYEN VAN A',
     verificationToken: 'signed-short-lived-token',
   };
 
-  it('uses the provider-signed lookup result before saving as VERIFIED', async () => {
+  it('verifies the submitted account directly before saving as VERIFIED', async () => {
     const h = makeAccountUpsertService();
     const result = await h.service.upsertOrganizationAccount(
       'org-1',
@@ -498,11 +510,12 @@ describe('PaymentService verified transfer processing', () => {
     expect(h.getAccount().verifiedAccountName).toBe('NGUYEN VAN A');
     expect(h.getAccount().verificationProvider).toBe('VIETQR_LOOKUP');
     expect(h.getAccount().verifiedAt).toBeInstanceOf(Date);
-    expect(h.verificationService.verifyConfirmation).toHaveBeenCalledWith({
+    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
       organizationId: 'org-1',
       userId: 'user-1',
       bankBin: '970422',
       accountNumber: '0123456789',
+      accountName: 'NGUYEN VAN A',
       verificationToken: 'signed-short-lived-token',
     });
     expect(h.accountRepository.save).toHaveBeenCalledWith(
@@ -529,17 +542,100 @@ describe('PaymentService verified transfer processing', () => {
     expect(JSON.stringify(result)).not.toContain('0123456789');
   });
 
-  it('rejects an invalid lookup confirmation without persisting', async () => {
+  it('does not persist when the fresh provider verification fails', async () => {
     const h = makeAccountUpsertService(false);
     await expect(
       h.service.upsertOrganizationAccount('org-1', accountInput, {
         userId: 'user-1',
       }),
     ).rejects.toMatchObject({
-      message: 'invalid verification token',
+      message: 'invalid bank account',
     });
     expect(h.dataSource.transaction).not.toHaveBeenCalled();
     expect(h.accountRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('does not persist when the verification provider times out', async () => {
+    const h = makeAccountUpsertService();
+    const original = h.getAccount();
+    h.verificationService.verifyAccountHolder.mockRejectedValueOnce(
+      new ServiceUnavailableException('provider timeout'),
+    );
+    await expect(
+      h.service.upsertOrganizationAccount('org-1', accountInput, {
+        userId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+    expect(h.getAccount()).toBe(original);
+  });
+
+  it('does not persist when the submitted holder name does not match', async () => {
+    const h = makeAccountUpsertService();
+    const original = h.getAccount();
+    h.verificationService.verifyAccountHolder.mockRejectedValueOnce(
+      new BadRequestException({ code: 'ACCOUNT_HOLDER_NAME_MISMATCH' }),
+    );
+    await expect(
+      h.service.upsertOrganizationAccount(
+        'org-1',
+        { ...accountInput, accountName: 'NGUYEN VAN B' },
+        { userId: 'user-1' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+    expect(h.getAccount()).toBe(original);
+  });
+
+  it('rejects a stale token when the submitted account number changed', async () => {
+    const h = makeAccountUpsertService();
+    await expect(
+      h.service.upsertOrganizationAccount(
+        'org-1',
+        { ...accountInput, accountNumber: '0999999999' },
+        { userId: 'user-1' },
+      ),
+    ).rejects.toThrow('invalid verification token');
+    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      userId: 'user-1',
+      bankBin: '970422',
+      accountNumber: '0999999999',
+      accountName: 'NGUYEN VAN A',
+      verificationToken: 'signed-short-lived-token',
+    });
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('allows a changed account only after a fresh lookup without an old token', async () => {
+    const h = makeAccountUpsertService();
+    const { verificationToken: _oldToken, ...newAccountInput } = accountInput;
+    await h.service.upsertOrganizationAccount(
+      'org-1',
+      { ...newAccountInput, accountNumber: '0999999999' },
+      { userId: 'user-1' },
+    );
+    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      userId: 'user-1',
+      bankBin: '970422',
+      accountNumber: '0999999999',
+      accountName: 'NGUYEN VAN A',
+      verificationToken: undefined,
+    });
+    expect(h.getAccount().accountNumberEncrypted).toBe('cipher');
+  });
+
+  it('checks organization permission before contacting the verification provider', async () => {
+    const h = makeAccountUpsertService();
+    h.membershipRepository.findOne.mockResolvedValueOnce(null);
+    await expect(
+      h.service.upsertOrganizationAccount('org-1', accountInput, {
+        userId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.verificationService.verifyAccountHolder).not.toHaveBeenCalled();
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
   });
 
   it('preserves an existing VERIFIED account after an invalid replacement', async () => {
@@ -562,7 +658,11 @@ describe('PaymentService verified transfer processing', () => {
     const h = makeAccountUpsertService();
     await h.service.upsertOrganizationAccount(
       'org-1',
-      { ...accountInput, accountNumber: '0999999999' },
+      {
+        ...accountInput,
+        accountNumber: '0999999999',
+        verificationToken: undefined,
+      },
       { userId: 'user-1' },
     );
     expect(h.getAccount()).toEqual(
@@ -598,7 +698,11 @@ describe('PaymentService verified transfer processing', () => {
     await expect(
       h.service.upsertOrganizationAccount(
         'org-1',
-        { ...accountInput, accountNumber: '0999999999' },
+        {
+          ...accountInput,
+          accountNumber: '0999999999',
+          verificationToken: undefined,
+        },
         { userId: 'user-1' },
       ),
     ).rejects.toThrow('db failure');
@@ -607,14 +711,25 @@ describe('PaymentService verified transfer processing', () => {
 });
 
 describe('Organization payment account DTO validation', () => {
-  it('accepts only bank, account number and lookup token', async () => {
+  it('requires the holder name and accepts an optional legacy lookup token', async () => {
     const dto = plainToInstance(UpsertOrganizationPaymentAccountDto, {
       bankBin: '970422',
       accountNumber: '0123456789',
-      verificationToken: 'signed-token',
+      accountName: 'Nguyen Van A',
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
+
+    const missingNameDto = plainToInstance(
+      UpsertOrganizationPaymentAccountDto,
+      {
+        bankBin: '970422',
+        accountNumber: '0123456789',
+      },
+    );
+    expect(
+      (await validate(missingNameDto)).map((error) => error.property),
+    ).toContain('accountName');
 
     const legacyDto = plainToInstance(UpsertOrganizationPaymentAccountDto, {
       bankBin: '970422',
@@ -627,8 +742,22 @@ describe('Organization payment account DTO validation', () => {
       whitelist: true,
       forbidNonWhitelisted: true,
     });
-    expect(legacyErrors.map((error) => error.property)).toEqual(
-      expect.arrayContaining(['bankName', 'accountName']),
-    );
+    expect(legacyErrors.map((error) => error.property)).toContain('bankName');
+  });
+});
+
+describe('Organization payment account lookup DTO validation', () => {
+  it('accepts the optional owner-entered account name under strict whitelist validation', async () => {
+    const dto = plainToInstance(LookupOrganizationPaymentAccountDto, {
+      bankBin: '970415',
+      accountNumber: '10087387466',
+      accountName: 'Bùi Thành Tài',
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(errors).toHaveLength(0);
+    expect(dto.accountName).toBe('Bùi Thành Tài');
   });
 });

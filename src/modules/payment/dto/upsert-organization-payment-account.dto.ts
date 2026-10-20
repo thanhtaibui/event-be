@@ -1,6 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class UpsertOrganizationPaymentAccountDto {
   @ApiProperty({
@@ -18,8 +24,22 @@ export class UpsertOrganizationPaymentAccountDto {
   @Matches(/^\d{6,19}$/)
   accountNumber: string;
 
-  @ApiProperty({ description: 'Short-lived token returned by account lookup' })
+  @ApiProperty({
+    example: 'NGUYEN VAN A',
+    description: 'Tên chủ tài khoản để Backend đối chiếu với kết quả VietQR',
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  accountName: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Legacy compatibility only. Save always performs a fresh server-side lookup.',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(2048)
-  verificationToken: string;
+  verificationToken?: string;
 }

@@ -1,6 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class LookupOrganizationPaymentAccountDto {
   @ApiProperty({ example: '970415', description: 'VietinBank BIN' })
@@ -14,4 +20,16 @@ export class LookupOrganizationPaymentAccountDto {
   @IsString()
   @Matches(/^\d{6,19}$/)
   accountNumber: string;
+
+  @ApiPropertyOptional({
+    example: 'NGUYEN VAN A',
+    description:
+      'Tên chủ tài khoản nhập bởi Organization Owner; nếu có sẽ được đối chiếu với VietQR',
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  accountName?: string;
 }

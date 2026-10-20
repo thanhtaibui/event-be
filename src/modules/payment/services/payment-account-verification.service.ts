@@ -15,6 +15,14 @@ export interface VerifiedAccountLookup {
   verificationToken: string;
 }
 
+export interface VerifiedBankAccount {
+  bankBin: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  provider: string;
+}
+
 @Injectable()
 export class PaymentAccountVerificationService {
   constructor(
@@ -27,7 +35,38 @@ export class PaymentAccountVerificationService {
     userId: string;
     bankBin: string;
     accountNumber: string;
+    accountName?: string;
   }): Promise<VerifiedAccountLookup> {
+    const verifiedAccount = input.accountName
+      ? await this.verifyAccountHolder({
+          ...input,
+          accountName: input.accountName,
+        })
+      : await this.verifyAccount(input);
+    let verificationToken: string;
+    try {
+      verificationToken = this.lookupToken.issue({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        bankBin: verifiedAccount.bankBin,
+        accountNumber: verifiedAccount.accountNumber,
+        accountName: verifiedAccount.accountName,
+        provider: verifiedAccount.provider,
+      });
+    } catch {
+      throw new ServiceUnavailableException({
+        code: 'ACCOUNT_LOOKUP_UNAVAILABLE',
+        message: 'Bank account verification is temporarily unavailable.',
+      });
+    }
+
+    return { ...verifiedAccount, verificationToken };
+  }
+
+  async verifyAccount(input: {
+    bankBin: string;
+    accountNumber: string;
+  }): Promise<VerifiedBankAccount> {
     const bank = VIETQR_BANKS.get(input.bankBin);
     if (!bank?.transferSupported || !bank.lookupSupported) {
       throw new BadRequestException({
@@ -65,31 +104,64 @@ export class PaymentAccountVerificationService {
       });
     }
 
-    const accountName = result.accountName.trim().replace(/\s+/g, ' ');
-    let verificationToken: string;
-    try {
-      verificationToken = this.lookupToken.issue({
-        organizationId: input.organizationId,
-        userId: input.userId,
-        bankBin: input.bankBin,
-        accountNumber,
-        accountName,
-        provider: result.provider,
-      });
-    } catch {
-      throw new ServiceUnavailableException({
-        code: 'ACCOUNT_LOOKUP_UNAVAILABLE',
-        message: 'Bank account verification is temporarily unavailable.',
-      });
-    }
-
     return {
       bankBin: input.bankBin,
       bankName: bank.name,
       accountNumber,
-      accountName,
-      verificationToken,
+      accountName: result.accountName.trim().replace(/\s+/g, ' '),
+      provider: result.provider,
     };
+  }
+
+  async verifyAccountHolder(input: {
+    organizationId: string;
+    userId: string;
+    bankBin: string;
+    accountNumber: string;
+    accountName: string;
+    verificationToken?: string;
+  }): Promise<VerifiedBankAccount> {
+    const verifiedAccount = await this.verifyAccount(input);
+    if (
+      this.normalizeAccountHolderName(input.accountName) !==
+      this.normalizeAccountHolderName(verifiedAccount.accountName)
+    ) {
+      throw new BadRequestException({
+        code: 'ACCOUNT_HOLDER_NAME_MISMATCH',
+        message: 'Account holder name does not match the bank lookup result.',
+      });
+    }
+
+    if (input.verificationToken) {
+      const tokenResult = this.verifyConfirmation({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        bankBin: input.bankBin,
+        accountNumber: input.accountNumber,
+        verificationToken: input.verificationToken,
+      });
+      if (
+        this.normalizeAccountHolderName(tokenResult.accountName) !==
+        this.normalizeAccountHolderName(verifiedAccount.accountName)
+      ) {
+        throw new BadRequestException({
+          code: 'ACCOUNT_HOLDER_NAME_MISMATCH',
+          message: 'Account holder name does not match the bank lookup result.',
+        });
+      }
+    }
+
+    return verifiedAccount;
+  }
+
+  private normalizeAccountHolderName(name: string): string {
+    return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
   }
 
   verifyConfirmation(input: {

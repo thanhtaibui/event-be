@@ -66,11 +66,12 @@ export class PaymentService {
       bankBin: dto.bankBin.trim(),
       accountNumber: dto.accountNumber.trim(),
     };
-    const verification = this.accountVerification.verifyConfirmation({
+    const verification = await this.accountVerification.verifyAccountHolder({
       organizationId,
       userId: currentUser.userId,
       bankBin: input.bankBin,
       accountNumber: input.accountNumber,
+      accountName: dto.accountName,
       verificationToken: dto.verificationToken,
     });
 
@@ -141,6 +142,7 @@ export class PaymentService {
       userId: currentUser.userId,
       bankBin: dto.bankBin.trim(),
       accountNumber: dto.accountNumber.trim(),
+      accountName: dto.accountName?.trim(),
     });
     return Response(200, 'Bank beneficiary lookup successful', {
       valid: true,

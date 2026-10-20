@@ -49,6 +49,7 @@ describe('PaymentAccountVerificationService', () => {
       bankName: 'VietinBank',
       accountNumber: '10087387466',
       accountName: 'BUI THANH TAI',
+      provider: 'VIETQR',
       verificationToken: 'signed-token',
     });
     expect(h.accountLookup.lookup).toHaveBeenCalledWith({
@@ -65,6 +66,111 @@ describe('PaymentAccountVerificationService', () => {
         provider: 'VIETQR',
       }),
     );
+  });
+
+  it('matches the owner-entered name during lookup before issuing the token', async () => {
+    const h = makeService();
+    const result = await h.service.lookup({
+      organizationId: 'org-1',
+      userId: 'user-1',
+      bankBin: '970415',
+      accountNumber: '10087387466',
+      accountName: 'Bùi Thành Tài',
+    });
+    expect(result.accountName).toBe('BUI THANH TAI');
+    expect(h.lookupToken.issue).toHaveBeenCalled();
+  });
+
+  it('does not issue a lookup token when the entered name does not match', async () => {
+    const h = makeService();
+    await expect(
+      h.service.lookup({
+        organizationId: 'org-1',
+        userId: 'user-1',
+        bankBin: '970415',
+        accountNumber: '10087387466',
+        accountName: 'BUI VAN TAI',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(h.lookupToken.issue).not.toHaveBeenCalled();
+  });
+
+  it('performs fresh server-side verification without issuing a token', async () => {
+    const h = makeService();
+    await expect(
+      h.service.verifyAccount({
+        bankBin: '970415',
+        accountNumber: '10087387466',
+      }),
+    ).resolves.toEqual({
+      bankBin: '970415',
+      bankName: 'VietinBank',
+      accountNumber: '10087387466',
+      accountName: 'BUI THANH TAI',
+      provider: 'VIETQR',
+    });
+    expect(h.accountLookup.lookup).toHaveBeenCalledWith({
+      bankBin: '970415',
+      accountNumber: '10087387466',
+    });
+    expect(h.lookupToken.issue).not.toHaveBeenCalled();
+  });
+
+  it('accepts matching holder names despite accents, casing, and extra spaces', async () => {
+    const h = makeService({
+      providerResult: {
+        accountNumber: '10087387466',
+        accountName: '  NGUYEN   VAN   A ',
+        bankBin: '970415',
+        provider: 'VIETQR',
+      },
+    });
+    await expect(
+      h.service.verifyAccountHolder({
+        organizationId: 'org-1',
+        userId: 'user-1',
+        bankBin: '970415',
+        accountNumber: '10087387466',
+        accountName: 'Nguyễn Văn A',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ accountName: 'NGUYEN VAN A' }),
+    );
+  });
+
+  it('rejects a holder name that differs from the provider result', async () => {
+    const h = makeService();
+    await expect(
+      h.service.verifyAccountHolder({
+        organizationId: 'org-1',
+        userId: 'user-1',
+        bankBin: '970415',
+        accountNumber: '10087387466',
+        accountName: 'NGUYEN VAN B',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'ACCOUNT_HOLDER_NAME_MISMATCH',
+      }),
+    });
+  });
+
+  it('rejects provider results without a beneficiary name', async () => {
+    const h = makeService({
+      providerResult: {
+        accountNumber: '10087387466',
+        accountName: '  ',
+        bankBin: '970415',
+        provider: 'VIETQR',
+      },
+    });
+    await expect(
+      h.service.verifyAccount({
+        bankBin: '970415',
+        accountNumber: '10087387466',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(h.lookupToken.issue).not.toHaveBeenCalled();
   });
 
   it('does not call lookup for unsupported banks or invalid account inputs', async () => {
