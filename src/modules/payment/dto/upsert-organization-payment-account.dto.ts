@@ -6,6 +6,7 @@ import {
   IsString,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpsertOrganizationPaymentAccountDto {
@@ -24,15 +25,27 @@ export class UpsertOrganizationPaymentAccountDto {
   @Matches(/^\d{6,19}$/)
   accountNumber: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'NGUYEN VAN A',
-    description: 'Tên chủ tài khoản để Backend đối chiếu với kết quả VietQR',
+    description: 'Tên chủ tài khoản để Backend đối chiếu; giữ để tương thích client cũ',
   })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @ValidateIf((dto) => !dto.accountHolderName)
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
-  accountName: string;
+  accountName?: string;
+
+  @ApiPropertyOptional({
+    example: 'NGUYEN VAN A',
+    description: 'Tên chủ tài khoản do Organization Owner nhập',
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @ValidateIf((dto) => !dto.accountName)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  accountHolderName?: string;
 
   @ApiPropertyOptional({
     description:

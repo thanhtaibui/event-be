@@ -66,12 +66,17 @@ export class PaymentService {
       bankBin: dto.bankBin.trim(),
       accountNumber: dto.accountNumber.trim(),
     };
+    const accountHolderName =
+      dto.accountHolderName?.trim() ?? dto.accountName?.trim();
+    if (!accountHolderName) {
+      throw new BadRequestException('ACCOUNT_HOLDER_NAME_REQUIRED');
+    }
     const verification = await this.accountVerification.verifyAccountHolder({
       organizationId,
       userId: currentUser.userId,
       bankBin: input.bankBin,
       accountNumber: input.accountNumber,
-      accountName: dto.accountName,
+      accountName: accountHolderName,
       verificationToken: dto.verificationToken,
     });
 
@@ -142,7 +147,7 @@ export class PaymentService {
       userId: currentUser.userId,
       bankBin: dto.bankBin.trim(),
       accountNumber: dto.accountNumber.trim(),
-      accountName: dto.accountName?.trim(),
+      accountName: (dto.accountHolderName ?? dto.accountName)?.trim(),
     });
     return Response(200, 'Bank beneficiary lookup successful', {
       valid: true,

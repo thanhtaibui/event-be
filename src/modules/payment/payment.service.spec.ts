@@ -744,6 +744,21 @@ describe('Organization payment account DTO validation', () => {
     });
     expect(legacyErrors.map((error) => error.property)).toContain('bankName');
   });
+
+  it('accepts accountHolderName as the canonical save field under strict whitelist validation', async () => {
+    const dto = plainToInstance(UpsertOrganizationPaymentAccountDto, {
+      bankBin: '970422',
+      accountNumber: '0123456789',
+      accountHolderName: '  Nguyen Van A  ',
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    expect(errors).toHaveLength(0);
+    expect(dto.accountHolderName).toBe('Nguyen Van A');
+  });
 });
 
 describe('Organization payment account lookup DTO validation', () => {
@@ -759,5 +774,20 @@ describe('Organization payment account lookup DTO validation', () => {
     });
     expect(errors).toHaveLength(0);
     expect(dto.accountName).toBe('Bùi Thành Tài');
+  });
+
+  it('accepts accountHolderName as the canonical lookup field under strict whitelist validation', async () => {
+    const dto = plainToInstance(LookupOrganizationPaymentAccountDto, {
+      bankBin: '970415',
+      accountNumber: '10087387466',
+      accountHolderName: '  Bùi Thành Tài  ',
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    expect(errors).toHaveLength(0);
+    expect(dto.accountHolderName).toBe('Bùi Thành Tài');
   });
 });

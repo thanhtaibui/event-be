@@ -23,8 +23,7 @@ export class LookupOrganizationPaymentAccountDto {
 
   @ApiPropertyOptional({
     example: 'NGUYEN VAN A',
-    description:
-      'Tên chủ tài khoản nhập bởi Organization Owner; nếu có sẽ được đối chiếu với VietQR',
+    description: 'Tên chủ tài khoản; giữ để tương thích client cũ',
   })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
@@ -32,4 +31,15 @@ export class LookupOrganizationPaymentAccountDto {
   @IsNotEmpty()
   @MaxLength(120)
   accountName?: string;
+
+  @ApiPropertyOptional({
+    example: 'NGUYEN VAN A',
+    description: 'Tên chủ tài khoản do Organization Owner nhập',
+  })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  accountHolderName?: string;
 }
