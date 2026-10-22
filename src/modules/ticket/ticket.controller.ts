@@ -33,8 +33,8 @@ export class TicketController {
 
   @Get()
   @Permissions(PermissionCode.TICKET_MANAGE)
-  findAll() {
-    return this.ticketService.findAll();
+  findAll(@Req() req: any) {
+    return this.ticketService.findAll(req.user);
   }
 
   @Get('check/:ticketId')

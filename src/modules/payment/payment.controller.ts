@@ -23,7 +23,7 @@ import { UpsertOrganizationPaymentAccountDto } from './dto/upsert-organization-p
 @UseGuards(JwtGuard, PermissionsGuard)
 @Controller()
 export class PaymentController {
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(private readonly paymentService: PaymentService) { }
 
   @Post('organizations/:organizationId/payment-account/lookup')
   @Permissions(PermissionCode.ORGANIZATION_UPDATE)

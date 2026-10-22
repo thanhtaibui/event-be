@@ -33,8 +33,8 @@ export class OrderController {
 
   @Get()
   @Permissions(PermissionCode.TICKET_MANAGE)
-  findAll() {
-    return this.orderService.findAll();
+  findAll(@Req() req: any) {
+    return this.orderService.findAll(req.user);
   }
 
   @Get(':id')

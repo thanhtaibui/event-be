@@ -198,6 +198,8 @@ describe('OrganizationService membership data', () => {
         id: ownerId,
         fullName: 'Owner User',
         email: 'owner@example.com',
+        password: 'must-not-leak',
+        refreshToken: 'must-not-leak',
       },
       slug: 'green-future-community',
       status: OrganizationStatus.ACTIVE,
@@ -214,11 +216,18 @@ describe('OrganizationService membership data', () => {
     };
     const { service, memberRepo, eventRepo } = createService({
       existingSlugOrganization: organization,
+      managerMembership: {
+        role: {
+          permissions: [
+            { permission_code: PermissionCode.ORGANIZATION_VIEW },
+          ],
+        },
+      },
       memberCounts: [10],
       eventCounts: [5],
     });
 
-    const result = await service.GetOrgBySlug(' green-future-community ');
+    const result = await service.GetOrgBySlug(' green-future-community ', currentUser);
 
     expect(result.statusCode).toBe(200);
     expect(result.data).toEqual(
@@ -234,6 +243,21 @@ describe('OrganizationService membership data', () => {
         },
       }),
     );
+    expect(result.data!.owner).toEqual({
+      id: ownerId,
+      fullName: 'Owner User',
+      email: 'owner@example.com',
+    });
+    expect(result.data!.owner).not.toHaveProperty('password');
+    expect(result.data!.owner).not.toHaveProperty('refreshToken');
+    expect(memberRepo.findOne).toHaveBeenCalledWith({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+      relations: ['role', 'role.permissions'],
+    });
     expect(memberRepo.count).toHaveBeenCalledWith({
       where: {
         organization: { id: orgId },
@@ -245,6 +269,68 @@ describe('OrganizationService membership data', () => {
         organization: { id: orgId },
       },
     });
+  });
+
+  it('denies organization detail when permission exists only in another organization', async () => {
+    const { service, memberRepo } = createService({
+      existingSlugOrganization: { id: orgId, owner: null },
+      managerMembership: null,
+    });
+
+    await expect(
+      service.GetOrgBySlug('green-future-community', currentUser),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(memberRepo.count).not.toHaveBeenCalled();
+  });
+
+  it('filters sensitive owner fields from organization detail by id', async () => {
+    const { service } = createService({
+      organization: {
+        id: orgId,
+        name: 'Green Future Community',
+        owner: {
+          id: ownerId,
+          fullName: 'Owner User',
+          email: 'owner@example.com',
+          password: 'secret-hash',
+          refreshToken: 'secret-hash',
+        },
+      },
+      managerMembership: {
+        role: {
+          permissions: [
+            { permission_code: PermissionCode.ORGANIZATION_VIEW },
+          ],
+        },
+      },
+    });
+
+    const result = await service.GetOrgById(orgId, currentUser);
+
+    expect(result.data!.owner).toEqual({
+      id: ownerId,
+      fullName: 'Owner User',
+      email: 'owner@example.com',
+    });
+    expect(result.data!.owner).not.toHaveProperty('password');
+    expect(result.data!.owner).not.toHaveProperty('refreshToken');
+  });
+
+  it('allows Super Admin to view organization detail without membership lookup', async () => {
+    const { service, memberRepo } = createService({
+      existingSlugOrganization: {
+        id: orgId,
+        name: 'Green Future Community',
+        owner: null,
+      },
+      memberCounts: [0],
+      eventCounts: [0],
+    });
+
+    await expect(
+      service.GetOrgBySlug('green-future-community', superAdminUser),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(memberRepo.findOne).not.toHaveBeenCalled();
   });
 
   it('returns public organization discovery data only', async () => {

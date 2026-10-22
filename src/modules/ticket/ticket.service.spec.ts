@@ -28,6 +28,10 @@ describe('TicketService check-in foundation', () => {
     userId: 'manager-1',
     role: { isSuperAdmin: false, permissions: ['TICKET_MANAGE'] },
   };
+  const superAdminUser = {
+    userId: 'super-admin',
+    role: { isSuperAdmin: true, permissions: ['*'] },
+  };
 
   it('creates ticket with VALID status foundation', async () => {
     const { service, userRepo, ticketTypeRepo, ticketRepo } = createService();
@@ -63,6 +67,69 @@ describe('TicketService check-in foundation', () => {
     });
     expect(result.data.status).toBe(TicketStatus.VALID);
     expect(result.data.usedAt).toBeNull();
+  });
+
+  it('lists tickets only from organizations where the user has TICKET_MANAGE', async () => {
+    const { service, ticketRepo, membershipRepo } = createService();
+    membershipRepo.find.mockResolvedValueOnce([
+      {
+        organization: { id: 'org-1' },
+        role: { permissions: [{ permission_code: 'TICKET_MANAGE' }] },
+      },
+      {
+        organization: { id: 'org-2' },
+        role: { permissions: [{ permission_code: 'TICKET_VIEW' }] },
+      },
+    ]);
+    ticketRepo.find.mockResolvedValueOnce([makeTicket()]);
+
+    const result = await service.findAll(managerUser);
+
+    expect(ticketRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ticketType: {
+            event: { organization: { id: expect.anything() } },
+          },
+        },
+      }),
+    );
+    expect(
+      ticketRepo.find.mock.calls[0][0].where.ticketType.event.organization.id
+        ._value,
+    ).toEqual(['org-1']);
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('returns no tickets when user has no manageable organization', async () => {
+    const { service, ticketRepo, membershipRepo } = createService();
+    membershipRepo.find.mockResolvedValueOnce([
+      {
+        organization: { id: 'org-2' },
+        role: { permissions: [{ permission_code: 'TICKET_VIEW' }] },
+      },
+    ]);
+    ticketRepo.find.mockResolvedValueOnce([]);
+
+    const result = await service.findAll(managerUser);
+
+    expect(ticketRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.any(Object) }),
+    );
+    expect(result.data).toEqual([]);
+  });
+
+  it('keeps Super Admin ticket listing system-wide', async () => {
+    const { service, ticketRepo, membershipRepo } = createService();
+    ticketRepo.find.mockResolvedValueOnce([makeTicket()]);
+
+    const result = await service.findAll(superAdminUser);
+
+    expect(membershipRepo.find).not.toHaveBeenCalled();
+    expect(ticketRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: undefined }),
+    );
+    expect(result.data).toHaveLength(1);
   });
 
   it('returns ticket information when verifying a valid ticket', async () => {
@@ -196,7 +263,7 @@ describe('TicketService check-in foundation', () => {
     };
     const userRepo = { findOne: jest.fn() };
     const ticketTypeRepo = { findOne: jest.fn() };
-    const membershipRepo = { findOne: jest.fn() };
+    const membershipRepo = { findOne: jest.fn(), find: jest.fn() };
     const service = new TicketService(
       ticketRepo as any,
       userRepo as any,

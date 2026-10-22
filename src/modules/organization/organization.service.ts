@@ -438,7 +438,9 @@ export class OrganizationService {
   ): Promise<ApiResponse<OrganizationResDto>> {
     console.time('GET_ORG_BY_ID');
     try {
-      await this.assertCanAccessOrganization(id, currentUser);
+      await this.assertCanViewOrganizationDetail(id, currentUser, [
+        PermissionCode.ORGANIZATION_VIEW,
+      ]);
       const org = await this.organizationRepo.findOne({
         where: { id: id },
         relations: ['owner'],
@@ -451,7 +453,13 @@ export class OrganizationService {
         id: org.id,
         name: org.name,
         bio: org.bio,
-        owner: org.owner,
+        owner: org.owner
+          ? {
+              id: org.owner.id,
+              fullName: org.owner.fullName,
+              email: org.owner.email,
+            }
+          : null,
         slug: org.slug,
         isVerified: org.isVerified,
         legalName: org.legalName,
@@ -470,7 +478,10 @@ export class OrganizationService {
       console.timeEnd('GET_ORG_BY_ID');
     }
   }
-  async GetOrgBySlug(slug: string): Promise<ApiResponse<OrganizationResDto>> {
+  async GetOrgBySlug(
+    slug: string,
+    currentUser?: any,
+  ): Promise<ApiResponse<OrganizationResDto>> {
     console.time('GET_ORG_BY_SLUG');
     try {
       const org = await this.organizationRepo.findOne({
@@ -481,6 +492,13 @@ export class OrganizationService {
       if (!org) {
         throw new BadRequestException('Organization not found');
       }
+      await this.assertCanViewOrganizationDetail(org.id, currentUser, [
+        PermissionCode.ORGANIZATION_VIEW,
+        PermissionCode.EVENT,
+        PermissionCode.EVENT_CREATE,
+        PermissionCode.ROLE,
+        PermissionCode.ORGANIZATION_MEMBER_MANAGE,
+      ]);
       const [totalMembers, totalEvents] = await Promise.all([
         this.memberRepo.count({
           where: {
@@ -498,7 +516,13 @@ export class OrganizationService {
         id: org.id,
         name: org.name,
         bio: org.bio,
-        owner: org.owner,
+        owner: org.owner
+          ? {
+              id: org.owner.id,
+              fullName: org.owner.fullName,
+              email: org.owner.email,
+            }
+          : null,
         slug: org.slug,
         status: org.status,
         isVerified: org.isVerified,
@@ -795,6 +819,38 @@ export class OrganizationService {
 
     if (!membership) {
       throw new ForbiddenException('User does not belong to this organization');
+    }
+  }
+
+  private async assertCanViewOrganizationDetail(
+    orgId: string,
+    currentUser?: any,
+    allowedPermissions: string[] = [PermissionCode.ORGANIZATION_VIEW],
+  ): Promise<void> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+
+    const membership = await this.memberRepo.findOne({
+      where: {
+        user: { id: currentUser.userId },
+        organization: { id: orgId },
+        isActive: true,
+      },
+      relations: ['role', 'role.permissions'],
+    });
+
+    const scopedPermissions = new Set<string>(allowedPermissions);
+    const canView = membership?.role?.permissions?.some((permission) =>
+      scopedPermissions.has(permission.permission_code),
+    );
+
+    if (!canView) {
+      throw new ForbiddenException('Insufficient organization permission');
     }
   }
 

@@ -183,8 +183,9 @@ export class OrganizationController {
   )
   findOrgBySlug(
     @Param('slug') slug: string,
+    @Req() req: any,
   ): Promise<ApiResponse<OrganizationResDto>> {
-    return this.organizationService.GetOrgBySlug(slug);
+    return this.organizationService.GetOrgBySlug(slug, req.user);
   }
   @Get(':orgId/roles')
   @ApiBearerAuth('access-token')

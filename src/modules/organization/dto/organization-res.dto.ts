@@ -14,7 +14,7 @@ export class OrganizationResDto {
 
   bio?: string;
 
-  owner: OwnerResponseDto;
+  owner: OwnerResponseDto | null;
 
   slug: string;
 

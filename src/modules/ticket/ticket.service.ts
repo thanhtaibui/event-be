@@ -8,12 +8,13 @@ import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Ticket } from './entities/ticket.entity';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { Membership } from '../membership/entities/membership.entity';
 import { TicketStatus } from 'src/shared/enum/enum';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 
 @Injectable()
 export class TicketService {
@@ -59,10 +60,18 @@ export class TicketService {
     return Response(201, 'Ticket created successfully', this.toTicketDto(result));
   }
 
-  async findAll(): Promise<ApiResponse<any[]>> {
+  async findAll(currentUser?: any): Promise<ApiResponse<any[]>> {
     console.time('GET_TICKETS');
     try {
+      const organizationIds = await this.getManageableOrganizationIds(currentUser);
       const tickets = await this.ticketRepo.find({
+        where: organizationIds === null
+          ? undefined
+          : {
+              ticketType: {
+                event: { organization: { id: In(organizationIds) } },
+              },
+            },
         relations: ['user', 'ticketType', 'ticketType.event'],
         order: { createdAt: 'DESC' },
       });
@@ -75,6 +84,32 @@ export class TicketService {
     } finally {
       console.timeEnd('GET_TICKETS');
     }
+  }
+
+  private async getManageableOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return null;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: { user: { id: currentUser.userId }, isActive: true },
+      relations: ['organization', 'role', 'role.permissions'],
+    });
+    return memberships
+      .filter((membership) =>
+        membership.role?.permissions?.some(
+          (permission) =>
+            permission.permission_code === PermissionCode.TICKET_MANAGE,
+        ),
+      )
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
   }
 
   async findOne(id: string, currentUser?: any): Promise<ApiResponse<any>> {

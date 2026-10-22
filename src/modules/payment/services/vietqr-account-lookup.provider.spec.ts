@@ -1,4 +1,9 @@
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpStatus,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { VietQrAccountLookupProvider } from './vietqr-account-lookup.provider';
 
 describe('VietQrAccountLookupProvider', () => {
@@ -98,5 +103,94 @@ describe('VietQrAccountLookupProvider', () => {
     await expect(
       provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('maps HTTP 429 Too Many Requests to ACCOUNT_LOOKUP_RATE_LIMITED', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      json: async () => ({ message: 'Too many requests' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      response: expect.objectContaining({
+        code: 'ACCOUNT_LOOKUP_RATE_LIMITED',
+      }),
+    });
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: '429', desc: 'Rate limit exceeded' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      response: expect.objectContaining({
+        code: 'ACCOUNT_LOOKUP_RATE_LIMITED',
+      }),
+    });
+  });
+
+  it('maps HTTP 401 and 403 authentication failures to ServiceUnavailableException', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ message: 'Unauthorized' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ message: 'Forbidden' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('maps HTTP 5xx upstream server errors to ServiceUnavailableException', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: 'Internal Server Error' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('maps codes 41, 10, 21, 22 to BadRequestException', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: '41' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'BANK_LOOKUP_UNSUPPORTED',
+      }),
+    });
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: '21' }),
+    }) as any;
+    await expect(
+      provider.lookup({ bankBin: '970415', accountNumber: '10087387466' }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVALID_BANK_ACCOUNT',
+      }),
+    });
   });
 });

@@ -27,6 +27,8 @@ import {
 } from 'src/shared/enum/enum';
 import { Event } from '../event/entities/event.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { Membership } from '../membership/entities/membership.entity';
+import { PermissionCode } from 'src/common/constants/permission-codes';
 import {
   PaymentWebhookReceipt,
   PaymentWebhookReceiptStatus,
@@ -51,6 +53,8 @@ export class OrderService {
     private readonly ticketRepo: Repository<Ticket>,
     @InjectRepository(Event)
     private readonly eventRepo: Repository<Event>,
+    @InjectRepository(Membership)
+    private readonly membershipRepo: Repository<Membership>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
@@ -207,10 +211,14 @@ export class OrderService {
     );
   }
 
-  async findAll(): Promise<ApiResponse<any[]>> {
+  async findAll(currentUser?: any): Promise<ApiResponse<any[]>> {
     console.time('GET_ORDERS');
     try {
+      const organizationIds = await this.getManageableOrganizationIds(currentUser);
       const orders = await this.orderRepo.find({
+        where: organizationIds === null
+          ? undefined
+          : { organization: { id: In(organizationIds) } },
         relations: [
           'user',
           'tickets',
@@ -231,6 +239,32 @@ export class OrderService {
     } finally {
       console.timeEnd('GET_ORDERS');
     }
+  }
+
+  private async getManageableOrganizationIds(
+    currentUser?: any,
+  ): Promise<string[] | null> {
+    if (currentUser?.role?.isSuperAdmin) {
+      return null;
+    }
+
+    if (!currentUser?.userId) {
+      throw new ForbiddenException('AUTHENTICATION_REQUIRED');
+    }
+
+    const memberships = await this.membershipRepo.find({
+      where: { user: { id: currentUser.userId }, isActive: true },
+      relations: ['organization', 'role', 'role.permissions'],
+    });
+    return memberships
+      .filter((membership) =>
+        membership.role?.permissions?.some(
+          (permission) =>
+            permission.permission_code === PermissionCode.TICKET_MANAGE,
+        ),
+      )
+      .map((membership) => membership.organization?.id)
+      .filter((id): id is string => Boolean(id));
   }
 
   async findOne(id: string, currentUser?: any): Promise<ApiResponse<any>> {

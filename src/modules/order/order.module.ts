@@ -8,6 +8,7 @@ import { TicketType } from '../ticket-type/entities/ticket-type.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
 import { Event } from '../event/entities/event.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { Membership } from '../membership/entities/membership.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { OrderItem } from './entities/order-item.entity';
       TicketType,
       Ticket,
       Event,
+      Membership,
     ]),
   ],
   controllers: [OrderController],
