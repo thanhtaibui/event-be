@@ -71,13 +71,10 @@ export class PaymentService {
     if (!accountHolderName) {
       throw new BadRequestException('ACCOUNT_HOLDER_NAME_REQUIRED');
     }
-    const verification = await this.accountVerification.verifyAccountHolder({
-      organizationId,
-      userId: currentUser.userId,
+    const validated = this.accountVerification.validateAccountHolder({
       bankBin: input.bankBin,
       accountNumber: input.accountNumber,
       accountName: accountHolderName,
-      verificationToken: dto.verificationToken,
     });
 
     const encrypted = this.crypto.encrypt(input.accountNumber);
@@ -106,28 +103,28 @@ export class PaymentService {
         );
       }
 
-      const verifiedAccount = accountRepository.create({
+      const paymentAccount = accountRepository.create({
         ...(existingAccount || {}),
         organization,
-        bankBin: input.bankBin,
-        bankName: verification.bankName,
-        accountName: verification.accountName,
+        bankBin: validated.bankBin,
+        bankName: validated.bankName,
+        accountName: validated.accountName,
         accountNumberEncrypted: encrypted.encrypted,
         accountNumberIv: encrypted.iv,
         accountNumberTag: encrypted.tag,
-        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: verification.accountName,
-        verifiedAt: new Date(),
-        verificationProvider: 'VIETQR_LOOKUP',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+        verifiedAccountName: null,
+        verifiedAt: null,
+        verificationProvider: null,
         verificationFailureReason: null,
         verificationReference: null,
       });
 
-      return accountRepository.save(verifiedAccount);
+      return accountRepository.save(paymentAccount);
     });
     return Response(
       200,
-      'Organization payment account verified and saved successfully',
+      'Organization payment account saved successfully (pending verification)',
       this.toMaskedAccount(account),
     );
   }
@@ -142,16 +139,18 @@ export class PaymentService {
     if (!currentUser?.userId) {
       throw new ForbiddenException('AUTHENTICATION_REQUIRED');
     }
-    const result = await this.accountVerification.lookup({
-      organizationId,
-      userId: currentUser.userId,
+    const validated = this.accountVerification.validateAccountFormat({
       bankBin: dto.bankBin.trim(),
       accountNumber: dto.accountNumber.trim(),
       accountName: (dto.accountHolderName ?? dto.accountName)?.trim(),
     });
-    return Response(200, 'Bank beneficiary lookup successful', {
+    return Response(200, 'Bank account format validated successfully', {
       valid: true,
-      ...result,
+      bankBin: validated.bankBin,
+      bankName: validated.bankName,
+      accountNumber: validated.accountNumber,
+      accountName: validated.accountName ?? null,
+      verificationStatus: PaymentAccountVerificationStatus.PENDING,
     });
   }
 
@@ -592,9 +591,21 @@ export class PaymentService {
         'Organization receiving bank account is not configured',
       );
     }
-    if (!this.isVerifiedForPayments(account)) {
+    if (account.verificationStatus === PaymentAccountVerificationStatus.FAILED) {
       throw new BadRequestException(
-        'Organization receiving bank account must be verified by Eventix before payment',
+        'Organization receiving bank account is invalid or rejected',
+      );
+    }
+    const hasValidDetails =
+      !!account.bankBin?.trim() &&
+      !!account.accountName?.trim() &&
+      !!account.accountNumberEncrypted &&
+      !!account.accountNumberIv &&
+      !!account.accountNumberTag;
+
+    if (!hasValidDetails) {
+      throw new BadRequestException(
+        'Organization receiving bank account is not properly configured',
       );
     }
   }

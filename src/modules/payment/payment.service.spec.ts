@@ -206,10 +206,7 @@ describe('PaymentService verified transfer processing', () => {
     ).resolves.toBeUndefined();
   });
 
-  it.each([
-    PaymentAccountVerificationStatus.PENDING,
-    PaymentAccountVerificationStatus.FAILED,
-  ])('blocks QR payment when account verification is %s', (status) => {
+  it('blocks QR payment when account verification is FAILED', () => {
     const service = new PaymentService(
       {} as any,
       {} as any,
@@ -223,12 +220,39 @@ describe('PaymentService verified transfer processing', () => {
     );
     expect(() =>
       (service as any).assertPaymentAccountVerified({
-        verificationStatus: status,
+        verificationStatus: PaymentAccountVerificationStatus.FAILED,
+        bankBin: '970422',
+        accountName: 'NGUYEN VAN A',
+        accountNumberEncrypted: 'cipher',
+        accountNumberIv: 'iv',
+        accountNumberTag: 'tag',
       } as OrganizationPaymentAccount),
-    ).toThrow('must be verified');
+    ).toThrow('invalid or rejected');
   });
 
-  it('allows QR payment only for a verified account', () => {
+  it('blocks QR payment when account is missing or incomplete', () => {
+    const service = new PaymentService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    expect(() => (service as any).assertPaymentAccountVerified(null)).toThrow(
+      'not configured',
+    );
+    expect(() =>
+      (service as any).assertPaymentAccountVerified({
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+      } as OrganizationPaymentAccount),
+    ).toThrow('not properly configured');
+  });
+
+  it('allows QR payment for an internally validated bank account (PENDING)', () => {
     const service = new PaymentService(
       {} as any,
       {} as any,
@@ -242,14 +266,17 @@ describe('PaymentService verified transfer processing', () => {
     );
     expect(() =>
       (service as any).assertPaymentAccountVerified({
-        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: 'NGUYEN VAN A',
-        verificationProvider: 'VIETQR',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+        bankBin: '970422',
+        accountName: 'NGUYEN VAN A',
+        accountNumberEncrypted: 'cipher',
+        accountNumberIv: 'iv',
+        accountNumberTag: 'tag',
       } as OrganizationPaymentAccount),
     ).not.toThrow();
   });
 
-  it('does not accept SePay account-setup records for payment creation', () => {
+  it('allows QR payment for a legacy verified account', () => {
     const service = new PaymentService(
       {} as any,
       {} as any,
@@ -264,10 +291,15 @@ describe('PaymentService verified transfer processing', () => {
     expect(() =>
       (service as any).assertPaymentAccountVerified({
         verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: null,
-        verificationProvider: 'SEPAY',
+        bankBin: '970422',
+        accountName: 'NGUYEN VAN A',
+        verifiedAccountName: 'NGUYEN VAN A',
+        verificationProvider: 'VIETQR',
+        accountNumberEncrypted: 'cipher',
+        accountNumberIv: 'iv',
+        accountNumberTag: 'tag',
       } as OrganizationPaymentAccount),
-    ).toThrow('verified by Eventix');
+    ).not.toThrow();
   });
 
   const makeCreatePaymentService = (
@@ -372,20 +404,31 @@ describe('PaymentService verified transfer processing', () => {
     return { service, accountRepository };
   };
 
-  it.each([
-    PaymentAccountVerificationStatus.PENDING,
-    PaymentAccountVerificationStatus.FAILED,
-  ])('does not create Payment or QR for %s bank account', async (status) => {
-    const h = makeCreatePaymentService(status);
+  it('does not create Payment or QR for FAILED bank account', async () => {
+    const h = makeCreatePaymentService(
+      PaymentAccountVerificationStatus.FAILED,
+    );
     await expect(
       h.service.createForOrder('order-1', { userId: 'buyer-1' }),
-    ).rejects.toThrow('must be verified');
+    ).rejects.toThrow('invalid or rejected');
     expect(h.accountRepository.findOne).toHaveBeenCalledWith(
       expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
     );
   });
 
-  it('creates Payment and QR for a VERIFIED bank account', async () => {
+  it('creates Payment and QR for an internally validated bank account (PENDING)', async () => {
+    const h = makeCreatePaymentService(
+      PaymentAccountVerificationStatus.PENDING,
+    );
+    const result = await h.service.createForOrder('order-1', {
+      userId: 'buyer-1',
+    });
+    expect(result.statusCode).toBe(201);
+    expect(result.data.status).toBe(PaymentStatus.PENDING);
+    expect(result.data.qrCode).toBe('data:image/png;base64,qr');
+  });
+
+  it('creates Payment and QR for a legacy VERIFIED bank account', async () => {
     const h = makeCreatePaymentService(
       PaymentAccountVerificationStatus.VERIFIED,
     );
@@ -443,25 +486,23 @@ describe('PaymentService verified transfer processing', () => {
       ),
     };
     const verificationService: any = {
-      verifyAccountHolder: jest.fn(async (input) => {
-        if (input.verificationToken && input.accountNumber !== '0123456789') {
-          throw new BadRequestException('invalid verification token');
-        }
+      validateAccountHolder: jest.fn((input) => {
         if (!valid) throw new BadRequestException('invalid bank account');
         return {
           bankBin: input.bankBin,
           accountNumber: input.accountNumber,
-          accountName: 'NGUYEN VAN A',
-          provider: 'VIETQR',
+          accountName: input.accountName,
           bankName: 'MBBank',
         };
       }),
-      lookup: jest.fn().mockResolvedValue({
-        bankBin: '970422',
-        bankName: 'MBBank',
-        accountNumber: '0123456789',
-        accountName: 'NGUYEN VAN A',
-        verificationToken: 'signed-short-lived-token',
+      validateAccountFormat: jest.fn((input) => {
+        if (!valid) throw new BadRequestException('invalid bank account');
+        return {
+          bankBin: input.bankBin,
+          accountNumber: input.accountNumber,
+          accountName: input.accountName,
+          bankName: 'MBBank',
+        };
       }),
     };
     const service = new PaymentService(
@@ -497,7 +538,7 @@ describe('PaymentService verified transfer processing', () => {
     verificationToken: 'signed-short-lived-token',
   };
 
-  it('verifies the submitted account directly before saving as VERIFIED', async () => {
+  it('saves the submitted account with PENDING verification status without calling external lookup', async () => {
     const h = makeAccountUpsertService();
     const result = await h.service.upsertOrganizationAccount(
       'org-1',
@@ -505,25 +546,22 @@ describe('PaymentService verified transfer processing', () => {
       { userId: 'user-1' },
     );
     expect(h.getAccount().verificationStatus).toBe(
-      PaymentAccountVerificationStatus.VERIFIED,
+      PaymentAccountVerificationStatus.PENDING,
     );
-    expect(h.getAccount().verifiedAccountName).toBe('NGUYEN VAN A');
-    expect(h.getAccount().verificationProvider).toBe('VIETQR_LOOKUP');
-    expect(h.getAccount().verifiedAt).toBeInstanceOf(Date);
-    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
-      organizationId: 'org-1',
-      userId: 'user-1',
+    expect(h.getAccount().verifiedAccountName).toBeNull();
+    expect(h.getAccount().verificationProvider).toBeNull();
+    expect(h.getAccount().verifiedAt).toBeNull();
+    expect(h.verificationService.validateAccountHolder).toHaveBeenCalledWith({
       bankBin: '970422',
       accountNumber: '0123456789',
       accountName: 'NGUYEN VAN A',
-      verificationToken: 'signed-short-lived-token',
     });
     expect(h.accountRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: 'NGUYEN VAN A',
-        verifiedAt: expect.any(Date),
-        verificationProvider: 'VIETQR_LOOKUP',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+        verifiedAccountName: null,
+        verifiedAt: null,
+        verificationProvider: null,
       }),
     );
     expect(result.data).toEqual(
@@ -532,17 +570,17 @@ describe('PaymentService verified transfer processing', () => {
         bankName: 'MBBank',
         maskedAccountNumber: '******6789',
         accountName: 'NGUYEN VAN A',
-        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: 'NGUYEN VAN A',
-        verifiedAt: expect.any(Date),
-        verificationProvider: 'VIETQR_LOOKUP',
-        verificationMethod: 'VIETQR_ACCOUNT_LOOKUP',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+        verifiedAccountName: null,
+        verifiedAt: null,
+        verificationProvider: null,
+        beneficiaryNameVerificationStatus: 'NOT_VERIFIED_BY_BANK',
       }),
     );
     expect(JSON.stringify(result)).not.toContain('0123456789');
   });
 
-  it('does not persist when the fresh provider verification fails', async () => {
+  it('does not persist when local validation fails', async () => {
     const h = makeAccountUpsertService(false);
     await expect(
       h.service.upsertOrganizationAccount('org-1', accountInput, {
@@ -555,31 +593,16 @@ describe('PaymentService verified transfer processing', () => {
     expect(h.accountRepository.save).not.toHaveBeenCalled();
   });
 
-  it('does not persist when the verification provider times out', async () => {
+  it('does not persist when account holder validation rejects invalid input', async () => {
     const h = makeAccountUpsertService();
     const original = h.getAccount();
-    h.verificationService.verifyAccountHolder.mockRejectedValueOnce(
-      new ServiceUnavailableException('provider timeout'),
-    );
-    await expect(
-      h.service.upsertOrganizationAccount('org-1', accountInput, {
-        userId: 'user-1',
-      }),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(h.dataSource.transaction).not.toHaveBeenCalled();
-    expect(h.getAccount()).toBe(original);
-  });
-
-  it('does not persist when the submitted holder name does not match', async () => {
-    const h = makeAccountUpsertService();
-    const original = h.getAccount();
-    h.verificationService.verifyAccountHolder.mockRejectedValueOnce(
-      new BadRequestException({ code: 'ACCOUNT_HOLDER_NAME_MISMATCH' }),
-    );
+    h.verificationService.validateAccountHolder.mockImplementationOnce(() => {
+      throw new BadRequestException('Account holder name is required');
+    });
     await expect(
       h.service.upsertOrganizationAccount(
         'org-1',
-        { ...accountInput, accountName: 'NGUYEN VAN B' },
+        { ...accountInput, accountName: '' },
         { userId: 'user-1' },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -587,46 +610,7 @@ describe('PaymentService verified transfer processing', () => {
     expect(h.getAccount()).toBe(original);
   });
 
-  it('rejects a stale token when the submitted account number changed', async () => {
-    const h = makeAccountUpsertService();
-    await expect(
-      h.service.upsertOrganizationAccount(
-        'org-1',
-        { ...accountInput, accountNumber: '0999999999' },
-        { userId: 'user-1' },
-      ),
-    ).rejects.toThrow('invalid verification token');
-    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
-      organizationId: 'org-1',
-      userId: 'user-1',
-      bankBin: '970422',
-      accountNumber: '0999999999',
-      accountName: 'NGUYEN VAN A',
-      verificationToken: 'signed-short-lived-token',
-    });
-    expect(h.dataSource.transaction).not.toHaveBeenCalled();
-  });
-
-  it('allows a changed account only after a fresh lookup without an old token', async () => {
-    const h = makeAccountUpsertService();
-    const { verificationToken: _oldToken, ...newAccountInput } = accountInput;
-    await h.service.upsertOrganizationAccount(
-      'org-1',
-      { ...newAccountInput, accountNumber: '0999999999' },
-      { userId: 'user-1' },
-    );
-    expect(h.verificationService.verifyAccountHolder).toHaveBeenCalledWith({
-      organizationId: 'org-1',
-      userId: 'user-1',
-      bankBin: '970422',
-      accountNumber: '0999999999',
-      accountName: 'NGUYEN VAN A',
-      verificationToken: undefined,
-    });
-    expect(h.getAccount().accountNumberEncrypted).toBe('cipher');
-  });
-
-  it('checks organization permission before contacting the verification provider', async () => {
+  it('checks organization permission before validating the bank account', async () => {
     const h = makeAccountUpsertService();
     h.membershipRepository.findOne.mockResolvedValueOnce(null);
     await expect(
@@ -634,11 +618,11 @@ describe('PaymentService verified transfer processing', () => {
         userId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(h.verificationService.verifyAccountHolder).not.toHaveBeenCalled();
+    expect(h.verificationService.validateAccountHolder).not.toHaveBeenCalled();
     expect(h.dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('preserves an existing VERIFIED account after an invalid replacement', async () => {
+  it('preserves an existing account after an invalid replacement', async () => {
     const h = makeAccountUpsertService(false);
     const original = h.getAccount();
     await expect(
@@ -654,7 +638,7 @@ describe('PaymentService verified transfer processing', () => {
     );
   });
 
-  it('replaces a verified account only after the new account passes checks', async () => {
+  it('replaces an existing account with PENDING status after the new account passes checks', async () => {
     const h = makeAccountUpsertService();
     await h.service.upsertOrganizationAccount(
       'org-1',
@@ -668,30 +652,43 @@ describe('PaymentService verified transfer processing', () => {
     expect(h.getAccount()).toEqual(
       expect.objectContaining({
         bankName: 'MBBank',
-        verificationStatus: PaymentAccountVerificationStatus.VERIFIED,
-        verifiedAccountName: 'NGUYEN VAN A',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
+        verifiedAccountName: null,
       }),
     );
   });
 
-  it('looks up an account without persisting it', async () => {
+  it('validates account format on lookup without persisting it', async () => {
     const h = makeAccountUpsertService();
     const result = await h.service.lookupOrganizationAccount(
       'org-1',
-      { bankBin: '970422', accountNumber: '0123456789' } as any,
+      {
+        bankBin: '970422',
+        accountNumber: '0123456789',
+        accountName: 'NGUYEN VAN A',
+      } as any,
       { userId: 'user-1' },
     );
     expect(result.data).toEqual(
       expect.objectContaining({
+        valid: true,
+        bankBin: '970422',
+        bankName: 'MBBank',
+        accountNumber: '0123456789',
         accountName: 'NGUYEN VAN A',
-        verificationToken: 'signed-short-lived-token',
+        verificationStatus: PaymentAccountVerificationStatus.PENDING,
       }),
     );
+    expect(h.verificationService.validateAccountFormat).toHaveBeenCalledWith({
+      bankBin: '970422',
+      accountNumber: '0123456789',
+      accountName: 'NGUYEN VAN A',
+    });
     expect(h.dataSource.transaction).not.toHaveBeenCalled();
     expect(h.accountRepository.save).not.toHaveBeenCalled();
   });
 
-  it('keeps the existing account unchanged if persistence fails after lookup', async () => {
+  it('keeps the existing account unchanged if persistence fails', async () => {
     const h = makeAccountUpsertService();
     const original = h.getAccount();
     h.accountRepository.save.mockRejectedValueOnce(new Error('db failure'));

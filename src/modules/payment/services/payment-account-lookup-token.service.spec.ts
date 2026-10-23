@@ -56,7 +56,9 @@ describe('PaymentAccountLookupTokenService', () => {
 
   it('rejects a tampered token and an expired token', () => {
     const token = service.issue(input);
-    expect(() => service.verify(`${token.slice(0, -1)}x`, input)).toThrow(
+    const [payload, sig] = token.split('.');
+    const tampered = `${payload}.${sig.startsWith('a') ? 'b' : 'a'}${sig.slice(1)}`;
+    expect(() => service.verify(tampered, input)).toThrow(
       BadRequestException,
     );
 
