@@ -39,17 +39,23 @@ export class CreateOrganizationInvitations1760500000000
     `);
 
     await queryRunner.query(`
-      ALTER TABLE "organization_invitations"
-      ADD CONSTRAINT "FK_organization_invitations_organization"
-      FOREIGN KEY ("organizationId") REFERENCES "organizations"("id")
-      ON DELETE CASCADE ON UPDATE NO ACTION
-    `);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_organization_invitations_organization') THEN
+          ALTER TABLE "organization_invitations"
+          ADD CONSTRAINT "FK_organization_invitations_organization"
+          FOREIGN KEY ("organizationId") REFERENCES "organizations"("id")
+          ON DELETE CASCADE ON UPDATE NO ACTION;
+        END IF;
 
-    await queryRunner.query(`
-      ALTER TABLE "organization_invitations"
-      ADD CONSTRAINT "FK_organization_invitations_invited_by"
-      FOREIGN KEY ("invitedById") REFERENCES "users"("id")
-      ON DELETE NO ACTION ON UPDATE NO ACTION
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_organization_invitations_invited_by') THEN
+          ALTER TABLE "organization_invitations"
+          ADD CONSTRAINT "FK_organization_invitations_invited_by"
+          FOREIGN KEY ("invitedById") REFERENCES "users"("id")
+          ON DELETE NO ACTION ON UPDATE NO ACTION;
+        END IF;
+      END
+      $$;
     `);
   }
 

@@ -8,6 +8,15 @@ const getNumberEnv = (key: string, defaultValue: number): number => {
 export const databaseConfig = (): TypeOrmModuleOptions => {
   const isProduction = process.env.NODE_ENV === 'production';
   const databaseUrl = process.env.DATABASE_URL;
+  const requiresSsl =
+    isProduction ||
+    process.env.DB_SSL === 'true' ||
+    Boolean(
+      databaseUrl &&
+        (databaseUrl.includes('sslmode=require') ||
+          databaseUrl.includes('neon.tech')),
+    );
+
   const poolExtra = {
     max: getNumberEnv('DB_POOL_MAX', 10),
     idleTimeoutMillis: getNumberEnv('DB_IDLE_TIMEOUT_MS', 30000),
@@ -17,6 +26,8 @@ export const databaseConfig = (): TypeOrmModuleOptions => {
   const baseConfig: TypeOrmModuleOptions = {
     type: 'postgres',
     synchronize: process.env.DB_SYNC === 'true',
+    migrationsRun: process.env.DB_MIGRATIONS_RUN === 'true',
+    migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     logging:
       process.env.DB_LOGGING === 'true'
         ? ['error', 'warn', 'schema']
@@ -30,7 +41,7 @@ export const databaseConfig = (): TypeOrmModuleOptions => {
     return {
       ...baseConfig,
       url: databaseUrl,
-      ssl: isProduction
+      ssl: requiresSsl
         ? {
             rejectUnauthorized: false,
           }
@@ -45,11 +56,10 @@ export const databaseConfig = (): TypeOrmModuleOptions => {
     username: process.env.DB_USERNAME || process.env.POSTGRES_USER,
     password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
     database: process.env.DB_NAME || process.env.POSTGRES_DB,
-    ssl:
-      process.env.DB_SSL === 'true'
-        ? {
-            rejectUnauthorized: false,
-          }
-        : false,
+    ssl: requiresSsl
+      ? {
+          rejectUnauthorized: false,
+        }
+      : false,
   };
 };
