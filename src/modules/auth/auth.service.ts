@@ -171,8 +171,9 @@ export class AuthService {
       } catch {
         this.logger.error('PASSWORD_RESET_TOKEN_CLEANUP_FAILED');
       }
+      const httpStatus = this.getSafeProviderHttpStatus(error);
       this.logger.error(
-        `PASSWORD_RESET_EMAIL_DELIVERY_FAILED:provider=resend:category=${this.classifyEmailProviderError(error)}:elapsedMs=${Date.now() - startedAt}`,
+        `PASSWORD_RESET_EMAIL_DELIVERY_FAILED:provider=resend:category=${this.classifyEmailProviderError(error)}:httpStatus=${httpStatus ?? 'none'}:providerErrorType=${this.getSafeProviderDiagnostic(error, 'providerErrorType')}:providerReason=${this.getSafeProviderDiagnostic(error, 'providerReason')}:elapsedMs=${Date.now() - startedAt}`,
       );
       return genericResponse();
     }
@@ -212,17 +213,42 @@ export class AuthService {
       });
 
       if (!response.ok) {
+        const providerError = (await response.json().catch(() => null)) as {
+          name?: unknown;
+          message?: unknown;
+        } | null;
+        const providerErrorType = this.getResendErrorType(providerError?.name);
+        const providerReason = this.getResendFailureReason(
+          providerError?.message,
+        );
         const code =
-          response.status === 401 || response.status === 403
+          response.status === 401 ||
+          (response.status === 403 &&
+            [
+              'restricted_api_key',
+              'suspended_api_key',
+              'invalid_permission',
+            ].includes(providerErrorType))
             ? 'EMAIL_PROVIDER_AUTH_FAILED'
-            : response.status === 429
-              ? 'EMAIL_PROVIDER_RATE_LIMITED'
-              : response.status === 408
-                ? 'EMAIL_PROVIDER_TIMEOUT'
-                : response.status >= 500
-                  ? 'EMAIL_PROVIDER_UNAVAILABLE'
-                  : 'EMAIL_PROVIDER_REJECTED';
-        throw Object.assign(new Error(code), { code });
+            : providerReason === 'SENDER_DOMAIN_UNVERIFIED'
+              ? 'EMAIL_PROVIDER_SENDER_NOT_VERIFIED'
+              : providerReason === 'RECIPIENT_RESTRICTED'
+                ? 'EMAIL_PROVIDER_RECIPIENT_RESTRICTED'
+                : response.status === 403
+                  ? 'EMAIL_PROVIDER_FORBIDDEN'
+                  : response.status === 429
+                    ? 'EMAIL_PROVIDER_RATE_LIMITED'
+                    : response.status === 408
+                      ? 'EMAIL_PROVIDER_TIMEOUT'
+                      : response.status >= 500
+                        ? 'EMAIL_PROVIDER_UNAVAILABLE'
+                        : 'EMAIL_PROVIDER_REJECTED';
+        throw Object.assign(new Error(code), {
+          code,
+          httpStatus: response.status,
+          providerErrorType,
+          providerReason,
+        });
       }
 
       const payload = (await response.json().catch(() => null)) as {
@@ -250,7 +276,7 @@ export class AuthService {
       return 'UNKNOWN';
     }
     const code = String((error as { code?: unknown }).code);
-    return /^[A-Z0-9_-]{1,32}$/i.test(code) ? code : 'UNKNOWN';
+    return /^[A-Z0-9_-]{1,64}$/i.test(code) ? code : 'UNKNOWN';
   }
 
   private classifyEmailProviderError(error: unknown): string {
@@ -258,6 +284,76 @@ export class AuthService {
     if (code.startsWith('EMAIL_PROVIDER_')) return code;
     if (error instanceof TypeError) return 'EMAIL_PROVIDER_NETWORK_ERROR';
     return 'EMAIL_PROVIDER_REQUEST_FAILED';
+  }
+
+  private getSafeProviderHttpStatus(error: unknown): number | undefined {
+    if (!error || typeof error !== 'object' || !('httpStatus' in error)) {
+      return undefined;
+    }
+    const status = Number((error as { httpStatus?: unknown }).httpStatus);
+    return Number.isInteger(status) && status >= 400 && status <= 599
+      ? status
+      : undefined;
+  }
+
+  private getSafeProviderDiagnostic(
+    error: unknown,
+    field: 'providerErrorType' | 'providerReason',
+  ): string {
+    if (!error || typeof error !== 'object' || !(field in error)) {
+      return 'unknown';
+    }
+    const value = String((error as Record<string, unknown>)[field]);
+    const allowed =
+      field === 'providerErrorType'
+        ? [
+            'invalid_permission',
+            'missing_api_key',
+            'other',
+            'restricted_api_key',
+            'suspended_api_key',
+            'unknown',
+            'validation_error',
+          ]
+        : [
+            'API_KEY_INACTIVE',
+            'API_KEY_SUSPENDED',
+            'RECIPIENT_RESTRICTED',
+            'SENDER_DOMAIN_UNVERIFIED',
+            'unknown',
+          ];
+    return allowed.includes(value) ? value : 'unknown';
+  }
+
+  private getResendErrorType(value: unknown): string {
+    const allowedTypes = new Set([
+      'invalid_permission',
+      'missing_api_key',
+      'restricted_api_key',
+      'suspended_api_key',
+      'validation_error',
+    ]);
+    if (typeof value !== 'string') return 'unknown';
+    const normalized = value.trim().toLowerCase();
+    return allowedTypes.has(normalized) ? normalized : 'other';
+  }
+
+  private getResendFailureReason(value: unknown): string {
+    if (typeof value !== 'string') return 'unknown';
+    const normalized = value.toLowerCase();
+    if (normalized.includes('domain') && normalized.includes('not verified')) {
+      return 'SENDER_DOMAIN_UNVERIFIED';
+    }
+    if (normalized.includes('only send testing emails')) {
+      return 'RECIPIENT_RESTRICTED';
+    }
+    if (normalized.includes('api key') && normalized.includes('suspended')) {
+      return 'API_KEY_SUSPENDED';
+    }
+    if (normalized.includes('api key') && normalized.includes('not active')) {
+      return 'API_KEY_INACTIVE';
+    }
+    return 'unknown';
   }
 
   async resetPassword(

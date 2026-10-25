@@ -275,6 +275,63 @@ describe('AuthService password reset', () => {
     );
   });
 
+  it('does not misclassify an unverified sender domain as an API key failure', async () => {
+    const harness = await createHarness();
+    const errorSpy = jest
+      .spyOn((harness.service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    harness.resendFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        name: 'validation_error',
+        message: 'The example.com domain is not verified.',
+      }),
+    } as Response);
+
+    const response = await harness.service.forgotPassword('user@example.com');
+    const failureLog = errorSpy.mock.calls
+      .map(([message]) => String(message))
+      .find((message) =>
+        message.includes('PASSWORD_RESET_EMAIL_DELIVERY_FAILED'),
+      );
+
+    expect(response.statusCode).toBe(200);
+    expect(failureLog).toContain('category=EMAIL_PROVIDER_SENDER_NOT_VERIFIED');
+    expect(failureLog).toContain('httpStatus=403');
+    expect(failureLog).toContain('providerErrorType=validation_error');
+    expect(failureLog).toContain('providerReason=SENDER_DOMAIN_UNVERIFIED');
+    expect(failureLog).not.toContain('example.com');
+  });
+
+  it('classifies an explicitly suspended Resend API key as an auth failure', async () => {
+    const harness = await createHarness();
+    const errorSpy = jest
+      .spyOn((harness.service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    harness.resendFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        name: 'suspended_api_key',
+        message: 'This API key is suspended.',
+      }),
+    } as Response);
+
+    await harness.service.forgotPassword('user@example.com');
+    const failureLog = errorSpy.mock.calls
+      .map(([message]) => String(message))
+      .find((message) =>
+        message.includes('PASSWORD_RESET_EMAIL_DELIVERY_FAILED'),
+      );
+
+    expect(failureLog).toContain('category=EMAIL_PROVIDER_AUTH_FAILED');
+    expect(failureLog).toContain('httpStatus=403');
+    expect(failureLog).toContain('providerErrorType=suspended_api_key');
+    expect(failureLog).toContain('providerReason=API_KEY_SUSPENDED');
+    expect(failureLog).not.toContain('suspended.');
+  });
+
   it.each([
     ['API key rejected', 401, 'EMAIL_PROVIDER_AUTH_FAILED'],
     ['rate limited', 429, 'EMAIL_PROVIDER_RATE_LIMITED'],
