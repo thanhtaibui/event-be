@@ -16,7 +16,6 @@ import { Organization } from '../organization/entities/organization.entity';
 import { Role } from '../role/entities/role.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { MailerService } from '@nestjs-modules/mailer';
 import { Response } from '../../common/utils/ApiResponse';
 
 type GoogleTokenInfo = {
@@ -27,6 +26,8 @@ type GoogleTokenInfo = {
 };
 
 const OWNER_ROLE_CODE = 'OWNER';
+const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
+const PASSWORD_RESET_EMAIL_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class AuthService {
@@ -41,7 +42,6 @@ export class AuthService {
     private roleRepo: Repository<Role>,
     @InjectRepository(Membership)
     private membershipRepo: Repository<Membership>,
-    private readonly mailerService: MailerService,
   ) {}
 
   async forgotPassword(email: string): Promise<ApiResponse<null>> {
@@ -108,17 +108,31 @@ export class AuthService {
       return genericResponse();
     }
 
+    const resendApiKey = process.env.RESEND_API_KEY?.trim();
+    const mailFrom = process.env.MAIL_FROM?.trim();
+    if (!resendApiKey || !mailFrom) {
+      this.logger.error(
+        `PASSWORD_RESET_EMAIL_CONFIG_MISSING:RESEND_API_KEY=${Boolean(resendApiKey)}:MAIL_FROM=${Boolean(mailFrom)}`,
+      );
+      return genericResponse();
+    }
+
     const user = matchingUsers[0];
     const token = randomBytes(32).toString('base64url');
     const tokenHash = this.hashPasswordResetToken(token);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const previousTokenHash = user.passwordResetTokenHash;
+    const previousExpiresAt = user.passwordResetExpiresAt;
     resetUrl.searchParams.set('token', token);
 
     try {
-      await this.userRepo.update(user.id, {
+      const result = await this.userRepo.update(user.id, {
         passwordResetTokenHash: tokenHash,
         passwordResetExpiresAt: expiresAt,
       });
+      if (!result.affected) {
+        throw new Error('PASSWORD_RESET_TOKEN_NOT_STORED');
+      }
     } catch (error) {
       this.logger.error(
         `PASSWORD_RESET_DATABASE_WRITE_FAILED:code=${this.getSafeErrorCode(error)}:elapsedMs=${Date.now() - startedAt}`,
@@ -131,32 +145,104 @@ export class AuthService {
     );
     try {
       this.logger.log(
-        `PASSWORD_RESET_SMTP_SEND_STARTED:elapsedMs=${Date.now() - startedAt}`,
+        `PASSWORD_RESET_EMAIL_PROVIDER_REQUEST_STARTED:provider=resend:elapsedMs=${Date.now() - startedAt}`,
       );
-      await this.mailerService.sendMail({
-        to: user.email,
-        subject: 'Reset your Eventix password',
-        html: `<p>A password reset was requested for your Eventix account.</p><p><a href="${resetUrl.toString()}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>`,
-      });
+      await this.sendPasswordResetEmail(
+        user.email,
+        resetUrl,
+        resendApiKey,
+        mailFrom,
+      );
     } catch (error) {
       try {
         await this.userRepo.update(
           { id: user.id, passwordResetTokenHash: tokenHash },
-          { passwordResetTokenHash: null, passwordResetExpiresAt: null },
+          {
+            passwordResetTokenHash:
+              previousExpiresAt && previousExpiresAt.getTime() > Date.now()
+                ? previousTokenHash
+                : null,
+            passwordResetExpiresAt:
+              previousExpiresAt && previousExpiresAt.getTime() > Date.now()
+                ? previousExpiresAt
+                : null,
+          },
         );
       } catch {
         this.logger.error('PASSWORD_RESET_TOKEN_CLEANUP_FAILED');
       }
       this.logger.error(
-        `PASSWORD_RESET_EMAIL_DELIVERY_FAILED:category=${this.classifyMailError(error)}:elapsedMs=${Date.now() - startedAt}`,
+        `PASSWORD_RESET_EMAIL_DELIVERY_FAILED:provider=resend:category=${this.classifyEmailProviderError(error)}:elapsedMs=${Date.now() - startedAt}`,
       );
       return genericResponse();
     }
 
     this.logger.log(
-      `PASSWORD_RESET_EMAIL_ACCEPTED:elapsedMs=${Date.now() - startedAt}`,
+      `PASSWORD_RESET_EMAIL_PROVIDER_ACCEPTED:provider=resend:elapsedMs=${Date.now() - startedAt}`,
     );
     return genericResponse();
+  }
+
+  private async sendPasswordResetEmail(
+    to: string,
+    resetUrl: URL,
+    apiKey: string,
+    from: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      PASSWORD_RESET_EMAIL_TIMEOUT_MS,
+    );
+
+    try {
+      const response = await fetch(RESEND_EMAILS_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from,
+          to: [to],
+          subject: 'Reset your Eventix password',
+          html: `<p>A password reset was requested for your Eventix account.</p><p><a href="${resetUrl.toString()}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>`,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const code =
+          response.status === 401 || response.status === 403
+            ? 'EMAIL_PROVIDER_AUTH_FAILED'
+            : response.status === 429
+              ? 'EMAIL_PROVIDER_RATE_LIMITED'
+              : response.status === 408
+                ? 'EMAIL_PROVIDER_TIMEOUT'
+                : response.status >= 500
+                  ? 'EMAIL_PROVIDER_UNAVAILABLE'
+                  : 'EMAIL_PROVIDER_REJECTED';
+        throw Object.assign(new Error(code), { code });
+      }
+
+      const payload = (await response.json().catch(() => null)) as {
+        id?: unknown;
+      } | null;
+      if (!payload || typeof payload.id !== 'string' || !payload.id) {
+        throw Object.assign(new Error('EMAIL_PROVIDER_INVALID_RESPONSE'), {
+          code: 'EMAIL_PROVIDER_INVALID_RESPONSE',
+        });
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error('EMAIL_PROVIDER_TIMEOUT'), {
+          code: 'EMAIL_PROVIDER_TIMEOUT',
+        });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private getSafeErrorCode(error: unknown): string {
@@ -167,23 +253,11 @@ export class AuthService {
     return /^[A-Z0-9_-]{1,32}$/i.test(code) ? code : 'UNKNOWN';
   }
 
-  private classifyMailError(error: unknown): string {
+  private classifyEmailProviderError(error: unknown): string {
     const code = this.getSafeErrorCode(error).toUpperCase();
-    const responseCode =
-      error && typeof error === 'object' && 'responseCode' in error
-        ? Number((error as { responseCode?: unknown }).responseCode)
-        : undefined;
-
-    if (code === 'ETIMEDOUT' || code === 'ESOCKET') return 'SMTP_TIMEOUT';
-    if (code === 'EAUTH' || responseCode === 535) return 'SMTP_AUTH_FAILED';
-    if (
-      ['ECONNECTION', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND'].includes(
-        code,
-      )
-    ) {
-      return 'SMTP_CONNECTION_FAILED';
-    }
-    return 'SMTP_DELIVERY_FAILED';
+    if (code.startsWith('EMAIL_PROVIDER_')) return code;
+    if (error instanceof TypeError) return 'EMAIL_PROVIDER_NETWORK_ERROR';
+    return 'EMAIL_PROVIDER_REQUEST_FAILED';
   }
 
   async resetPassword(

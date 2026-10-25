@@ -9,12 +9,30 @@ import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 describe('AuthService password reset', () => {
   const originalFrontendUrl = process.env.FE_URL;
   const originalNodeEnv = process.env.NODE_ENV;
+  const originalResendApiKey = process.env.RESEND_API_KEY;
+  const originalMailFrom = process.env.MAIL_FROM;
+  let resendFetch: jest.SpyInstance;
+
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = 'test-resend-key';
+    process.env.MAIL_FROM = 'Eventix <no-reply@example.com>';
+    resendFetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'resend-email-id' }),
+    } as Response);
+  });
 
   afterEach(() => {
     if (originalFrontendUrl === undefined) delete process.env.FE_URL;
     else process.env.FE_URL = originalFrontendUrl;
     if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = originalNodeEnv;
+    if (originalResendApiKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = originalResendApiKey;
+    if (originalMailFrom === undefined) delete process.env.MAIL_FROM;
+    else process.env.MAIL_FROM = originalMailFrom;
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -52,7 +70,6 @@ describe('AuthService password reset', () => {
         return { affected: 1 };
       }),
     };
-    const mailer = { sendMail: jest.fn().mockResolvedValue(undefined) };
     const jwt: any = { sign: jest.fn().mockReturnValue('signed-token') };
     const service = new AuthService(
       jwt,
@@ -60,17 +77,17 @@ describe('AuthService password reset', () => {
       { find: jest.fn().mockResolvedValue([]) } as any,
       { findOne: jest.fn() } as any,
       { find: jest.fn(), save: jest.fn(), create: jest.fn() } as any,
-      mailer as any,
     );
 
-    return { service, user, userRepo, mailer, jwt, queryBuilder };
+    return { service, user, userRepo, resendFetch, jwt, queryBuilder };
   }
 
   async function requestAndReadToken(
     harness: Awaited<ReturnType<typeof createHarness>>,
   ) {
     await harness.service.forgotPassword(' USER@example.com ');
-    const html = harness.mailer.sendMail.mock.calls[0][0].html as string;
+    const request = JSON.parse(harness.resendFetch.mock.calls[0][1].body);
+    const html = request.html as string;
     const url = new URL(html.match(/href="([^"]+)"/)![1]);
     return url.searchParams.get('token')!;
   }
@@ -87,8 +104,7 @@ describe('AuthService password reset', () => {
     );
 
     expect(existingResponse).toEqual(unknownResponse);
-    expect(existing.mailer.sendMail).toHaveBeenCalledTimes(1);
-    expect(unknown.mailer.sendMail).not.toHaveBeenCalled();
+    expect(existing.resendFetch).toHaveBeenCalledTimes(1);
   });
 
   it('stores only a token hash, resets the password once, and invalidates refresh', async () => {
@@ -198,8 +214,10 @@ describe('AuthService password reset', () => {
     jest
       .spyOn((harness.service as any).logger, 'error')
       .mockImplementation(() => undefined);
-    harness.mailer.sendMail.mockRejectedValueOnce(
-      new Error('SMTP unavailable'),
+    harness.resendFetch.mockRejectedValueOnce(
+      Object.assign(new Error('provider unavailable'), {
+        code: 'EMAIL_PROVIDER_UNAVAILABLE',
+      }),
     );
 
     const response = await harness.service.forgotPassword('user@example.com');
@@ -209,21 +227,70 @@ describe('AuthService password reset', () => {
     expect(harness.user.passwordResetExpiresAt).toBeNull();
   });
 
+  it('preserves an older unexpired reset link when replacement email delivery fails', async () => {
+    const harness = await createHarness();
+    const previousToken = 'P'.repeat(43);
+    const previousHash = createHash('sha256')
+      .update(previousToken)
+      .digest('hex');
+    const previousExpiry = new Date(Date.now() + 60_000);
+    harness.user.passwordResetTokenHash = previousHash;
+    harness.user.passwordResetExpiresAt = previousExpiry;
+    harness.resendFetch.mockRejectedValueOnce(
+      Object.assign(new Error('provider timeout'), {
+        code: 'EMAIL_PROVIDER_TIMEOUT',
+      }),
+    );
+
+    await harness.service.forgotPassword('user@example.com');
+
+    expect(harness.user.passwordResetTokenHash).toBe(previousHash);
+    expect(harness.user.passwordResetExpiresAt).toEqual(previousExpiry);
+  });
+
+  it('aborts a Resend request that exceeds the provider timeout', async () => {
+    const harness = await createHarness();
+    jest.useFakeTimers();
+    jest
+      .spyOn((harness.service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    harness.resendFetch.mockImplementationOnce(
+      (_url: string, options: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        }),
+    );
+
+    const request = harness.service.forgotPassword('user@example.com');
+    await jest.advanceTimersByTimeAsync(10_000);
+    const response = await request;
+
+    expect(response.statusCode).toBe(200);
+    expect(harness.resendFetch).toHaveBeenCalledTimes(1);
+    expect(harness.user.passwordResetTokenHash).toBeNull();
+    expect((harness.service as any).logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('category=EMAIL_PROVIDER_TIMEOUT'),
+    );
+  });
+
   it.each([
-    ['SMTP timeout', { code: 'ETIMEDOUT' }, 'SMTP_TIMEOUT'],
-    ['SMTP authentication failure', { code: 'EAUTH' }, 'SMTP_AUTH_FAILED'],
-    [
-      'SMTP connection refusal',
-      { code: 'ECONNREFUSED' },
-      'SMTP_CONNECTION_FAILED',
-    ],
+    ['API key rejected', 401, 'EMAIL_PROVIDER_AUTH_FAILED'],
+    ['rate limited', 429, 'EMAIL_PROVIDER_RATE_LIMITED'],
+    ['provider timeout', 408, 'EMAIL_PROVIDER_TIMEOUT'],
+    ['provider unavailable', 503, 'EMAIL_PROVIDER_UNAVAILABLE'],
   ])(
     'handles %s without retrying or disclosing account existence',
-    async (_, error, category) => {
+    async (_, status, category) => {
       const existing = await createHarness();
       const unknown = await createHarness([]);
       unknown.queryBuilder.getMany.mockResolvedValueOnce([]);
-      existing.mailer.sendMail.mockRejectedValueOnce(error);
+      existing.resendFetch.mockResolvedValueOnce({
+        ok: false,
+        status,
+        json: async () => ({ message: 'provider failure' }),
+      } as Response);
       jest
         .spyOn((existing.service as any).logger, 'error')
         .mockImplementation(() => undefined);
@@ -235,7 +302,7 @@ describe('AuthService password reset', () => {
       );
 
       expect(existingResponse).toEqual(unknownResponse);
-      expect(existing.mailer.sendMail).toHaveBeenCalledTimes(1);
+      expect(existing.resendFetch).toHaveBeenCalledTimes(1);
       expect(existing.user.passwordResetTokenHash).toBeNull();
       expect((existing.service as any).logger.error).toHaveBeenCalledWith(
         expect.stringContaining(`category=${category}`),
@@ -252,7 +319,7 @@ describe('AuthService password reset', () => {
     await expect(
       harness.service.forgotPassword('user@example.com'),
     ).rejects.toThrow('PASSWORD_RESET_UNAVAILABLE');
-    expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+    expect(harness.resendFetch).not.toHaveBeenCalled();
   });
 
   it('does not send a reset email when the database cannot store the token', async () => {
@@ -264,7 +331,18 @@ describe('AuthService password reset', () => {
     await expect(
       harness.service.forgotPassword('user@example.com'),
     ).rejects.toThrow('PASSWORD_RESET_UNAVAILABLE');
-    expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+    expect(harness.resendFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not create a reset token when Resend configuration is missing', async () => {
+    const harness = await createHarness();
+    delete process.env.RESEND_API_KEY;
+
+    const response = await harness.service.forgotPassword('user@example.com');
+
+    expect(response.statusCode).toBe(200);
+    expect(harness.user.passwordResetTokenHash).toBeNull();
+    expect(harness.resendFetch).not.toHaveBeenCalled();
   });
 
   it.each(['http://localhost:5173', 'https://old-frontend.vercel.app'])(
@@ -276,7 +354,7 @@ describe('AuthService password reset', () => {
 
       await harness.service.forgotPassword('user@example.com');
 
-      expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+      expect(harness.resendFetch).not.toHaveBeenCalled();
       expect(harness.user.passwordResetTokenHash).toBeNull();
     },
   );
@@ -285,14 +363,38 @@ describe('AuthService password reset', () => {
     const harness = await createHarness();
     process.env.NODE_ENV = 'production';
     process.env.FE_URL = 'https://eventix.pages.dev';
+    const logSpy = jest
+      .spyOn((harness.service as any).logger, 'log')
+      .mockImplementation(() => undefined);
+    const errorSpy = jest
+      .spyOn((harness.service as any).logger, 'error')
+      .mockImplementation(() => undefined);
 
     await harness.service.forgotPassword('user@example.com');
 
-    const html = harness.mailer.sendMail.mock.calls[0][0].html as string;
+    const request = JSON.parse(harness.resendFetch.mock.calls[0][1].body);
+    const html = request.html as string;
     const resetUrl = new URL(html.match(/href="([^"]+)"/)![1]);
+    expect(harness.resendFetch.mock.calls[0][0]).toBe(
+      'https://api.resend.com/emails',
+    );
+    expect(harness.resendFetch.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-resend-key',
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(request.from).toBe('Eventix <no-reply@example.com>');
+    expect(request.to).toEqual(['user@example.com']);
     expect(resetUrl.origin).toBe('https://eventix.pages.dev');
     expect(resetUrl.pathname).toBe('/reset-password');
     expect(resetUrl.searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const logs = [...logSpy.mock.calls, ...errorSpy.mock.calls]
+      .flat()
+      .join(' ');
+    expect(logs).not.toContain('test-resend-key');
+    expect(logs).not.toContain(resetUrl.searchParams.get('token'));
   });
 
   it('validates reset token shape and applies the existing strong password policy', async () => {
