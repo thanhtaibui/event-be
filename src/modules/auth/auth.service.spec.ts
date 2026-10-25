@@ -130,6 +130,38 @@ describe('AuthService password reset', () => {
     ).rejects.toThrow('INVALID_OR_EXPIRED_RESET_TOKEN');
   });
 
+  it('allows only one of two concurrent requests to consume a reset token', async () => {
+    const harness = await createHarness();
+    const token = 'C'.repeat(43);
+    harness.user.passwordResetTokenHash = createHash('sha256')
+      .update(token)
+      .digest('hex');
+    harness.user.passwordResetExpiresAt = new Date(Date.now() + 60_000);
+    harness.userRepo.findOne.mockResolvedValue(harness.user);
+    harness.userRepo.update
+      .mockImplementationOnce(async (_criteria, values) => {
+        Object.assign(harness.user, values);
+        return { affected: 1 };
+      })
+      .mockResolvedValueOnce({ affected: 0 });
+
+    const results = await Promise.allSettled([
+      harness.service.resetPassword(token, 'FirstNewPassword123!'),
+      harness.service.resetPassword(token, 'SecondNewPassword123!'),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(
+      1,
+    );
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(
+      1,
+    );
+    expect(harness.userRepo.update).toHaveBeenCalledTimes(2);
+    expect(harness.userRepo.update.mock.calls[0][0]).toEqual(
+      harness.userRepo.update.mock.calls[1][0],
+    );
+  });
+
   it('rejects unknown and expired reset tokens', async () => {
     const harness = await createHarness();
     const expiredToken = 'B'.repeat(43);
