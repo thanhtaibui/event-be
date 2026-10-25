@@ -416,6 +416,45 @@ describe('AuthService password reset', () => {
     },
   );
 
+  it('creates the reset URL only from the first production URL in FE_URL', async () => {
+    const harness = await createHarness();
+    process.env.NODE_ENV = 'production';
+    process.env.FE_URL =
+      ' https://event-fe.buitaia9.workers.dev/ , http://localhost:5173/ , http://127.0.0.1:5173/ ';
+
+    await harness.service.forgotPassword('user@example.com');
+
+    const request = JSON.parse(harness.resendFetch.mock.calls[0][1].body);
+    const html = request.html as string;
+    const resetUrl = new URL(html.match(/href="([^"]+)"/)![1]);
+    expect(resetUrl.origin).toBe('https://event-fe.buitaia9.workers.dev');
+    expect(resetUrl.pathname).toBe('/reset-password');
+    expect(resetUrl.search).toMatch(/^\?token=[A-Za-z0-9_-]{43}$/);
+    expect(resetUrl.toString()).not.toContain(',');
+    expect(resetUrl.toString()).not.toContain('localhost');
+    expect(resetUrl.toString()).not.toContain('127.0.0.1');
+  });
+
+  it('rejects an invalid first FE_URL entry without storing a token or sending email', async () => {
+    const harness = await createHarness();
+    const errorSpy = jest
+      .spyOn((harness.service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    process.env.NODE_ENV = 'production';
+    process.env.FE_URL = 'not-a-url,https://event-fe.example.workers.dev';
+
+    const response = await harness.service.forgotPassword('user@example.com');
+
+    expect(response.statusCode).toBe(200);
+    expect(harness.user.passwordResetTokenHash).toBeNull();
+    expect(harness.resendFetch).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Invalid URL in comma-separated list at position 1',
+      ),
+    );
+  });
+
   it('uses the configured HTTPS Cloudflare Pages URL for production reset links', async () => {
     const harness = await createHarness();
     process.env.NODE_ENV = 'production';

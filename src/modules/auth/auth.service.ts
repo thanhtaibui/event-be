@@ -17,6 +17,7 @@ import { Role } from '../role/entities/role.entity';
 import { Membership } from '../membership/entities/membership.entity';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { Response } from '../../common/utils/ApiResponse';
+import { parseUrlList } from '../../common/utils/url-config';
 
 type GoogleTokenInfo = {
   aud?: string;
@@ -80,9 +81,20 @@ export class AuthService {
       return genericResponse();
     }
 
-    const frontendUrl = process.env.FE_URL?.trim();
-    if (!frontendUrl) {
-      this.logger.error('Password reset email unavailable: FE_URL is missing');
+    let frontendUrl: string;
+    try {
+      const frontendUrls = parseUrlList(process.env.FE_URL);
+      if (!frontendUrls.length) {
+        this.logger.error(
+          'Password reset email unavailable: FE_URL is missing',
+        );
+        return genericResponse();
+      }
+      frontendUrl = frontendUrls[0];
+    } catch (error) {
+      this.logger.error(
+        `Password reset email unavailable: ${error instanceof Error ? error.message : 'FE_URL is invalid'}`,
+      );
       return genericResponse();
     }
 
