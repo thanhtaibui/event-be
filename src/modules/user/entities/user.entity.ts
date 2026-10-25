@@ -46,7 +46,7 @@ export class User extends BaseEntity {
   @OneToMany(() => Ticket, (ticket) => ticket.user)
   tickets: Ticket[];
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   refreshToken: string | null;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
