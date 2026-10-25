@@ -1,17 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { GoogleOAuthDto, LoginDto, RegisterDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
-import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/entities/user.entity';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 import { UnauthorizedException } from '@nestjs/common';
 import { Organization } from '../organization/entities/organization.entity';
 import { Role } from '../role/entities/role.entity';
 import { Membership } from '../membership/entities/membership.entity';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
+import { MailerService } from '@nestjs-modules/mailer';
+import { Response } from '../../common/utils/ApiResponse';
 
 type GoogleTokenInfo = {
   aud?: string;
@@ -24,6 +25,8 @@ const OWNER_ROLE_CODE = 'OWNER';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private jwtService: JwtService,
     @InjectRepository(User) private userRepo: Repository<User>,
@@ -33,7 +36,115 @@ export class AuthService {
     private roleRepo: Repository<Role>,
     @InjectRepository(Membership)
     private membershipRepo: Repository<Membership>,
+    private readonly mailerService: MailerService,
   ) {}
+
+  async forgotPassword(email: string): Promise<ApiResponse<null>> {
+    const genericResponse = () =>
+      Response(
+        200,
+        'If an account exists for this email, password reset instructions will be sent.',
+        null,
+      );
+    const normalizedEmail = email.trim().toLowerCase();
+    const matchingUsers = await this.userRepo
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :email', { email: normalizedEmail })
+      .andWhere('user.isDelete = :isDelete', { isDelete: false })
+      .take(2)
+      .getMany();
+
+    // A case-insensitive duplicate must never make the reset target ambiguous.
+    if (matchingUsers.length !== 1) return genericResponse();
+
+    const frontendUrl = process.env.FE_URL?.trim();
+    if (!frontendUrl) {
+      this.logger.error('Password reset email unavailable: FE_URL is missing');
+      return genericResponse();
+    }
+
+    let resetUrl: URL;
+    try {
+      resetUrl = new URL('/reset-password', frontendUrl);
+    } catch {
+      this.logger.error('Password reset email unavailable: FE_URL is invalid');
+      return genericResponse();
+    }
+
+    const user = matchingUsers[0];
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = this.hashPasswordResetToken(token);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    resetUrl.searchParams.set('token', token);
+
+    try {
+      await this.userRepo.update(user.id, {
+        passwordResetTokenHash: tokenHash,
+        passwordResetExpiresAt: expiresAt,
+      });
+      await this.mailerService.sendMail({
+        to: user.email,
+        subject: 'Reset your Eventix password',
+        html: `<p>A password reset was requested for your Eventix account.</p><p><a href="${resetUrl.toString()}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>`,
+      });
+    } catch {
+      try {
+        await this.userRepo.update(
+          { id: user.id, passwordResetTokenHash: tokenHash },
+          { passwordResetTokenHash: null, passwordResetExpiresAt: null },
+        );
+      } catch {
+        this.logger.error(
+          'Password reset cleanup failed after email delivery failure',
+        );
+      }
+      this.logger.error('Password reset email delivery failed');
+    }
+
+    return genericResponse();
+  }
+
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<ApiResponse<null>> {
+    const tokenHash = this.hashPasswordResetToken(token);
+    const user = await this.userRepo.findOne({
+      where: { passwordResetTokenHash: tokenHash },
+    });
+    const now = new Date();
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() <= now.getTime()
+    ) {
+      throw new BadRequestException('INVALID_OR_EXPIRED_RESET_TOKEN');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const result = await this.userRepo.update(
+      {
+        id: user.id,
+        passwordResetTokenHash: tokenHash,
+        passwordResetExpiresAt: MoreThan(now),
+      },
+      {
+        password: passwordHash,
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+        refreshToken: null,
+      },
+    );
+    if (!result.affected) {
+      throw new BadRequestException('INVALID_OR_EXPIRED_RESET_TOKEN');
+    }
+
+    return Response(200, 'Password reset successfully', null);
+  }
+
+  private hashPasswordResetToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
   async register(registerDto: RegisterDto): Promise<ApiResponse<any>> {
     const existUser = await this.userRepo.findOne({
@@ -223,6 +334,10 @@ export class AuthService {
         throw new UnauthorizedException('User not found');
       }
 
+      if (!user.refreshToken) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
       // 3. So sánh refresh token (đã hash)
       const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
 
@@ -314,7 +429,9 @@ export class AuthService {
           orgName: isSuperAdminRole
             ? null
             : (membership.organization?.name ?? null),
-          slug: isSuperAdminRole ? null : (membership.organization?.slug ?? null),
+          slug: isSuperAdminRole
+            ? null
+            : (membership.organization?.slug ?? null),
           isVerified: isSuperAdminRole
             ? null
             : (membership.organization?.isVerified ?? false),
@@ -326,9 +443,7 @@ export class AuthService {
     return roleCode?.trim().toUpperCase() === 'SUPER_ADMIN';
   }
 
-  private async verifyGoogleIdToken(
-    idToken: string,
-  ): Promise<GoogleTokenInfo> {
+  private async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenInfo> {
     const response = await fetch(
       `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`,
     );

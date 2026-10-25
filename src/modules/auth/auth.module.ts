@@ -8,8 +8,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { Organization } from '../organization/entities/organization.entity';
 import { Role } from '../role/entities/role.entity';
 import { Membership } from '../membership/entities/membership.entity';
+import { MailerModule } from '@nestjs-modules/mailer';
 @Module({
   imports: [
+    MailerModule,
     TypeOrmModule.forFeature([User, Organization, Role, Membership]),
     JwtModule.register({
       secret: process.env.JWT_SECRET,

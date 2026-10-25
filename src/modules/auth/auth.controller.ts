@@ -7,6 +7,7 @@ import { ApiOperation } from '@nestjs/swagger';
 import { Res, Req } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
 import type { Request } from 'express';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -26,6 +27,18 @@ export class AuthController {
       path: '/',
       maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
     };
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Request a password reset email' })
+  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<ApiResponse<any>> {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Reset password using a one-time email token' })
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<ApiResponse<any>> {
+    return this.authService.resetPassword(dto.token, dto.newPassword);
   }
 
   @Post('login')
