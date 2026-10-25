@@ -225,6 +225,26 @@ describe('OrgVerificationService', () => {
     );
   });
 
+  it('does not sign or reveal a document to a user outside the verification request', async () => {
+    const request = {
+      id: 'verification-1',
+      organizationId: 'org-1',
+      documentUrl:
+        'org-verification/org-1/123e4567-e89b-42d3-a456-426614174000.pdf',
+      organization: { id: 'org-1' },
+      requester: { id: 'owner-1' },
+    };
+    const { service, uploadService } = createService({
+      verificationRequest: request,
+      verifier: { id: 'unrelated-user', memberships: [] },
+    });
+
+    await expect(service.findOne(request.id, 'unrelated-user')).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(uploadService.createPrivateVerificationDocumentUrl).not.toHaveBeenCalled();
+  });
+
   function createService(options: {
     verificationRequest: any;
     verifier: any;
