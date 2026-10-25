@@ -2,296 +2,460 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import {
-  S3Client,
-  PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
 } from '@aws-sdk/client-s3';
-import { ApiResponse, Response } from '../../common/utils/ApiResponse'; // Bạn check lại đúng đường dẫn tới file ApiResponse của bạn nhé
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createHash, randomUUID } from 'crypto';
+import sharp from 'sharp';
+import type { Request } from 'express';
+import { ApiResponse, Response } from '../../common/utils/ApiResponse';
+
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const IMAGE_FORMAT_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'heif',
+};
+const FILE_EXTENSION_BY_MIME: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(IMAGE_FORMAT_BY_MIME).map(([mime, format]) => [
+      mime,
+      format === 'jpeg' ? 'jpg' : format === 'heif' ? 'avif' : format,
+    ]),
+  ),
+  'application/pdf': 'pdf',
+};
+
+export function createUploadInterceptorOptions(imagesOnly = true) {
+  const allowedMimeTypes = new Set(
+    imagesOnly
+      ? Object.keys(IMAGE_FORMAT_BY_MIME)
+      : Object.keys(FILE_EXTENSION_BY_MIME),
+  );
+
+  return {
+    limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+    fileFilter: (
+      _request: Request,
+      file: Express.Multer.File,
+      callback: (error: Error | null, acceptFile: boolean) => void,
+    ) => {
+      if (!allowedMimeTypes.has(file.mimetype)) {
+        callback(new BadRequestException('Unsupported file type'), false);
+        return;
+      }
+      callback(null, true);
+    },
+  };
+}
+
+type R2StorageConfig = {
+  client: S3Client;
+  bucketName: string;
+  publicBaseUrl: URL;
+};
+
+type UploadedFileResult = {
+  url: string;
+  key: string;
+  secure_url: string;
+  public_id: string;
+};
 
 @Injectable()
 export class UploadService {
+  private readonly logger = new Logger(UploadService.name);
   private cachedClient?: S3Client;
   private cachedConfigSignature?: string;
   private cachedBucketName?: string;
-  private cachedProvider: 'r2' | 's3' = 's3';
-  private cachedEndpoint?: string;
+  private cachedPublicBaseUrl?: URL;
 
-  private getStorageConfig(): {
-    client: S3Client;
-    bucketName: string;
-    provider: 'r2' | 's3';
-    endpoint?: string;
-  } {
-    const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const r2BucketName = process.env.R2_BUCKET_NAME;
-    const r2AccountId = process.env.R2_ACCOUNT_ID;
-    const r2Endpoint =
+  private getStorageConfig(): R2StorageConfig {
+    const missing: string[] = [];
+    const accountId = process.env.R2_ACCOUNT_ID;
+    const endpoint =
       process.env.R2_ENDPOINT ||
-      (r2AccountId
-        ? `https://${r2AccountId}.r2.cloudflarestorage.com`
-        : undefined);
+      (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const bucketName = process.env.R2_BUCKET_NAME;
+    const publicBaseUrlValue = process.env.R2_PUBLIC_BASE_URL;
 
-    const isR2Configured = Boolean(
-      r2AccessKeyId && r2SecretAccessKey && r2BucketName && r2Endpoint,
-    );
-
-    const s3Region = process.env.AWS_REGION;
-    const s3AccessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const s3SecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    const s3BucketName =
-      process.env.AWS_BUCKET ||
-      process.env.AWS_S3_BUCKET_NAME ||
-      process.env.AWS_S3_BUCKET;
-
-    const isS3Configured = Boolean(
-      s3Region && s3AccessKeyId && s3SecretAccessKey && s3BucketName,
-    );
-
-    const requestedProvider = (
-      process.env.STORAGE_PROVIDER || ''
-    ).toLowerCase();
-
-    let provider: 'r2' | 's3' | null = null;
-    if (requestedProvider === 'r2') {
-      if (!isR2Configured) {
-        const missingR2: string[] = [];
-        if (!r2AccessKeyId) missingR2.push('R2_ACCESS_KEY_ID');
-        if (!r2SecretAccessKey) missingR2.push('R2_SECRET_ACCESS_KEY');
-        if (!r2BucketName) missingR2.push('R2_BUCKET_NAME');
-        if (!r2Endpoint) missingR2.push('R2_ACCOUNT_ID or R2_ENDPOINT');
-        throw new BadRequestException(
-          Response(
-            400,
-            `STORAGE_PROVIDER=r2 is specified, but required Cloudflare R2 variables are missing: ${missingR2.join(', ')}`,
-            null,
-          ),
-        );
-      }
-      provider = 'r2';
-    } else if (requestedProvider === 's3') {
-      if (!isS3Configured) {
-        const missingS3: string[] = [];
-        if (!s3Region) missingS3.push('AWS_REGION');
-        if (!s3AccessKeyId) missingS3.push('AWS_ACCESS_KEY_ID');
-        if (!s3SecretAccessKey) missingS3.push('AWS_SECRET_ACCESS_KEY');
-        if (!s3BucketName) missingS3.push('AWS_S3_BUCKET_NAME/AWS_BUCKET');
-        throw new BadRequestException(
-          Response(
-            400,
-            `STORAGE_PROVIDER=s3 is specified, but required AWS S3 variables are missing: ${missingS3.join(', ')}`,
-            null,
-          ),
-        );
-      }
-      provider = 's3';
-    } else {
-      if (isR2Configured) {
-        provider = 'r2';
-      } else if (isS3Configured) {
-        provider = 's3';
-      }
+    if (process.env.STORAGE_PROVIDER?.trim().toLowerCase() !== 'r2') {
+      missing.push('STORAGE_PROVIDER=r2');
     }
-
-    if (!provider) {
-      throw new BadRequestException(
+    if (!endpoint) missing.push('R2_ACCOUNT_ID or R2_ENDPOINT');
+    if (!accessKeyId) missing.push('R2_ACCESS_KEY_ID');
+    if (!secretAccessKey) missing.push('R2_SECRET_ACCESS_KEY');
+    if (!bucketName) missing.push('R2_BUCKET_NAME');
+    if (!publicBaseUrlValue) missing.push('R2_PUBLIC_BASE_URL');
+    if (missing.length) {
+      throw new InternalServerErrorException(
         Response(
-          400,
-          'Storage configuration is missing. Configure Cloudflare R2 (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_ACCOUNT_ID/R2_ENDPOINT) or AWS S3.',
+          500,
+          `Cloudflare R2 configuration is incomplete: ${missing.join(', ')}`,
           null,
         ),
       );
     }
 
-    const configSignature =
-      provider === 'r2'
-        ? `r2:${r2Endpoint}:${r2BucketName}:${r2AccessKeyId}`
-        : `s3:${s3Region}:${s3BucketName}:${s3AccessKeyId}`;
-
-    if (
-      this.cachedClient &&
-      this.cachedConfigSignature === configSignature &&
-      this.cachedBucketName
-    ) {
-      return {
-        client: this.cachedClient,
-        bucketName: this.cachedBucketName,
-        provider: this.cachedProvider,
-        endpoint: this.cachedEndpoint,
-      };
+    let publicBaseUrl: URL;
+    try {
+      publicBaseUrl = new URL(publicBaseUrlValue!);
+      if (
+        publicBaseUrl.protocol !== 'https:' ||
+        publicBaseUrl.username ||
+        publicBaseUrl.password ||
+        publicBaseUrl.search ||
+        publicBaseUrl.hash ||
+        publicBaseUrl.hostname.endsWith('.r2.cloudflarestorage.com')
+      ) {
+        throw new Error('Invalid public URL');
+      }
+      publicBaseUrl.pathname = publicBaseUrl.pathname.replace(/\/+$/, '');
+    } catch {
+      throw new InternalServerErrorException(
+        Response(
+          500,
+          'R2_PUBLIC_BASE_URL must be an HTTPS public bucket or custom-domain URL, not the S3 API endpoint',
+          null,
+        ),
+      );
     }
 
-    if (provider === 'r2') {
+    const secretFingerprint = createHash('sha256')
+      .update(secretAccessKey!)
+      .digest('hex');
+    const configSignature = `${endpoint}:${bucketName}:${accessKeyId}:${secretFingerprint}:${publicBaseUrl.toString()}`;
+    if (
+      !this.cachedClient ||
+      this.cachedConfigSignature !== configSignature ||
+      !this.cachedBucketName ||
+      !this.cachedPublicBaseUrl
+    ) {
       this.cachedClient = new S3Client({
         region: 'auto',
-        endpoint: r2Endpoint,
+        endpoint,
+        forcePathStyle: true,
         credentials: {
-          accessKeyId: r2AccessKeyId!,
-          secretAccessKey: r2SecretAccessKey!,
+          accessKeyId: accessKeyId!,
+          secretAccessKey: secretAccessKey!,
         },
       });
-      this.cachedBucketName = r2BucketName!;
-      this.cachedProvider = 'r2';
-      this.cachedEndpoint = r2Endpoint;
-    } else {
-      this.cachedClient = new S3Client({
-        region: s3Region!,
-        credentials: {
-          accessKeyId: s3AccessKeyId!,
-          secretAccessKey: s3SecretAccessKey!,
-        },
-      });
-      this.cachedBucketName = s3BucketName!;
-      this.cachedProvider = 's3';
-      this.cachedEndpoint = undefined;
+      this.cachedConfigSignature = configSignature;
+      this.cachedBucketName = bucketName;
+      this.cachedPublicBaseUrl = publicBaseUrl;
     }
-
-    this.cachedConfigSignature = configSignature;
 
     return {
       client: this.cachedClient,
-      bucketName: this.cachedBucketName,
-      provider: this.cachedProvider,
-      endpoint: this.cachedEndpoint,
+      bucketName: this.cachedBucketName!,
+      publicBaseUrl: this.cachedPublicBaseUrl!,
     };
   }
 
-  private getS3Client(): S3Client {
-    return this.getStorageConfig().client;
+  isR2PublicUrl(fileUrl: string): boolean {
+    try {
+      const base = this.getPublicBaseUrl();
+      const candidate = new URL(fileUrl);
+      const basePath = base.pathname.replace(/\/+$/, '');
+      return (
+        candidate.protocol === 'https:' &&
+        candidate.origin === base.origin &&
+        !candidate.search &&
+        !candidate.hash &&
+        candidate.pathname.startsWith(`${basePath}/`)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  assertR2PublicUrl(fileUrl: string): void {
+    if (!this.isR2PublicUrl(fileUrl)) {
+      throw new BadRequestException(
+        Response(
+          400,
+          'New media must use a URL returned by the R2 upload API',
+          null,
+        ),
+      );
+    }
   }
 
   async uploadFile(
     file: Express.Multer.File,
     folderName: string,
-  ): Promise<ApiResponse<{ secure_url: string; public_id: string }>> {
+  ): Promise<ApiResponse<UploadedFileResult>> {
     const config = this.getStorageConfig();
+    if (!Object.hasOwn(IMAGE_FORMAT_BY_MIME, file?.mimetype || '')) {
+      throw new BadRequestException(
+        'Public upload only accepts image files; use the private document endpoint for verification documents',
+      );
+    }
+    await this.validateFile(file);
+
+    const folder = this.normalizeFolder(folderName);
+    if (folder === 'org-verification' || folder.startsWith('org-verification/')) {
+      throw new BadRequestException(
+        'Verification documents must use the private verification upload API',
+      );
+    }
+    const extension = FILE_EXTENSION_BY_MIME[file.mimetype];
+    const key = `${folder}/${randomUUID()}.${extension}`;
     try {
-      const fileExtension = file.originalname.split('.').pop() || '';
-      const baseName =
-        file.originalname.substring(0, file.originalname.lastIndexOf('.')) ||
-        file.originalname;
-      const sanitizedFolder = folderName.replace(/^\/+|\/+$/g, '');
-      const uniqueFileName = `${sanitizedFolder}/${baseName}-${Date.now()}.${fileExtension}`;
+      await config.client.send(
+        new PutObjectCommand({
+          Bucket: config.bucketName,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
 
-      const command = new PutObjectCommand({
-        Bucket: config.bucketName,
-        Key: uniqueFileName,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      });
-
-      await config.client.send(command);
-
-      let secureUrl: string;
-      if (config.provider === 'r2') {
-        const publicBase = process.env.R2_PUBLIC_BASE_URL
-          ? process.env.R2_PUBLIC_BASE_URL.replace(/\/+$/, '')
-          : `${config.endpoint!.replace(/\/+$/, '')}/${config.bucketName}`;
-        secureUrl = `${publicBase}/${uniqueFileName}`;
-      } else {
-        secureUrl = `https://${config.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${uniqueFileName}`;
-      }
-
-      const providerLabel =
-        config.provider === 'r2' ? 'Cloudflare R2' : 'AWS S3';
-      return Response(200, `File uploaded successfully to ${providerLabel}`, {
-        secure_url: secureUrl,
-        public_id: uniqueFileName,
+      const url = this.buildPublicUrl(config.publicBaseUrl, key);
+      return Response(200, 'File uploaded successfully to Cloudflare R2', {
+        url,
+        key,
+        secure_url: url,
+        public_id: key,
       });
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      const providerLabel =
-        config.provider === 'r2' ? 'Cloudflare R2' : 'AWS S3';
-      console.error(`${providerLabel} Upload Error:`, error);
+      this.logger.error(
+        `R2_UPLOAD_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
       throw new InternalServerErrorException(
-        Response(500, `Failed to upload file to ${providerLabel} storage`, null),
+        Response(500, 'Failed to upload file to Cloudflare R2 storage', null),
+      );
+    }
+  }
+
+  async uploadPrivateVerificationDocument(
+    file: Express.Multer.File,
+    organizationId: string,
+  ): Promise<string> {
+    const config = this.getStorageConfig();
+    const privateBucket = this.getPrivateBucketName(config.bucketName);
+    await this.validateFile(file);
+
+    const extension = FILE_EXTENSION_BY_MIME[file.mimetype];
+    const key = `org-verification/${organizationId}/${randomUUID()}.${extension}`;
+    try {
+      await config.client.send(
+        new PutObjectCommand({
+          Bucket: privateBucket,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          CacheControl: 'private, no-store',
+        }),
+      );
+      return key;
+    } catch (error) {
+      this.logger.error(
+        `R2_PRIVATE_DOCUMENT_UPLOAD_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to upload private verification document',
+      );
+    }
+  }
+
+  isPrivateVerificationDocumentKey(key: string, organizationId?: string): boolean {
+    if (typeof key !== 'string') return false;
+    const match = /^org-verification\/([A-Za-z0-9-]+)\/([0-9a-f-]+\.(?:jpg|png|webp|gif|avif|pdf))$/i.exec(key);
+    return Boolean(match && (!organizationId || match[1] === organizationId));
+  }
+
+  async createPrivateVerificationDocumentUrl(
+    key: string,
+    organizationId: string,
+  ): Promise<{ url: string; expiresAt: Date }> {
+    if (!this.isPrivateVerificationDocumentKey(key, organizationId)) {
+      throw new BadRequestException('Invalid verification document reference');
+    }
+
+    const config = this.getStorageConfig();
+    const bucket = this.getPrivateBucketName(config.bucketName);
+    try {
+      await this.assertPrivateVerificationDocumentExists(key, organizationId);
+      const expiresIn = 300;
+      const url = await getSignedUrl(
+        config.client,
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+        { expiresIn },
+      );
+      return { url, expiresAt: new Date(Date.now() + expiresIn * 1000) };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      if (
+        error instanceof Error &&
+        ['NotFound', 'NoSuchKey', 'NotFoundException'].includes(error.name)
+      ) {
+        throw new BadRequestException('Verification document was not found');
+      }
+      this.logger.error(
+        `R2_PRIVATE_DOCUMENT_SIGN_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
+      throw new InternalServerErrorException(
+        'Unable to create temporary document access URL',
+      );
+    }
+  }
+
+  async assertPrivateVerificationDocumentExists(
+    key: string,
+    organizationId: string,
+  ): Promise<void> {
+    if (!this.isPrivateVerificationDocumentKey(key, organizationId)) {
+      throw new BadRequestException('Invalid verification document reference');
+    }
+    const config = this.getStorageConfig();
+    const bucket = this.getPrivateBucketName(config.bucketName);
+    try {
+      await config.client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ['NotFound', 'NoSuchKey', 'NotFoundException'].includes(error.name)
+      ) {
+        throw new BadRequestException('Verification document was not found');
+      }
+      this.logger.error(
+        `R2_PRIVATE_DOCUMENT_HEAD_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
+      throw new InternalServerErrorException(
+        'Unable to verify private verification document',
       );
     }
   }
 
   async deleteFile(fileUrl: string): Promise<ApiResponse<null>> {
-    if (!fileUrl) {
+    if (!fileUrl || !this.isR2PublicUrl(fileUrl)) {
       throw new BadRequestException(
-        Response(400, 'File URL is required', null),
+        Response(
+          400,
+          'Only URLs from the configured R2 public domain can be deleted here',
+          null,
+        ),
       );
     }
+
     const config = this.getStorageConfig();
+    const key = this.extractR2Key(fileUrl, config.publicBaseUrl);
     try {
-      const storageKey = this.extractStorageKey(fileUrl, config.bucketName);
-      const command = new DeleteObjectCommand({
-        Bucket: config.bucketName,
-        Key: storageKey,
-      });
-      await config.client.send(command);
-      const providerLabel =
-        config.provider === 'r2' ? 'Cloudflare R2' : 'AWS S3';
-      return Response(200, `File deleted successfully from ${providerLabel}`, null);
+      await config.client.send(
+        new DeleteObjectCommand({ Bucket: config.bucketName, Key: key }),
+      );
+      return Response(200, 'File deleted successfully from Cloudflare R2', null);
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      const providerLabel =
-        config.provider === 'r2' ? 'Cloudflare R2' : 'AWS S3';
-      console.error(`${providerLabel} Delete Error:`, error);
+      this.logger.error(
+        `R2_DELETE_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
       throw new InternalServerErrorException(
-        Response(500, 'Failed to delete file', null),
+        Response(500, 'Failed to delete file from Cloudflare R2', null),
       );
     }
   }
 
-  public extractStorageKey(fileUrl: string, bucketName?: string): string {
-    if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
-      return fileUrl;
+  private getPublicBaseUrl(): URL {
+    const value = process.env.R2_PUBLIC_BASE_URL;
+    if (!value) throw new Error('R2_PUBLIC_BASE_URL is missing');
+    const url = new URL(value);
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.hostname.endsWith('.r2.cloudflarestorage.com')
+    ) {
+      throw new Error('R2_PUBLIC_BASE_URL is invalid');
+    }
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    return url;
+  }
+
+  private getPrivateBucketName(publicBucketName: string): string {
+    const privateBucket = process.env.R2_PRIVATE_BUCKET_NAME?.trim();
+    if (!privateBucket) {
+      throw new InternalServerErrorException(
+        'Cloudflare R2 private storage is not configured: R2_PRIVATE_BUCKET_NAME',
+      );
+    }
+    if (privateBucket === publicBucketName) {
+      throw new InternalServerErrorException(
+        'R2 private documents must use a bucket separate from public assets',
+      );
+    }
+    return privateBucket;
+  }
+
+  private normalizeFolder(folderName: string): string {
+    const segments = (folderName || 'uploads')
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (
+      !segments.length ||
+      segments.some((segment) => segment === '.' || segment === '..')
+    ) {
+      throw new BadRequestException('Invalid upload folder');
+    }
+    return segments
+      .map((segment) => segment.replace(/[^A-Za-z0-9_-]/g, '-'))
+      .join('/');
+  }
+
+  private async validateFile(file: Express.Multer.File): Promise<void> {
+    if (!file?.buffer?.length || file.buffer.length > MAX_UPLOAD_SIZE_BYTES) {
+      throw new BadRequestException('File is missing or exceeds the 10 MB limit');
+    }
+    if (!Object.hasOwn(FILE_EXTENSION_BY_MIME, file.mimetype)) {
+      throw new BadRequestException('Unsupported file type');
     }
 
-    if (fileUrl.includes('.amazonaws.com/')) {
-      const urlParts = fileUrl.split('.amazonaws.com/');
-      if (urlParts.length > 1 && urlParts[1]) {
-        return urlParts[1];
+    if (file.mimetype === 'application/pdf') {
+      if (file.buffer.subarray(0, 5).toString() !== '%PDF-') {
+        throw new BadRequestException('File content does not match its MIME type');
       }
-    }
-
-    if (fileUrl.includes('.r2.cloudflarestorage.com/')) {
-      const urlParts = fileUrl.split('.r2.cloudflarestorage.com/');
-      if (urlParts.length > 1 && urlParts[1]) {
-        let key = urlParts[1];
-        if (bucketName && key.startsWith(`${bucketName}/`)) {
-          key = key.slice(bucketName.length + 1);
-        }
-        return key;
-      }
-    }
-
-    const r2PublicBase = process.env.R2_PUBLIC_BASE_URL
-      ? process.env.R2_PUBLIC_BASE_URL.replace(/\/+$/, '')
-      : undefined;
-    if (r2PublicBase && fileUrl.startsWith(r2PublicBase)) {
-      return fileUrl.slice(r2PublicBase.length).replace(/^\/+/, '');
+      return;
     }
 
     try {
-      const parsed = new URL(fileUrl);
-      let pathname = parsed.pathname.replace(/^\/+/, '');
-      if (bucketName && pathname.startsWith(`${bucketName}/`)) {
-        pathname = pathname.slice(bucketName.length + 1);
+      const metadata = await sharp(file.buffer, { failOn: 'error' }).metadata();
+      if (metadata.format !== IMAGE_FORMAT_BY_MIME[file.mimetype]) {
+        throw new BadRequestException('File content does not match its MIME type');
       }
-      if (pathname) {
-        return pathname;
-      }
-    } catch {
-      // not a standard URL
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Invalid or unsupported image file');
     }
-
-    throw new BadRequestException(
-      Response(400, 'Invalid file URL format', null),
-    );
   }
 
-  private extractS3Key(fileUrl: string): string {
-    return this.extractStorageKey(fileUrl, this.cachedBucketName);
+  private buildPublicUrl(publicBaseUrl: URL, key: string): string {
+    const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+    return `${publicBaseUrl.toString().replace(/\/+$/, '')}/${encodedKey}`;
+  }
+
+  private extractR2Key(fileUrl: string, publicBaseUrl: URL): string {
+    const candidate = new URL(fileUrl);
+    const encodedBasePath = publicBaseUrl.pathname.replace(/\/+$/, '');
+    const encodedKey = candidate.pathname.slice(encodedBasePath.length + 1);
+    try {
+      return encodedKey.split('/').map(decodeURIComponent).join('/');
+    } catch {
+      throw new BadRequestException('Invalid encoded R2 object URL');
+    }
   }
 }

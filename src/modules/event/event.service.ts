@@ -32,6 +32,7 @@ import { UploadService } from '../upload/upload.service';
 import { Membership } from '../membership/entities/membership.entity';
 import { Category } from '../category/entities/category.entity';
 import { NotificationService } from '../notification/notification.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class EventService implements OnModuleInit, OnModuleDestroy {
@@ -50,6 +51,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     // @InjectRepository(Invite) private inviteRepo: Repository<Invite>
     private readonly uploadService: UploadService,
     private readonly notificationService: NotificationService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   onModuleInit(): void {
@@ -74,6 +76,9 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     console.time('POST_EVENT_CREATE');
     try {
       this.validateEventDates(createEventDto);
+      for (const imageUrl of [createEventDto.eventPoster, createEventDto.eventBanner]) {
+        if (imageUrl) this.uploadService.assertR2PublicUrl(imageUrl);
+      }
       const status = EventStatus.DRAFT;
       const { categoryIds, ...eventData } = createEventDto;
       const organization = await this.findOrganizationOrThrow(
@@ -575,15 +580,22 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    for (const [newUrl, oldUrl] of [
+      [updateEventDto.eventPoster, event.eventPoster],
+      [updateEventDto.eventBanner, event.eventBanner],
+    ]) {
+      if (newUrl && newUrl !== oldUrl) this.uploadService.assertR2PublicUrl(newUrl);
+    }
+
     const { categoryIds, ...eventData } = updateEventDto;
     Object.assign(event, eventData);
 
     const saved = await this.eventRepo.save(event);
     if (oldPosterUrl && saved.eventPoster !== oldPosterUrl) {
-      await this.uploadService.deleteFile(oldPosterUrl);
+      await this.cleanupReplacedMedia(oldPosterUrl);
     }
     if (oldBannerUrl && saved.eventBanner !== oldBannerUrl) {
-      await this.uploadService.deleteFile(oldBannerUrl);
+      await this.cleanupReplacedMedia(oldBannerUrl);
     }
     return Response(
       200,
@@ -592,6 +604,22 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
         excludeExtraneousValues: true,
       }),
     );
+  }
+
+  private async cleanupReplacedMedia(fileUrl: string): Promise<void> {
+    try {
+      if (this.cloudinaryService.isCloudinaryUrl(fileUrl)) {
+        await this.cloudinaryService.deleteFile(fileUrl);
+      } else if (this.uploadService.isR2PublicUrl(fileUrl)) {
+        await this.uploadService.deleteFile(fileUrl);
+      } else {
+        this.logger.warn('EVENT_MEDIA_CLEANUP_SKIPPED_UNKNOWN_PROVIDER');
+      }
+    } catch (error) {
+      this.logger.warn(
+        `EVENT_MEDIA_CLEANUP_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
+    }
   }
 
   async remove(id: string, currentUser?: any): Promise<ApiResponse<{ id: string }>> {

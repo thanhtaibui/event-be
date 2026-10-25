@@ -37,6 +37,7 @@ import { OrganizationResDto } from './dto/organization-res.dto';
 import { UpdateActiveDto } from './dto/updateActiveDto.dto';
 import { DeleteSort } from '../user/dto/delete-sort-user.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { createUploadInterceptorOptions } from '../upload/upload.service';
 import { UpdateBannerDto } from './dto/update-banner.dto';
 import { ApiPaginationQuery, FilterOperator, Paginate } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
@@ -62,7 +63,9 @@ export class OrganizationController {
   @ApiBearerAuth('access-token')
   @UseGuards(JwtGuard, PermissionsGuard)
   // @Permissions(PermissionCode.ORGANIZATION_CREATE)
-  @UseInterceptors(FileInterceptor('logo'))
+  @UseInterceptors(
+    FileInterceptor('logo', createUploadInterceptorOptions(true)),
+  )
   async createOrganization(
     @Body() createDto: CreateOrganizationDto,
     @UploadedFile() file: Express.Multer.File,

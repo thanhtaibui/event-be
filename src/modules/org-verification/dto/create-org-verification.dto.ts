@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsUrl } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateOrgVerificationDto {
   @ApiProperty({
@@ -19,10 +19,10 @@ export class CreateOrgVerificationDto {
   taxIdNumber: string;
 
   @ApiProperty({
-    example: 'https://res.cloudinary.com/demo/image/upload/license.jpg',
-    description: 'Link giấy phép kinh doanh hoặc giấy tờ xác minh hợp lệ',
+    example: 'org-verification/b46ed74d-4a79-40a7-a2a1-723be34d951b/uuid.pdf',
+    description: 'Private R2 documentKey returned by the upload API',
   })
-  @IsUrl()
+  @IsString()
   @IsNotEmpty()
-  documentUrl: string;
+  documentKey: string;
 }

@@ -1,39 +1,15 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import cloudinary from '../../configs/cloudinary.config';
 import { ApiResponse, Response } from '../../common/utils/ApiResponse';
 
 @Injectable()
 export class CloudinaryService {
-  async uploadFile(
-    file: Express.Multer.File,
-    folderName: string,
-  ): Promise<ApiResponse<{ secure_url: string; public_id: string }>> {
-    return new Promise((resolve, reject) => {
-      const upload = cloudinary.uploader.upload_stream(
-        {
-          folder: folderName,
-          resource_type: 'auto', // Automatically detects image, video, or raw file
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          if (!result)
-            return reject(new Error('Cloudinary upload result is undefined'));
-
-          // Return both URL and public_id (best practice for later deletion)
-          resolve(
-            Response(200, 'File upload successfully', {
-              secure_url: result.secure_url,
-              public_id: result.public_id,
-            }),
-          );
-        },
-      );
-      upload.end(file.buffer);
-    });
+  isCloudinaryUrl(fileUrl: string): boolean {
+    try {
+      return new URL(fileUrl).hostname === 'res.cloudinary.com';
+    } catch {
+      return false;
+    }
   }
 
   async deleteFile(fileUrl: string): Promise<ApiResponse<null>> {
@@ -44,6 +20,16 @@ export class CloudinaryService {
     }
 
     try {
+      const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+      const apiKey = process.env.CLOUDINARY_API_KEY;
+      const apiSecret = process.env.CLOUDINARY_API_SECRET;
+      if (!cloudName || !apiKey || !apiSecret) {
+        throw new Error('Legacy Cloudinary deletion is not configured');
+      }
+      if (!this.isCloudinaryUrl(fileUrl)) {
+        throw new Error('URL is not a Cloudinary asset');
+      }
+
       const publicId = this.extractPublicId(fileUrl);
 
       // We use 'auto' or try to detect type, but for deletion,
@@ -56,7 +42,10 @@ export class CloudinaryService {
 
       return Response(200, 'File deleted successfully', null);
     } catch (error) {
-      console.error('Cloudinary Delete Error:', error);
+      console.error(
+        'LEGACY_CLOUDINARY_DELETE_FAILED',
+        error instanceof Error ? error.name : 'unknown',
+      );
       throw new InternalServerErrorException(
         Response(500, 'Failed to delete file from cloud storage', null),
       );

@@ -7,17 +7,22 @@ import { Repository } from 'typeorm';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { Event } from '../event/entities/event.entity';
 import { ItemDto } from './dto/item.dto';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class ItemService {
   constructor(
     @InjectRepository(Item) private readonly itemRope: Repository<Item>,
     @InjectRepository(Event) private readonly eventRope: Repository<Event>,
+    private readonly uploadService: UploadService,
   ) {}
 
   async create(
     createItemDto: CreateItemDto,
   ): Promise<ApiResponse<CreateItemDto>> {
+    if (createItemDto.imageUrl) {
+      this.uploadService.assertR2PublicUrl(createItemDto.imageUrl);
+    }
     const event = await this.eventRope.findOne({
       where: { id: createItemDto.eventId },
     });
@@ -74,6 +79,9 @@ export class ItemService {
 
     if (!item) {
       throw new BadRequestException('Item not found');
+    }
+    if (updateItemDto.imageUrl && updateItemDto.imageUrl !== item.imageUrl) {
+      this.uploadService.assertR2PublicUrl(updateItemDto.imageUrl);
     }
     const updatedItem = this.itemRope.merge(item, updateItemDto);
     await this.itemRope.save(updatedItem);

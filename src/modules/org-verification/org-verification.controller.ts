@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -10,7 +11,10 @@ import {
   ParseUUIDPipe,
   UseGuards,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { OrgVerificationService } from './org-verification.service';
 import { CreateOrgVerificationDto } from './dto/create-org-verification.dto';
 import { UpdateOrgVerificationDto } from './dto/update-org-verification.dto';
@@ -21,12 +25,14 @@ import {
   ApiParam,
   ApiQuery,
   ApiTags,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { VerificationStatus } from 'src/shared/enum/enum';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { Permissions } from 'src/common/decorators/permissions.decorator';
 import { PermissionCode } from 'src/common/constants/permission-codes';
+import { createUploadInterceptorOptions } from '../upload/upload.service';
 
 @ApiTags('OrgVerification')
 @ApiBearerAuth('access-token')
@@ -36,6 +42,35 @@ export class OrgVerificationController {
   constructor(
     private readonly orgVerificationService: OrgVerificationService,
   ) {}
+
+  @Post('documents')
+  @ApiOperation({
+    summary: 'Upload a private organization verification document to R2',
+  })
+  @ApiQuery({ name: 'organizationId', required: true, type: String })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', createUploadInterceptorOptions(false)),
+  )
+  uploadDocument(
+    @Query('organizationId', ParseUUIDPipe) organizationId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    if (!file) throw new BadRequestException('No file uploaded');
+    return this.orgVerificationService.uploadDocument(
+      organizationId,
+      file,
+      req.user.userId,
+    );
+  }
 
   @Post()
   @ApiOperation({
@@ -49,8 +84,8 @@ export class OrgVerificationController {
         value: {
           organizationId: 'b46ed74d-4a79-40a7-a2a1-723be34d951b',
           taxIdNumber: '0312345678',
-          documentUrl:
-            'https://res.cloudinary.com/demo/image/upload/license.jpg',
+          documentKey:
+            'org-verification/b46ed74d-4a79-40a7-a2a1-723be34d951b/uuid.pdf',
         },
       },
     },

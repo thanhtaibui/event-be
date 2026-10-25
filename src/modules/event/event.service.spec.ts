@@ -517,8 +517,16 @@ describe('EventService create', () => {
       organizationRepo as any,
       membershipRepo as any,
       categoryRepo as any,
-      {} as any,
+      {
+        assertR2PublicUrl: jest.fn(),
+        isR2PublicUrl: jest.fn().mockReturnValue(false),
+        deleteFile: jest.fn(),
+      } as any,
       notificationService as any,
+      {
+        isCloudinaryUrl: jest.fn().mockReturnValue(false),
+        deleteFile: jest.fn(),
+      } as any,
     );
 
     return {

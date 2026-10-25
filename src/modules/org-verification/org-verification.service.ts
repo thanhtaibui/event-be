@@ -13,6 +13,7 @@ import { Organization } from '../organization/entities/organization.entity';
 import { User } from '../user/entities/user.entity';
 import { ApiResponse, Response } from 'src/common/utils/ApiResponse';
 import { OrganizationStatus, VerificationStatus } from 'src/shared/enum/enum';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class OrgVerificationService {
@@ -23,14 +24,46 @@ export class OrgVerificationService {
     private organizationRepo: Repository<Organization>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private readonly uploadService: UploadService,
   ) {}
+
+  async uploadDocument(
+    organizationId: string,
+    file: Express.Multer.File,
+    requesterId: string,
+  ): Promise<ApiResponse<{ documentKey: string }>> {
+    const organization = await this.organizationRepo.findOne({
+      where: { id: organizationId },
+      relations: ['owner'],
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+    if (organization.owner?.id !== requesterId) {
+      throw new ForbiddenException(
+        'Only the organization owner can upload its verification document',
+      );
+    }
+
+    const key = await this.uploadService.uploadPrivateVerificationDocument(
+      file,
+      organizationId,
+    );
+    return Response(201, 'Private verification document uploaded successfully', {
+      documentKey: key,
+    });
+  }
 
   async create(
     createOrgVerificationDto: CreateOrgVerificationDto,
     requesterId: string,
   ): Promise<ApiResponse<any>> {
-    const { organizationId, taxIdNumber, documentUrl } =
+    const { organizationId, taxIdNumber, documentKey } =
       createOrgVerificationDto;
+
+    if (!this.uploadService.isPrivateVerificationDocumentKey(documentKey, organizationId)) {
+      throw new BadRequestException(
+        'documentKey must be a private R2 key returned by the verification document upload API',
+      );
+    }
 
     const org = await this.organizationRepo.findOne({
       where: { id: organizationId },
@@ -50,6 +83,11 @@ export class OrgVerificationService {
         'Only organization owner can submit verification request',
       );
     }
+
+    await this.uploadService.assertPrivateVerificationDocumentExists(
+      documentKey,
+      organizationId,
+    );
 
     const requester = await this.userRepo.findOne({
       where: { id: requesterId },
@@ -77,7 +115,7 @@ export class OrgVerificationService {
       organizationId: org.id,
       requester,
       taxIdNumber,
-      documentUrl,
+      documentUrl: documentKey,
       status: VerificationStatus.PENDING,
     });
 
@@ -87,7 +125,7 @@ export class OrgVerificationService {
     return Response(
       201,
       'Submit organization verification request successfully',
-      this.toResponse(savedVerification),
+      await this.toResponse(savedVerification),
     );
   }
 
@@ -118,7 +156,7 @@ export class OrgVerificationService {
     return Response(
       200,
       'Get organization verification requests successfully',
-      requests.map((request) => this.toResponse(request)),
+      await Promise.all(requests.map((request) => this.toResponse(request))),
     );
   }
 
@@ -129,7 +167,7 @@ export class OrgVerificationService {
     return Response(
       200,
       'Get organization verification request successfully',
-      this.toResponse(request),
+      await this.toResponse(request),
     );
   }
 
@@ -196,7 +234,7 @@ export class OrgVerificationService {
     return Response(
       200,
       'Update organization verification request successfully',
-      this.toResponse(savedRequest),
+      await this.toResponse(savedRequest),
     );
   }
 
@@ -265,12 +303,38 @@ export class OrgVerificationService {
     );
   }
 
-  private toResponse(request: OrgVerification) {
+  private async toResponse(request: OrgVerification) {
+    let documentUrl: string | null = null;
+    let documentUrlExpiresAt: Date | null = null;
+    if (request.documentUrl) {
+      if (
+        this.uploadService.isPrivateVerificationDocumentKey(
+          request.documentUrl,
+          request.organizationId || request.organization?.id,
+        )
+      ) {
+        const organizationId = request.organizationId || request.organization?.id;
+        if (organizationId) {
+          const signed =
+            await this.uploadService.createPrivateVerificationDocumentUrl(
+              request.documentUrl,
+              organizationId,
+            );
+          documentUrl = signed.url;
+          documentUrlExpiresAt = signed.expiresAt;
+        }
+      } else if (/^https:\/\//i.test(request.documentUrl)) {
+        // Legacy public URLs remain readable for backward compatibility; new records require private R2 keys.
+        documentUrl = request.documentUrl;
+      }
+    }
+
     return {
       id: request.id,
       status: request.status,
       taxIdNumber: request.taxIdNumber,
-      documentUrl: request.documentUrl,
+      documentUrl,
+      documentUrlExpiresAt,
       adminNote: request.adminNote,
       verifiedAt: request.verifiedAt,
       createdAt: request.createdAt,

@@ -24,7 +24,6 @@ import { OrgVerificationModule } from './modules/org-verification/org-verificati
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { UploadModule } from './modules/upload/upload.module';
-import { UploadService } from './modules/upload/upload.service';
 import { TicketTypeItemModule } from './modules/ticket-type-item/ticket-type-item.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { AiModule } from './ai/ai.module';
@@ -88,7 +87,6 @@ import { PaymentModule } from './modules/payment/payment.module';
   controllers: [AppController],
   providers: [
     AppService,
-    UploadService,
     {
       provide: APP_INTERCEPTOR,
       useClass: PerformanceLoggingInterceptor,

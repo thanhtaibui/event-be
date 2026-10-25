@@ -1,4 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PermissionCode } from 'src/common/constants/permission-codes';
 import { OrganizationStatus } from 'src/shared/enum/enum';
 import { OrganizationService } from './organization.service';
@@ -140,7 +143,7 @@ describe('OrganizationService membership data', () => {
   });
 
   it('creates organization as pending and unverified', async () => {
-    const { service, organizationRepo, memberRepo } = createService({
+    const { service, organizationRepo, memberRepo, uploadService } = createService({
       user: { id: ownerId },
       ownerRole: { id: 'owner-role', role_code: 'OWNER' },
     });
@@ -166,6 +169,77 @@ describe('OrganizationService membership data', () => {
       }),
     );
     expect(memberRepo.save).toHaveBeenCalled();
+    expect(uploadService.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('uploads a new organization logo through the shared R2 storage service', async () => {
+    const logoFile = {
+      buffer: Buffer.from('logo'),
+      mimetype: 'image/png',
+    } as Express.Multer.File;
+    const { service, organizationRepo, uploadService } = createService({
+      user: { id: ownerId },
+      ownerRole: { id: 'owner-role', role_code: 'OWNER' },
+      uploadedLogoUrl: 'https://cdn.example.test/organizations/avatars/logo.png',
+    });
+
+    await service.create(
+      {
+        name: 'Green Future Community',
+        slug: 'green-future-community',
+        ownerId,
+        bio: 'Green community',
+        legalName: 'Green Future Community',
+        industry: 'Environment',
+        email: 'green@example.com',
+        phone: '0900000000',
+        website: 'https://green.example.com',
+        address: 'Ho Chi Minh City',
+      },
+      logoFile,
+    );
+
+    expect(uploadService.uploadFile).toHaveBeenCalledWith(
+      logoFile,
+      'organizations/avatars',
+    );
+    expect(organizationRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        logoUrl: 'https://cdn.example.test/organizations/avatars/logo.png',
+      }),
+    );
+  });
+
+  it('preserves R2 configuration errors when creating an organization logo', async () => {
+    const logoFile = {
+      buffer: Buffer.from('logo'),
+      mimetype: 'image/png',
+    } as Express.Multer.File;
+    const { service, uploadService } = createService({
+      user: { id: ownerId },
+      ownerRole: { id: 'owner-role', role_code: 'OWNER' },
+    });
+    uploadService.uploadFile.mockRejectedValue(
+      new InternalServerErrorException('Cloudflare R2 configuration is incomplete'),
+    );
+
+    await expect(
+      service.create(
+        {
+          name: 'Green Future Community',
+          slug: 'green-future-community',
+          ownerId,
+          bio: 'Green community',
+          legalName: 'Green Future Community',
+          industry: 'Environment',
+          email: 'green@example.com',
+          phone: '0900000000',
+          website: 'https://green.example.com',
+          address: 'Ho Chi Minh City',
+        },
+        logoFile,
+      ),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 
   it('approves organization lifecycle without verifying identity', async () => {
@@ -475,6 +549,7 @@ describe('OrganizationService membership data', () => {
     publicOrganizationRows?: any[];
     user?: any;
     ownerRole?: any;
+    uploadedLogoUrl?: string;
   }) {
     const listQueryBuilder = createMemberListQueryBuilder(
       options.memberRows ?? [],
@@ -530,9 +605,18 @@ describe('OrganizationService membership data', () => {
         .fn()
         .mockImplementation(async () => (options.eventCounts ?? []).shift()),
     };
+    const uploadService = {
+      uploadFile: jest.fn().mockResolvedValue({
+        data: { url: options.uploadedLogoUrl },
+      }),
+      deleteFile: jest.fn().mockResolvedValue({ statusCode: 200 }),
+      assertR2PublicUrl: jest.fn(),
+      isR2PublicUrl: jest.fn().mockReturnValue(false),
+    };
     const service = new OrganizationService(
       organizationRepo as any,
       {} as any,
+      uploadService as any,
       memberRepo as any,
       userRepo as any,
       roleRepo as any,
@@ -546,6 +630,7 @@ describe('OrganizationService membership data', () => {
       userRepo,
       roleRepo,
       eventRepo,
+      uploadService,
       organizationPublicQueryBuilder,
     };
   }

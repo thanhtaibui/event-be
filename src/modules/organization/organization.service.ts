@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -27,13 +28,17 @@ import { plainToInstance } from 'class-transformer';
 import { Event } from '../event/entities/event.entity';
 import { PermissionCode } from 'src/common/constants/permission-codes';
 import { OrganizationMembersQueryDto } from './dto/organization.dto';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class OrganizationService {
+  private readonly logger = new Logger(OrganizationService.name);
+
   constructor(
     @InjectRepository(Organization)
     private organizationRepo: Repository<Organization>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly uploadService: UploadService,
     @InjectRepository(Membership) private memberRepo: Repository<Membership>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Role) private roleRepo: Repository<Role>,
@@ -62,19 +67,19 @@ export class OrganizationService {
       );
     }
     const ownerRole = await this.findOwnerRole();
-    let logoUrl;
-    let logoPublicId;
+    let logoUrl: string | undefined;
 
-    // 2. Nếu có file, tiến hành upload lên Cloudinary
+    // 2. Upload the logo through the configured R2 storage service.
     if (file) {
       try {
-        const uploadResult = await this.cloudinaryService.uploadFile(
+        const uploadResult = await this.uploadService.uploadFile(
           file,
           'organizations/avatars',
         );
-        logoUrl = uploadResult.data?.secure_url;
-        logoPublicId = uploadResult.data?.public_id;
+        logoUrl = uploadResult.data?.url;
+        if (!logoUrl) throw new Error('R2 upload did not return a URL');
       } catch (error) {
+        if (error instanceof HttpException) throw error;
         throw new BadRequestException('Failed to upload organization logo');
       }
     }
@@ -96,7 +101,21 @@ export class OrganizationService {
       address: createOrganizationDto.address,
       isVerified: false,
     });
-    const saveOrg = await this.organizationRepo.save(newOrg);
+    let saveOrg: Organization;
+    try {
+      saveOrg = await this.organizationRepo.save(newOrg);
+    } catch (error) {
+      if (logoUrl) {
+        try {
+          await this.uploadService.deleteFile(logoUrl);
+        } catch (cleanupError) {
+          this.logger.warn(
+            `ORGANIZATION_LOGO_CLEANUP_FAILED:${cleanupError instanceof Error ? cleanupError.name : 'unknown'}`,
+          );
+        }
+      }
+      throw error;
+    }
     await this.createOwnerMembershipIfMissing(user, saveOrg, ownerRole);
     // 4. Lưu vào Database
     const result: CreateOrganizationResponseDto = {
@@ -112,17 +131,7 @@ export class OrganizationService {
       website: saveOrg.website,
       address: saveOrg.address,
     };
-    try {
-      return Response(201, 'Create Organization Successfully', result);
-    } catch (error) {
-      // Nếu lưu DB thất bại mà đã lỡ upload ảnh, nên xóa ảnh trên Cloudinary để dọn rác
-      if (logoPublicId) {
-        await this.cloudinaryService.deleteFile(logoUrl);
-      }
-      throw new BadRequestException(
-        'Could not create organization. Please try again.',
-      );
-    }
+    return Response(201, 'Create Organization Successfully', result);
   }
 
   async SwitchOrg(currentUser?: any): Promise<ApiResponse<SwitchOrgDto[]>> {
@@ -676,15 +685,35 @@ export class OrganizationService {
     if (!org) {
       throw new NotFoundException('Organization not exist');
     }
-    if (org.bannerUrl) {
-      await this.cloudinaryService.deleteFile(org.bannerUrl);
+    if (updateBannerDto.bannerUrl !== org.bannerUrl) {
+      this.uploadService.assertR2PublicUrl(updateBannerDto.bannerUrl);
     }
+    const oldBannerUrl = org.bannerUrl;
     org.bannerUrl = updateBannerDto.bannerUrl;
     const savedUser = await this.organizationRepo.save(org);
+    if (oldBannerUrl && oldBannerUrl !== savedUser.bannerUrl) {
+      await this.cleanupReplacedMedia(oldBannerUrl);
+    }
     return Response(200, 'Organization updated Active successfully', {
       id: savedUser.id,
       bannerUrl: savedUser.bannerUrl,
     });
+  }
+
+  private async cleanupReplacedMedia(fileUrl: string): Promise<void> {
+    try {
+      if (this.cloudinaryService.isCloudinaryUrl(fileUrl)) {
+        await this.cloudinaryService.deleteFile(fileUrl);
+      } else if (this.uploadService.isR2PublicUrl(fileUrl)) {
+        await this.uploadService.deleteFile(fileUrl);
+      } else {
+        this.logger.warn('ORGANIZATION_MEDIA_CLEANUP_SKIPPED_UNKNOWN_PROVIDER');
+      }
+    } catch (error) {
+      this.logger.warn(
+        `ORGANIZATION_MEDIA_CLEANUP_FAILED:${error instanceof Error ? error.name : 'unknown'}`,
+      );
+    }
   }
 
   async deleteSort(

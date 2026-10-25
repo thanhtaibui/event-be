@@ -8,7 +8,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { UploadService } from './upload.service';
+import {
+  UploadService,
+  createUploadInterceptorOptions,
+} from './upload.service';
 import {
   ApiBearerAuth,
   ApiTags,
@@ -37,7 +40,9 @@ export class UploadController {
   //   PermissionCode.UPLOAD_CREATE,
   // )
   @ApiOperation({ summary: 'Upload file lên AWS S3' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', createUploadInterceptorOptions()),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -48,10 +53,18 @@ export class UploadController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string,
-  ): Promise<ApiResponse<{ secure_url: string; public_id: string }>> {
+  ): Promise<
+    ApiResponse<{
+      url: string;
+      key: string;
+      secure_url: string;
+      public_id: string;
+    }>
+  > {
     if (!file) {
       throw new BadRequestException('No file uploaded!');
     }
     return await this.uploadService.uploadFile(file, folder);
   }
+
 }
