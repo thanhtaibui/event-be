@@ -43,8 +43,12 @@ import { PaymentModule } from './modules/payment/payment.module';
     TypeOrmModule.forRoot(databaseConfig()),
     MailerModule.forRoot({
       transport: {
-        service: 'gmail',
-
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
         auth: {
           user: process.env.MAIL_USER,
           pass: process.env.MAIL_PASS,

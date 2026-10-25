@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { GoogleOAuthDto, LoginDto, RegisterDto } from './dto/login.dto';
 import { ApiResponse } from 'src/common/utils/ApiResponse';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
@@ -43,19 +48,37 @@ export class AuthService {
     const genericResponse = () =>
       Response(
         200,
-        'If an account exists for this email, password reset instructions will be sent.',
+        'If an account exists, a password reset request has been received.',
         null,
       );
+    const startedAt = Date.now();
+    this.logger.log('PASSWORD_RESET_REQUEST_STARTED');
     const normalizedEmail = email.trim().toLowerCase();
-    const matchingUsers = await this.userRepo
-      .createQueryBuilder('user')
-      .where('LOWER(user.email) = :email', { email: normalizedEmail })
-      .andWhere('user.isDelete = :isDelete', { isDelete: false })
-      .take(2)
-      .getMany();
+    let matchingUsers: User[];
+    try {
+      matchingUsers = await this.userRepo
+        .createQueryBuilder('user')
+        .where('LOWER(user.email) = :email', { email: normalizedEmail })
+        .andWhere('user.isDelete = :isDelete', { isDelete: false })
+        .take(2)
+        .getMany();
+    } catch (error) {
+      this.logger.error(
+        `PASSWORD_RESET_DATABASE_LOOKUP_FAILED:code=${this.getSafeErrorCode(error)}:elapsedMs=${Date.now() - startedAt}`,
+      );
+      throw new ServiceUnavailableException('PASSWORD_RESET_UNAVAILABLE');
+    }
+    this.logger.log(
+      `PASSWORD_RESET_ACCOUNT_LOOKUP_COMPLETE:elapsedMs=${Date.now() - startedAt}`,
+    );
 
     // A case-insensitive duplicate must never make the reset target ambiguous.
-    if (matchingUsers.length !== 1) return genericResponse();
+    if (matchingUsers.length !== 1) {
+      this.logger.log(
+        `PASSWORD_RESET_REQUEST_FINISHED:stage=ACCOUNT_LOOKUP:elapsedMs=${Date.now() - startedAt}`,
+      );
+      return genericResponse();
+    }
 
     const frontendUrl = process.env.FE_URL?.trim();
     if (!frontendUrl) {
@@ -71,6 +94,20 @@ export class AuthService {
       return genericResponse();
     }
 
+    if (
+      process.env.NODE_ENV === 'production' &&
+      (resetUrl.protocol !== 'https:' ||
+        ['localhost', '127.0.0.1', '::1'].includes(
+          resetUrl.hostname.toLowerCase().replace(/^\[|\]$/g, ''),
+        ) ||
+        resetUrl.hostname.toLowerCase().endsWith('.vercel.app'))
+    ) {
+      this.logger.error(
+        'Password reset email unavailable: FE_URL is not a valid production frontend URL',
+      );
+      return genericResponse();
+    }
+
     const user = matchingUsers[0];
     const token = randomBytes(32).toString('base64url');
     const tokenHash = this.hashPasswordResetToken(token);
@@ -82,26 +119,71 @@ export class AuthService {
         passwordResetTokenHash: tokenHash,
         passwordResetExpiresAt: expiresAt,
       });
+    } catch (error) {
+      this.logger.error(
+        `PASSWORD_RESET_DATABASE_WRITE_FAILED:code=${this.getSafeErrorCode(error)}:elapsedMs=${Date.now() - startedAt}`,
+      );
+      throw new ServiceUnavailableException('PASSWORD_RESET_UNAVAILABLE');
+    }
+
+    this.logger.log(
+      `PASSWORD_RESET_TOKEN_STORED:elapsedMs=${Date.now() - startedAt}`,
+    );
+    try {
+      this.logger.log(
+        `PASSWORD_RESET_SMTP_SEND_STARTED:elapsedMs=${Date.now() - startedAt}`,
+      );
       await this.mailerService.sendMail({
         to: user.email,
         subject: 'Reset your Eventix password',
         html: `<p>A password reset was requested for your Eventix account.</p><p><a href="${resetUrl.toString()}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>`,
       });
-    } catch {
+    } catch (error) {
       try {
         await this.userRepo.update(
           { id: user.id, passwordResetTokenHash: tokenHash },
           { passwordResetTokenHash: null, passwordResetExpiresAt: null },
         );
       } catch {
-        this.logger.error(
-          'Password reset cleanup failed after email delivery failure',
-        );
+        this.logger.error('PASSWORD_RESET_TOKEN_CLEANUP_FAILED');
       }
-      this.logger.error('Password reset email delivery failed');
+      this.logger.error(
+        `PASSWORD_RESET_EMAIL_DELIVERY_FAILED:category=${this.classifyMailError(error)}:elapsedMs=${Date.now() - startedAt}`,
+      );
+      return genericResponse();
     }
 
+    this.logger.log(
+      `PASSWORD_RESET_EMAIL_ACCEPTED:elapsedMs=${Date.now() - startedAt}`,
+    );
     return genericResponse();
+  }
+
+  private getSafeErrorCode(error: unknown): string {
+    if (!error || typeof error !== 'object' || !('code' in error)) {
+      return 'UNKNOWN';
+    }
+    const code = String((error as { code?: unknown }).code);
+    return /^[A-Z0-9_-]{1,32}$/i.test(code) ? code : 'UNKNOWN';
+  }
+
+  private classifyMailError(error: unknown): string {
+    const code = this.getSafeErrorCode(error).toUpperCase();
+    const responseCode =
+      error && typeof error === 'object' && 'responseCode' in error
+        ? Number((error as { responseCode?: unknown }).responseCode)
+        : undefined;
+
+    if (code === 'ETIMEDOUT' || code === 'ESOCKET') return 'SMTP_TIMEOUT';
+    if (code === 'EAUTH' || responseCode === 535) return 'SMTP_AUTH_FAILED';
+    if (
+      ['ECONNECTION', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND'].includes(
+        code,
+      )
+    ) {
+      return 'SMTP_CONNECTION_FAILED';
+    }
+    return 'SMTP_DELIVERY_FAILED';
   }
 
   async resetPassword(

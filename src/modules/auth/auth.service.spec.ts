@@ -8,10 +8,13 @@ import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 
 describe('AuthService password reset', () => {
   const originalFrontendUrl = process.env.FE_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (originalFrontendUrl === undefined) delete process.env.FE_URL;
     else process.env.FE_URL = originalFrontendUrl;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
     jest.restoreAllMocks();
   });
 
@@ -204,6 +207,92 @@ describe('AuthService password reset', () => {
     expect(response.statusCode).toBe(200);
     expect(harness.user.passwordResetTokenHash).toBeNull();
     expect(harness.user.passwordResetExpiresAt).toBeNull();
+  });
+
+  it.each([
+    ['SMTP timeout', { code: 'ETIMEDOUT' }, 'SMTP_TIMEOUT'],
+    ['SMTP authentication failure', { code: 'EAUTH' }, 'SMTP_AUTH_FAILED'],
+    [
+      'SMTP connection refusal',
+      { code: 'ECONNREFUSED' },
+      'SMTP_CONNECTION_FAILED',
+    ],
+  ])(
+    'handles %s without retrying or disclosing account existence',
+    async (_, error, category) => {
+      const existing = await createHarness();
+      const unknown = await createHarness([]);
+      unknown.queryBuilder.getMany.mockResolvedValueOnce([]);
+      existing.mailer.sendMail.mockRejectedValueOnce(error);
+      jest
+        .spyOn((existing.service as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      const existingResponse =
+        await existing.service.forgotPassword('user@example.com');
+      const unknownResponse = await unknown.service.forgotPassword(
+        'unknown@example.com',
+      );
+
+      expect(existingResponse).toEqual(unknownResponse);
+      expect(existing.mailer.sendMail).toHaveBeenCalledTimes(1);
+      expect(existing.user.passwordResetTokenHash).toBeNull();
+      expect((existing.service as any).logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(`category=${category}`),
+      );
+    },
+  );
+
+  it('returns a service-unavailable error when database lookup fails', async () => {
+    const harness = await createHarness();
+    harness.queryBuilder.getMany.mockRejectedValueOnce(
+      Object.assign(new Error('database unavailable'), { code: 'ECONNRESET' }),
+    );
+
+    await expect(
+      harness.service.forgotPassword('user@example.com'),
+    ).rejects.toThrow('PASSWORD_RESET_UNAVAILABLE');
+    expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  it('does not send a reset email when the database cannot store the token', async () => {
+    const harness = await createHarness();
+    harness.userRepo.update.mockRejectedValueOnce(
+      Object.assign(new Error('database unavailable'), { code: 'ECONNRESET' }),
+    );
+
+    await expect(
+      harness.service.forgotPassword('user@example.com'),
+    ).rejects.toThrow('PASSWORD_RESET_UNAVAILABLE');
+    expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  it.each(['http://localhost:5173', 'https://old-frontend.vercel.app'])(
+    'rejects unsafe production reset frontend URL %s',
+    async (frontendUrl) => {
+      const harness = await createHarness();
+      process.env.NODE_ENV = 'production';
+      process.env.FE_URL = frontendUrl;
+
+      await harness.service.forgotPassword('user@example.com');
+
+      expect(harness.mailer.sendMail).not.toHaveBeenCalled();
+      expect(harness.user.passwordResetTokenHash).toBeNull();
+    },
+  );
+
+  it('uses the configured HTTPS Cloudflare Pages URL for production reset links', async () => {
+    const harness = await createHarness();
+    process.env.NODE_ENV = 'production';
+    process.env.FE_URL = 'https://eventix.pages.dev';
+
+    await harness.service.forgotPassword('user@example.com');
+
+    const html = harness.mailer.sendMail.mock.calls[0][0].html as string;
+    const resetUrl = new URL(html.match(/href="([^"]+)"/)![1]);
+    expect(resetUrl.origin).toBe('https://eventix.pages.dev');
+    expect(resetUrl.pathname).toBe('/reset-password');
+    expect(resetUrl.searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('validates reset token shape and applies the existing strong password policy', async () => {
