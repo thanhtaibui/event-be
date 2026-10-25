@@ -39,13 +39,6 @@ export class CategoryController {
   }
 
   @Get()
-  @UseGuards(JwtGuard, PermissionsGuard)
-  // @Permissions(
-  //   PermissionCode.EVENT,
-  //   PermissionCode.EVENT_CREATE,
-  //   PermissionCode.EVENT_UPDATE,
-  //   PermissionCode.CATEGORY_VIEW,
-  // )
   @ApiOperation({ operationId: 'getCategories' })
   @ApiResponse({
     status: 200,
